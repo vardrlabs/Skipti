@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreText
 import Foundation
 import Observation
 import SwiftUI
@@ -210,16 +211,26 @@ enum RuneDrift {
 /// D-243 (U24, the founder's approved Vibrant mock-up, 2026-10-20; .drafts/d214/motion.py sections 5 and 6): Norse's runes
 /// glow as they rise and flare now and then. The flare is applied after the rise (RuneDrift's poses do not move): a rune's
 /// core is its rise envelope (the pose's opacity over `RuneDrift.peak`) times its rest (`RuneDrift.peak` x its layer's
-/// strength) lifted toward `top` by the flare; its halo, a radial disc of `haloRadius` x its size, is `halo` at the top
-/// of a flare and in proportion below it. The flare: 0 at rest, eased in and out (`ease`, each half its own segment, as
+/// strength) lifted toward `top` by the flare. D-246 (decision 195, the founder 2026-10-20: "make the actual rune glow";
+/// motion.py 5a): its glow is the glyph's own shape blurred (`GlyphGlow`, a Gaussian of sigma `blur` x its size) under
+/// the crisp glyph, its alpha `pageGlow` or `heroGlow` at the top of a flare and in proportion below it (D-243's radial
+/// disc halo is gone). The flare: 0 at rest, eased in and out (`ease`, each half its own segment, as
 /// the mock-up's CSS keyframes) up from `rise` of its cycle to 1 at `top`, back to 0 at `fall`. Page rune i flares on a
 /// `cycle(i)` s cycle led by `lead(i)` s; the hero's runes carry their own (`HeroRunes`). Still: the still pose's
-/// opacity times the strength, no flare and no halo. Android's twin is `RuneGlow`; its ThemeMotionTest reads these.
+/// opacity times the strength, no flare and no glow. Android's twin is `RuneGlow`; its ThemeMotionTest reads these.
 enum RuneGlow {
     static let pageFlare = 0.19
     static let heroFlare = 0.20
-    static let halo = 0.05
-    static let haloRadius = 0.8
+    /// D-246: the glow's Gaussian sigma, a fraction of the rune's size (the ᚠ's and the ring's too).
+    static let blur = 0.18
+    /// D-246: the glow's alpha at the top of a flare: the lesser of the disc's light over the layer's mean ink and the
+    /// floors' cap with the blurred mask's peak under the full core (page: 1c, 1e and 1f's 6 pt; hero: 1c').
+    static let pageGlow = 0.145
+    static let heroGlow = 0.345
+    /// D-246: how far a glow is seen from its rune's centre, x its size (its ink's reach plus the Gaussian's tail to one
+    /// 8-bit step): the stacking rules' reach where D-243's disc radius (0.8) stood.
+    static let pageReach = 0.8043
+    static let heroReach = 0.8567
     static let rise = 0.62
     static let top = 0.76
     static let fall = 0.90
@@ -244,13 +255,15 @@ enum RuneGlow {
     /// Page rune `i`'s flare at `t`.
     static func flare(_ i: Int, _ t: Double) -> Double { flare(t, cycle: cycle(i), lead: lead(i)) }
 
-    /// The core's and the halo's alphas of a rune at its pose's `opacity`, its layer's `strength`, the layer's flare `top`
-    /// and the flare `glow` (0...1). Still: no flare, no halo.
-    static func alphas(opacity: Double, strength: Double, top: Double, glow: Double, still: Bool) -> (core: Double, halo: Double) {
+    /// The core's and the glow's alphas of a rune at its pose's `opacity`, its layer's `strength`, the layer's flare `top`,
+    /// the `flare` (0...1) and the layer's glow at the top of a flare, `glowTop` (`pageGlow` or `heroGlow`). Still: no
+    /// flare, no glow.
+    static func alphas(opacity: Double, strength: Double, top: Double, flare: Double, glowTop: Double,
+                       still: Bool) -> (core: Double, glow: Double) {
         let envelope = opacity / RuneDrift.peak
         let rest = RuneDrift.peak * strength
-        let core = envelope * (rest + (top - rest) * (still ? 0 : glow))
-        return (core, still ? 0 : halo * core / top)
+        let core = envelope * (rest + (top - rest) * (still ? 0 : flare))
+        return (core, still ? 0 : glowTop * core / top)
     }
 }
 
@@ -301,9 +314,10 @@ enum HeroRunes {
 }
 
 /// D-243: the Norse hero's ᚠ glows now and then: `rest` (today's 0.16) up to `peak` on a `cycle` s cycle (rising from
-/// `rise` of it, top at `top`, rest again at `fall`, each half `RuneGlow.ease`), with a radial halo of `haloRadius` x its
-/// size centred on its box, `halo` at the top of the glow (motion.py 1c'': min(the floor's cap 0.145, 0.10)). Still: `rest`,
-/// no halo, today's ᚠ. The renderer multiplies both by `Strength.of("norseHero")`. Android's twin is `WatermarkGlow`.
+/// `rise` of it, top at `top`, rest again at `fall`, each half `RuneGlow.ease`). D-246: under it its own shape blurred
+/// (`GlyphGlow`, sigma `RuneGlow.blur` x its size), `glyphGlow` at the top of the glow (motion.py 5a: the disc's light over its
+/// ink, within 1c''s cap), seen no further than `glowLeft` x its size left of its box's centre. Still: `rest`, no glow,
+/// today's ᚠ. The renderer multiplies both by `Strength.of("norseHero")`. Android's twin is `WatermarkGlow`.
 enum WatermarkGlow {
     static let rest = 0.16
     static let peak = 0.208
@@ -311,8 +325,8 @@ enum WatermarkGlow {
     static let rise = 0.55
     static let top = 0.70
     static let fall = 0.88
-    static let halo = 0.10
-    static let haloRadius = 0.5
+    static let glyphGlow = 0.305
+    static let glowLeft = 0.6052
 
     static func glow(_ t: Double) -> Double {
         let u = t / cycle
@@ -321,24 +335,164 @@ enum WatermarkGlow {
 
     static func alpha(_ t: Double, still: Bool) -> Double { still ? rest : rest + (peak - rest) * glow(t) }
 
-    static func haloAlpha(_ t: Double, still: Bool) -> Double { still ? 0 : halo * glow(t) }
+    static func glyphGlowAlpha(_ t: Double, still: Bool) -> Double { still ? 0 : glyphGlow * glow(t) }
 }
 
 /// D-243: the Futhark ring round You's picture (D-221's RuneRing) turns clockwise, one turn per `period` seconds of
-/// turning, from upright each time it starts; still (Reduce Motion, Less motion, power saving) it is upright. Each lit
-/// rune carries a static radial halo of the ring colour at `litHalo`, radius `litHaloRadius` x the ring's rune size.
+/// turning, from upright each time it starts; still (Reduce Motion, Less motion, power saving) it is upright. D-246: each
+/// lit rune glows from its own shape (`GlyphGlow`, sigma `RuneGlow.blur` x the ring's rune size) in the ring colour at
+/// `litGlow`, static (motion.py 5a: D-243's disc's light over the mean ink; nothing is written over the ring).
 /// Android's twin is `RingTurn`.
 enum RingTurn {
     static let period: Double = 90
     static let still: Double = 0
-    static let litHalo = 0.35
-    static let litHaloRadius = 0.5
+    static let litGlow = 0.995
 
     /// The ring's turn in degrees, clockwise, in 0..<360, after `seconds` of turning; a clock that is not finite is upright.
     static func degrees(_ seconds: Double) -> Double {
         guard seconds.isFinite else { return 0 }
         let u = seconds / period
         return 360 * (u - u.rounded(.down))
+    }
+}
+
+/// D-246 (decision 195, the founder 2026-10-20: "make the actual rune glow"): a rune's glow is its own shape, blurred. The
+/// glyph's coverage is drawn ONCE by Core Text into an 8-bit mask and blurred ONCE by a Gaussian of sigma `blur` x its
+/// size (motion.py 5a's kernel, cut at 4 sigma), and kept as a template image the art tints gold, silver or the ring's
+/// colour and draws UNDER the crisp glyph at the layer's glow alpha. One mask per glyph, size bucket (the size rounded to a
+/// whole point) and blur, built the first time a canvas's symbols or the ring ask for it and never again in the process
+/// (`builds` counts them); a frame only draws the cached image. The mask is the glyph's Text box (its advance by the
+/// font's ascender to descender, as a Text is laid out) with 4 sigma on every side, the glyph centred in it, so drawn at
+/// the glyph's centre and turned with it, the glow sits on the ink. No disc, no per-frame blur. Android's twin is
+/// GlyphGlow in ThemeMotion.kt.
+enum GlyphGlow {
+    struct Key: Hashable {
+        let glyph: String
+        let size: Int
+        let blur: Double
+    }
+
+    struct Mask {
+        /// White, premultiplied, at `scale` pixels a point: a template image.
+        let image: UIImage
+        /// Its size in points (the Text box plus 4 sigma a side).
+        let size: CGSize
+        let scale: CGFloat
+        /// The blurred coverage's largest value (motion.py's peak; the floors take it under the full core).
+        let peak: Double
+    }
+
+    /// The mask is blurred at this many pixels a sigma (a blurred glyph is smooth: a few pixels a sigma draw it without a
+    /// step), never finer than 3 pixels a point.
+    static let pixelsPerSigma: CGFloat = 6
+
+    private static let lock = NSLock()
+    private static var cache: [Key: Mask] = [:]
+    private static var built = 0
+
+    /// How many masks this process has built (the tests' counter: a second ask for a key builds nothing).
+    static var builds: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return built
+    }
+
+    /// The cached mask of `glyph` at `size` (rounded to a whole point) blurred by `blur` x that size; built on the first ask.
+    static func mask(_ glyph: String, size: CGFloat, blur: Double) -> Mask {
+        let key = Key(glyph: glyph, size: Int(size.rounded()), blur: blur)
+        lock.lock()
+        defer { lock.unlock() }
+        if let cached = cache[key] { return cached }
+        let made = build(key)
+        cache[key] = made
+        built += 1
+        return made
+    }
+
+    /// The glow as a view (a canvas symbol, or the ring's background): the cached mask as a template image at its size in
+    /// points, tinted by the caller's foreground.
+    static func view(_ glyph: String, size: CGFloat, blur: Double) -> some View {
+        let m = mask(glyph, size: size, blur: blur)
+        return Image(uiImage: m.image).renderingMode(.template).resizable().interpolation(.high)
+            .frame(width: m.size.width, height: m.size.height)
+    }
+
+    private static func build(_ key: Key) -> Mask {
+        let points = CGFloat(key.size)
+        let font = TypeRole.runeUIFont(points, relativeTo: nil, category: .large)
+        let sigma = CGFloat(key.blur) * points
+        let scale = min(3, pixelsPerSigma / sigma)
+        let pad = 4 * sigma
+        let line = CTLineCreateWithAttributedString(NSAttributedString(string: key.glyph, attributes: [.font: font]))
+        let advance = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+        let ascent = font.ascender, descent = -font.descender
+        let width = Int(((advance + 2 * pad) * scale).rounded(.up))
+        let height = Int(((ascent + descent + 2 * pad) * scale).rounded(.up))
+        let box = CGSize(width: CGFloat(width) / scale, height: CGFloat(height) / scale)
+        // The coverage: white on black in an 8-bit gray context, the glyph's Text box centred in the mask. The glyph is
+        // filled as its outline (CTFontCreatePathForGlyph), not drawn as text: text drawing snaps the baseline to a whole
+        // pixel, which at a few pixels a point moved the glow off the ink by up to half a point.
+        var coverage = [UInt8](repeating: 0, count: width * height)
+        coverage.withUnsafeMutableBytes { raw in
+            guard let ctx = CGContext(data: raw.baseAddress, width: width, height: height, bitsPerComponent: 8,
+                                      bytesPerRow: width, space: CGColorSpaceCreateDeviceGray(),
+                                      bitmapInfo: CGImageAlphaInfo.none.rawValue) else { return }
+            ctx.scaleBy(x: scale, y: scale)
+            ctx.translateBy(x: (box.width - advance) / 2, y: (box.height - ascent - descent) / 2 + descent)
+            ctx.setFillColor(gray: 1, alpha: 1)
+            for run in (CTLineGetGlyphRuns(line) as? [CTRun]) ?? [] {
+                let count = CTRunGetGlyphCount(run)
+                var glyphs = [CGGlyph](repeating: 0, count: count)
+                var origins = [CGPoint](repeating: .zero, count: count)
+                CTRunGetGlyphs(run, CFRange(location: 0, length: count), &glyphs)
+                CTRunGetPositions(run, CFRange(location: 0, length: count), &origins)
+                let attributes = CTRunGetAttributes(run) as NSDictionary
+                // swiftlint:disable:next force_cast
+                let runFont = attributes[kCTFontAttributeName as String].map { $0 as! CTFont } ?? (font as CTFont)
+                for (glyph, origin) in zip(glyphs, origins) {
+                    var at = CGAffineTransform(translationX: origin.x, y: origin.y)
+                    guard let outline = CTFontCreatePathForGlyph(runFont, glyph, &at) else { continue }
+                    ctx.addPath(outline)
+                    ctx.fillPath()
+                }
+            }
+        }
+        // The blur: a separable Gaussian of sigma `sigma x scale` pixels, cut at 4 sigma, zero outside the mask.
+        let s = Double(sigma * scale)
+        let r = Int((4 * s).rounded(.up))
+        var kernel = (-r...r).map { exp(-Double($0 * $0) / (2 * s * s)) }
+        let total = kernel.reduce(0, +)
+        kernel = kernel.map { $0 / total }
+        var across = [Double](repeating: 0, count: width * height)
+        for y in 0..<height {
+            for x in 0..<width {
+                var v = 0.0
+                for k in max(-r, -x)...min(r, width - 1 - x) { v += kernel[k + r] * Double(coverage[y * width + x + k]) }
+                across[y * width + x] = v / 255
+            }
+        }
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        var peak = 0.0
+        for y in 0..<height {
+            for x in 0..<width {
+                var v = 0.0
+                for k in max(-r, -y)...min(r, height - 1 - y) { v += kernel[k + r] * across[(y + k) * width + x] }
+                peak = max(peak, v)
+                let byte = UInt8(max(0, min(255, (v * 255).rounded())))
+                let i = 4 * (y * width + x)
+                pixels[i] = byte
+                pixels[i + 1] = byte
+                pixels[i + 2] = byte
+                pixels[i + 3] = byte
+            }
+        }
+        let image = CGDataProvider(data: Data(pixels) as CFData).flatMap {
+            CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: 4 * width,
+                    space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                    provider: $0, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
+        }
+        return Mask(image: image.map { UIImage(cgImage: $0, scale: scale, orientation: .up) } ?? UIImage(), size: box,
+                    scale: scale, peak: peak)
     }
 }
 
@@ -844,38 +998,36 @@ enum ArtDraw {
         Text(verbatim: p.glyph).font(TypeRole.rune(p.size)).foregroundColor(p.silver ? runeSilver : runeGold).tag(tag)
     }
 
-    /// D-243: symbol tags. Page runes are 0..<16 (D-214's), their halos `pageHalo + i`; the hero's runes `heroRune + i`,
-    /// their halos `heroHalo + i`; the ᚠ `fehu`, its halo `fehuHalo`. Each ForEach of a canvas's symbols iterates its own
-    /// tag range (its ids are the tags): two ForEach over the same ids trap in SwiftUI's CanvasSymbols (seen on launch).
-    static let pageHalo = 100, heroRune = 200, heroHalo = 300, fehu = 400, fehuHalo = 401
+    /// D-243: symbol tags. Page runes are 0..<16 (D-214's), their glows (D-246; D-243's halos) `pageGlyphGlow + i`; the
+    /// hero's runes `heroRune + i`, their glows `heroGlyphGlow + i`; the ᚠ `fehu`, its glow `fehuGlyphGlow`. Each ForEach
+    /// of a canvas's symbols iterates its own tag range (its ids are the tags): two ForEach over the same ids trap in
+    /// SwiftUI's CanvasSymbols (seen on launch).
+    static let pageGlyphGlow = 100, heroRune = 200, heroGlyphGlow = 300, fehu = 400, fehuGlyphGlow = 401
 
-    /// D-243: a halo as a symbol (laid out once, never blurred): a disc of `radius` in `colour`, full at its centre and
-    /// clear at its edge, linearly (motion.py's halo). The draw sets its alpha.
-    static func haloSymbol(tag: Int, colour: Color, radius: CGFloat) -> some View {
-        Circle()
-            .fill(RadialGradient(colors: [colour, colour.opacity(0)], center: .center, startRadius: 0, endRadius: radius))
-            .frame(width: radius * 2, height: radius * 2)
-            .tag(tag)
+    /// D-246: a glyph's glow as a symbol: `GlyphGlow`'s cached blurred mask of the glyph at its size, tinted `colour`. The
+    /// draw sets its alpha and its pose (the glyph's own, so the glow turns with it).
+    static func glowSymbol(_ glyph: String, size: CGFloat, colour: Color, tag: Int) -> some View {
+        GlyphGlow.view(glyph, size: size, blur: RuneGlow.blur).foregroundColor(colour).tag(tag)
     }
 
-    /// D-243: page rune i's halo, `RuneGlow.haloRadius` x its size, in its colour.
-    static func runeHaloSymbol(_ i: Int) -> some View {
+    /// D-246: page rune i's glow, in its colour.
+    static func runeGlowSymbol(_ i: Int) -> some View {
         let p = RuneDrift.still(i, in: .zero)
-        return haloSymbol(tag: pageHalo + i, colour: p.silver ? runeSilver : runeGold, radius: RuneGlow.haloRadius * p.size)
+        return glowSymbol(p.glyph, size: p.size, colour: p.silver ? runeSilver : runeGold, tag: pageGlyphGlow + i)
     }
 
-    /// D-243: the hero's rune i as a symbol, and its halo.
+    /// D-243: the hero's rune i as a symbol, and (D-246) its glow.
     static func heroRuneSymbol(_ i: Int) -> some View {
         glyphSymbol(HeroRunes.still(i, in: .zero), tag: heroRune + i)
     }
 
-    static func heroHaloSymbol(_ i: Int) -> some View {
+    static func heroGlowSymbol(_ i: Int) -> some View {
         let p = HeroRunes.still(i, in: .zero)
-        return haloSymbol(tag: heroHalo + i, colour: p.silver ? runeSilver : runeGold, radius: RuneGlow.haloRadius * p.size)
+        return glowSymbol(p.glyph, size: p.size, colour: p.silver ? runeSilver : runeGold, tag: heroGlyphGlow + i)
     }
 
-    /// D-243: the hero's ᚠ as a symbol (D-226's watermark, in the accent at full strength: the draw sets its alpha), and its
-    /// halo, `WatermarkGlow.haloRadius` x its size, centred on its box.
+    /// D-243: the hero's ᚠ as a symbol (D-226's watermark, in the accent at full strength: the draw sets its alpha), and
+    /// (D-246) its glow, the ᚠ's own shape blurred, centred on its box as the ᚠ is.
     static func fehuSymbol() -> some View {
         Text(verbatim: Runes.balance)
             .font(TypeRole.rune(ThemeArt.m("heroWatermark")))
@@ -883,18 +1035,18 @@ enum ArtDraw {
             .tag(fehu)
     }
 
-    static func fehuHaloSymbol() -> some View {
-        haloSymbol(tag: fehuHalo, colour: Tokens.accent, radius: WatermarkGlow.haloRadius * ThemeArt.m("heroWatermark"))
+    static func fehuGlowSymbol() -> some View {
+        glowSymbol(Runes.balance, size: ThemeArt.m("heroWatermark"), colour: Tokens.accent, tag: fehuGlyphGlow)
     }
 
     /// Each rune is drawn from its symbol (`runeSymbol`), centred on its pose. D-243: at `RuneGlow.alphas`' core over its
-    /// halo (the flare toward `RuneGlow.pageFlare`); still: the still pose at 0.10 x the strength, no flare and no halo.
+    /// glow (D-246; the flare toward `RuneGlow.pageFlare`); still: the still pose at 0.10 x the strength, no flare, no glow.
     static func runes(_ ctx: inout GraphicsContext, _ size: CGSize, _ t: Double, still: Bool, strength: Double) {
         for i in 0..<RuneDrift.count {
             let p = still ? RuneDrift.still(i, in: size) : RuneDrift.pose(i, t, in: size)
-            let glow = RuneGlow.alphas(opacity: p.opacity, strength: strength, top: RuneGlow.pageFlare,
-                                       glow: still ? 0 : RuneGlow.flare(i, t), still: still)
-            glowingRune(&ctx, p, core: glow.core, halo: glow.halo, glyph: i, haloTag: pageHalo + i)
+            let a = RuneGlow.alphas(opacity: p.opacity, strength: strength, top: RuneGlow.pageFlare,
+                                    flare: still ? 0 : RuneGlow.flare(i, t), glowTop: RuneGlow.pageGlow, still: still)
+            glowingRune(&ctx, p, core: a.core, glow: a.glow, glyph: i, glowTag: pageGlyphGlow + i)
         }
     }
 
@@ -907,31 +1059,32 @@ enum ArtDraw {
         let strength = Strength.of("norseHeroRunes")
         for i in 0..<HeroRunes.count {
             let p = still ? HeroRunes.still(i, in: size) : HeroRunes.pose(i, t, in: size)
-            let glow = RuneGlow.alphas(opacity: p.opacity, strength: strength, top: RuneGlow.heroFlare,
-                                       glow: still ? 0 : HeroRunes.flare(i, t), still: still)
-            glowingRune(&inner, p, core: glow.core, halo: glow.halo, glyph: heroRune + i, haloTag: heroHalo + i)
+            let a = RuneGlow.alphas(opacity: p.opacity, strength: strength, top: RuneGlow.heroFlare,
+                                    flare: still ? 0 : HeroRunes.flare(i, t), glowTop: RuneGlow.heroGlow, still: still)
+            glowingRune(&inner, p, core: a.core, glow: a.glow, glyph: heroRune + i, glowTag: heroGlyphGlow + i)
         }
     }
 
-    /// D-243: a rune at its pose: its halo (a cached disc, centred on it) at `halo`, then its glyph at `core`.
-    private static func glowingRune(_ ctx: inout GraphicsContext, _ p: RuneDrift.Pose, core: Double, halo: Double,
-                                    glyph: Int, haloTag: Int) {
+    /// D-243: a rune at its pose: (D-246) its glow, the glyph's cached blurred mask at the same centre and turn, at
+    /// `glow`, then its glyph at `core`.
+    private static func glowingRune(_ ctx: inout GraphicsContext, _ p: RuneDrift.Pose, core: Double, glow: Double,
+                                    glyph: Int, glowTag: Int) {
         guard core > 0, let symbol = ctx.resolveSymbol(id: glyph) else { return }
-        if halo > 0, let disc = ctx.resolveSymbol(id: haloTag) {
-            var under = ctx
-            under.opacity = halo
-            under.draw(disc, at: CGPoint(x: p.x, y: p.y))
-        }
         var layer = ctx
-        layer.opacity = core
         layer.translateBy(x: p.x, y: p.y)
         layer.rotate(by: .degrees(p.rotationDegrees))
+        if glow > 0, let blurred = ctx.resolveSymbol(id: glowTag) {
+            var under = layer
+            under.opacity = glow
+            under.draw(blurred, at: .zero)
+        }
+        layer.opacity = core
         layer.draw(symbol, at: .zero)
     }
 
     /// D-243: the hero's ᚠ where D-226's Text stood (its box's trailing edge `heroWatermarkTrailing` in, its top at
-    /// `heroWatermarkTop`), at `WatermarkGlow.alpha` x `norseHero`, over its halo while it glows. Still: 0.16, no halo
-    /// (today's ᚠ).
+    /// `heroWatermarkTop`), at `WatermarkGlow.alpha` x `norseHero`, over its glow (D-246) while it glows. Still: 0.16, no
+    /// glow (today's ᚠ).
     static func watermark(_ ctx: inout GraphicsContext, _ size: CGSize, _ t: Double, still: Bool) {
         guard let glyph = ctx.resolveSymbol(id: fehu) else { return }
         let strength = Strength.of("norseHero")
@@ -940,11 +1093,11 @@ enum ArtDraw {
         let left = ((size.width - ThemeArt.m("heroWatermarkTrailing") - glyph.size.width) * scale).rounded() / scale
         let top = (ThemeArt.m("heroWatermarkTop") * scale).rounded() / scale
         let centre = CGPoint(x: left + glyph.size.width / 2, y: top + glyph.size.height / 2)
-        let halo = WatermarkGlow.haloAlpha(t, still: still) * strength
-        if halo > 0, let disc = ctx.resolveSymbol(id: fehuHalo) {
+        let glow = WatermarkGlow.glyphGlowAlpha(t, still: still) * strength
+        if glow > 0, let blurred = ctx.resolveSymbol(id: fehuGlyphGlow) {
             var under = ctx
-            under.opacity = halo
-            under.draw(disc, at: centre)
+            under.opacity = glow
+            under.draw(blurred, at: centre)
         }
         var layer = ctx
         layer.opacity = WatermarkGlow.alpha(t, still: still) * strength
@@ -1025,16 +1178,16 @@ struct RuneLayer: View {
         case .page:
             ArtCanvas(still: 0, symbols: {
                 ForEach(0..<RuneDrift.count, id: \.self) { ArtDraw.runeSymbol($0) }
-                ForEach(ArtDraw.pageHalo..<ArtDraw.pageHalo + RuneDrift.count, id: \.self) { ArtDraw.runeHaloSymbol($0 - ArtDraw.pageHalo) }
+                ForEach(ArtDraw.pageGlyphGlow..<ArtDraw.pageGlyphGlow + RuneDrift.count, id: \.self) { ArtDraw.runeGlowSymbol($0 - ArtDraw.pageGlyphGlow) }
             }) { ctx, size, t in
                 ArtDraw.runes(&ctx, size, t, still: still, strength: Strength.of("norsePageRunes"))
             }
         case .hero:
             ArtCanvas(still: 0, symbols: {
                 ForEach(ArtDraw.heroRune..<ArtDraw.heroRune + HeroRunes.count, id: \.self) { ArtDraw.heroRuneSymbol($0 - ArtDraw.heroRune) }
-                ForEach(ArtDraw.heroHalo..<ArtDraw.heroHalo + HeroRunes.count, id: \.self) { ArtDraw.heroHaloSymbol($0 - ArtDraw.heroHalo) }
+                ForEach(ArtDraw.heroGlyphGlow..<ArtDraw.heroGlyphGlow + HeroRunes.count, id: \.self) { ArtDraw.heroGlowSymbol($0 - ArtDraw.heroGlyphGlow) }
                 ArtDraw.fehuSymbol()
-                ArtDraw.fehuHaloSymbol()
+                ArtDraw.fehuGlowSymbol()
             }) { ctx, size, t in
                 ArtDraw.heroRunes(&ctx, size, t, still: still)
                 ArtDraw.watermark(&ctx, size, t, still: still)

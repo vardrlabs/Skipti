@@ -242,14 +242,19 @@ final class AppearanceTests: XCTestCase {
             }
         }
         // D-243 (.drafts/d214/motion.py section 5, 1c, 1c', 1c''): the art at the top of its glow. A page rune at the top of
-        // its flare (RuneGlow.pageFlare) over its halo (RuneGlow.halo) over each Norse ground, gold and silver; a hero rune
-        // at heroFlare over its halo over each hero stop; the ᚠ at its glow (WatermarkGlow.peak) over its halo. The worst
+        // its flare (RuneGlow.pageFlare) over its glow over each Norse ground, gold and silver; a hero rune at heroFlare over
+        // its glow over each hero stop; the ᚠ at its glow (WatermarkGlow.peak) over its own. D-246 (amended on purpose;
+        // D-243's was the disc halo's alpha): a glow's pixel is its alpha x the blurred mask's peak (motion.py 5a, the floors'
+        // model: the peak under the full core), page 0.145 x 0.3430, hero 0.345 x 0.2657, the ᚠ 0.305 x 0.2319. The worst
         // of each pinned to motion.py's printout (8-bit); textDim's headroom is 0.034.
         let runeColours = [UIColor(hex: ArtDraw.runeGoldHex), UIColor(hex: ArtDraw.runeSilverHex)]
-        func flaring(_ core: Double, _ grounds: [UIColor]) -> [UIColor] {
-            grounds.flatMap { g in runeColours.map { over($0, CGFloat(core), over($0, CGFloat(RuneGlow.halo), g)) } }
+        let pageGlowPixel = RuneGlow.pageGlow * GlyphGlowGoldens.page, heroGlowPixel = RuneGlow.heroGlow * GlyphGlowGoldens.hero
+        XCTAssertEqual(pageGlowPixel, 0.0497, accuracy: 0.0001, "motion.py 5a: the page glow's largest pixel")
+        XCTAssertEqual(heroGlowPixel, 0.0917, accuracy: 0.0001, "motion.py 5a: the hero glow's largest pixel")
+        func flaring(_ core: Double, _ glow: Double, _ grounds: [UIColor]) -> [UIColor] {
+            grounds.flatMap { g in runeColours.map { over($0, CGFloat(core), over($0, CGFloat(glow), g)) } }
         }
-        let flarePage = flaring(RuneGlow.pageFlare, norseGrounds)
+        let flarePage = flaring(RuneGlow.pageFlare, pageGlowPixel, norseGrounds)
         for (n, floor, want) in [("text", 7.0, 8.904), ("textDim", 4.5, 4.534), ("groundFaint", 4.5, 4.534),
                                  ("accent", 4.5, 5.300), ("groundAccent", 4.5, 5.300)] {
             let worst = flarePage.map { contrast8(c(n, .norse), $0) }.min() ?? 0
@@ -257,7 +262,7 @@ final class AppearanceTests: XCTestCase {
             XCTAssertEqual(worst, want, accuracy: 0.002, "norse \(n) over a flaring rune: motion.py's value")
         }
         // The negative: a flare a hundredth over the cap (0.20) leaves the labels under their floor (motion.py: 4.41).
-        let tooBright = flaring(RuneGlow.pageFlare + 0.01, norseGrounds).map { contrast8(c("textDim", .norse), $0) }.min() ?? 9
+        let tooBright = flaring(RuneGlow.pageFlare + 0.01, pageGlowPixel, norseGrounds).map { contrast8(c("textDim", .norse), $0) }.min() ?? 9
         XCTAssertLessThan(tooBright, 4.5)
         XCTAssertEqual(tooBright, 4.41, accuracy: 0.002)
         // D-243 (T7, motion.py 1f, plan test 9): Norse's card-edge glow (accent at a band's alpha) over a flaring rune,
@@ -276,12 +281,18 @@ final class AppearanceTests: XCTestCase {
         XCTAssertEqual(ArtGeometry.glowReach, CGFloat(bands.count) * ThemeArt.m("norseEdgeGlowBand"))
         XCTAssertEqual(ArtGeometry.glowReach, 6, accuracy: 1e-12, "motion.py's CLEAR DISTANCE")
         let heroStops = ["heroStart", "heroMid", "heroEnd"].map { c($0, .norse) }
-        let heroRunes = flaring(RuneGlow.heroFlare, heroStops)
+        let heroRunes = flaring(RuneGlow.heroFlare, heroGlowPixel, heroStops)
         let fehu = heroStops.map { g in
             over(c("accent", .norse), CGFloat(WatermarkGlow.peak * Strength.of("norseHero")),
-                 over(c("accent", .norse), CGFloat(WatermarkGlow.halo * Strength.of("norseHero")), g))
+                 over(c("accent", .norse), CGFloat(WatermarkGlow.glyphGlow * GlyphGlowGoldens.fehu * Strength.of("norseHero")), g))
         }
-        for (name, pixels, onWant, dimWant) in [("a hero rune", heroRunes, 8.377, 5.834), ("the glowing ᚠ", fehu, 7.681, 5.349)] {
+        // The negative: a hero glow one step over motion.py 5a's cap (0.515), 0.52, takes onHero under 7 over a flaring
+        // hero rune (motion.py: 6.955).
+        let heroTooBright = flaring(RuneGlow.heroFlare, 0.52 * GlyphGlowGoldens.hero, heroStops)
+            .map { contrast8(c("onHero", .norse), $0) }.min() ?? 9
+        XCTAssertLessThan(heroTooBright, 7, "over the hero's cap the floor breaks")
+        XCTAssertEqual(heroTooBright, 6.955, accuracy: 0.002)
+        for (name, pixels, onWant, dimWant) in [("a hero rune", heroRunes, 7.738, 5.389), ("the glowing ᚠ", fehu, 8.107, 5.646)] {
             let on = pixels.map { contrast8(c("onHero", .norse), $0) }.min() ?? 0
             let dim = pixels.map { contrast8(norseDim, $0) }.min() ?? 0
             XCTAssertGreaterThanOrEqual(on, 7, "norse hero text over \(name)")
