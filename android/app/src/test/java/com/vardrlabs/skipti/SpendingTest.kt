@@ -155,6 +155,7 @@ class SpendingTest {
             "homeSummary" to SpendingCopy.HOME_SUMMARY, "onlyYouNothingToSplit" to SpendingCopy.ONLY_YOU_NOTHING_TO_SPLIT,
             "onlyYou" to SpendingCopy.ONLY_YOU, "deleteMessage" to SpendingCopy.DELETE_MESSAGE,
             "importIntoJustMe" to SpendingCopy.IMPORT_INTO_JUST_ME, "importAsGroup" to SpendingCopy.IMPORT_AS_GROUP,
+            "unread" to SpendingCopy.UNREAD,
         )
         val hero = mapOf(
             "kicker" to NoGroupHeroCopy.KICKER, "title" to NoGroupHeroCopy.TITLE, "line" to NoGroupHeroCopy.LINE,
@@ -398,15 +399,18 @@ class SpendingTest {
     // ---- Export Just me ----
 
     @Test
-    fun the_just_me_export_is_named_by_month() {
+    fun the_just_me_export_is_named_by_the_phones_day() {
         val date = ZonedDateTime.of(2026, 10, 1, 6, 12, 0, 0, ZoneOffset.UTC)
-        assertEquals("skipti-just-me-2026-10.csv", Exporter.justMeName(date, Exporter.Format.CSV))
-        assertEquals("skipti-just-me-2026-10.json", Exporter.justMeName(date, Exporter.Format.JSON))
-        // UTC, as the export stamp: 23:30 on 31 October in Kolkata is still October in UTC.
-        assertEquals(
-            "skipti-just-me-2026-10.csv",
-            Exporter.justMeName(ZonedDateTime.of(2026, 11, 1, 0, 30, 0, 0, ZoneId.of("Asia/Kolkata")), Exporter.Format.CSV),
-        )
+        assertEquals("skipti-just-me-2026-10-01.csv", Exporter.justMeName(date, Exporter.Format.CSV))
+        assertEquals("skipti-just-me-2026-10-01.json", Exporter.justMeName(date, Exporter.Format.JSON))
+        // Decision 207: the phone's own date, never UTC's. 19:00Z on 31 October is 1 November at 00:30 in Kolkata and
+        // still 31 October in Los Angeles: one instant, each phone's own day.
+        val instant = java.time.Instant.ofEpochSecond(1_793_473_200)
+        assertEquals("skipti-just-me-2026-11-01.csv", Exporter.justMeName(instant.atZone(ZoneId.of("Asia/Kolkata")), Exporter.Format.CSV))
+        assertEquals("skipti-just-me-2026-10-31.csv", Exporter.justMeName(instant.atZone(ZoneId.of("America/Los_Angeles")), Exporter.Format.CSV))
+        // iOS names it the same way: the same pattern in the phone's time zone.
+        val iosExporter = java.io.File("../../ios/Skipti/App/Exporter.swift").readText()
+        assertTrue("formatter.timeZone = timeZone\n        formatter.dateFormat = \"yyyy-MM-dd\"" in iosExporter)
         assertTrue("static let justMePrefix = \"${Exporter.JUST_ME_PREFIX}\"" in java.io.File("../../ios/Skipti/App/Exporter.swift").readText())
         // The personal slice: group-less expenses only.
         val me = "a".repeat(32)
@@ -419,7 +423,7 @@ class SpendingTest {
         assertTrue(slice.groups.isEmpty())
         val screen = main("ExportScreen.kt")
         assertTrue("justMe -> uniffi.skipti_core.ffiSnapshotPersonal(store.snapshot())" in screen)
-        assertTrue("if (justMe) Exporter.justMeName(Exporter.utc(), format)" in screen)
+        assertTrue("if (justMe) Exporter.justMeName(java.time.ZonedDateTime.now(), format)" in screen)
     }
 
     // ---- Wallet into Just me ----
@@ -466,5 +470,158 @@ class SpendingTest {
         assertEquals(listOf("1", "3"), ExpenseSections.build(list, ExpenseSections.Filter.JustMe).first().expenses.map { it.id })
         assertEquals("Just me still last", listOf("g", null), ExpenseSections.build(list, ExpenseSections.Filter.All).map { it.groupId })
         assertEquals(listOf<String?>("g"), ExpenseSections.build(list, ExpenseSections.Filter.Group("g")).map { it.groupId })
+    }
+
+    // ---- Fix wave (.drafts/d249/review.md) ----
+
+    /** Decision 208 (I1): every expense write path checks, in core, that the payer and every share are people of the
+     *  expense's ledger before anything is written: a group's members; for Just me, your own ids. Negatives per field
+     *  and per path (Add, an import batch, an edit's new money); an edit keeps the people the expense already had. The
+     *  twin of iOS's testAnExpenseNamesOnlyItsLedgersPeople. */
+    @Test
+    fun an_expense_names_only_its_ledgers_people() {
+        val store = tempStore()
+        store.setYourName("Sam")
+        val me = store.ensureSelf()
+        val goa = store.createGroup("Goa", "INR", listOf("Meera"))
+        val flat = store.createGroup("Flat 4B", "INR", listOf("Kabir"))
+        val meera = goa.group.members.first { it != goa.selfId }
+        val kabir = flat.group.members.first { it != flat.selfId }
+        fun dto(payer: String, shares: List<Pair<String, Long>>, group: String?) = ExpenseDTO(
+            payer = payer, paidMinor = shares.sumOf { it.second }, currencyCode = "INR", group = group,
+            shares = shares.map { ExpenseDTO.ShareDTO(it.first, it.second) }, timestampMs = 1_791_174_600_000, addedBy = payer,
+        )
+        fun refusedAsOutsider(write: () -> Unit): Boolean =
+            runCatching(write).exceptionOrNull() is uniffi.skipti_core.CoreException.UnknownParticipant
+        assertEquals("Just me is you alone", listOf(me.id), store.ledgerMembers(null))
+        assertEquals(goa.group.members.toSet(), store.ledgerMembers(goa.group.id).toSet())
+        assertEquals("a group not held holds nobody", emptyList<String>(), store.ledgerMembers("c".repeat(32)))
+        val before = store.allRecords().size
+        assertTrue("payer from another group", refusedAsOutsider { store.appendExpense(dto(kabir, listOf(goa.selfId to 100L, meera to 100L), goa.group.id)) })
+        assertTrue("a share from another group", refusedAsOutsider { store.appendExpense(dto(goa.selfId, listOf(goa.selfId to 100L, kabir to 100L), goa.group.id)) })
+        assertTrue("Just me with someone else", refusedAsOutsider { store.appendExpense(dto(me.id, listOf(me.id to 100L, meera to 100L), null)) })
+        assertTrue("Just me paid by someone else", refusedAsOutsider { store.appendExpense(dto(meera, listOf(me.id to 100L), null)) })
+        assertTrue("one outsider in an import writes none", refusedAsOutsider {
+            store.appendExpenses(listOf(dto(me.id, listOf(me.id to 100L), null), dto(me.id, listOf(kabir to 100L), null)))
+        })
+        assertEquals("nothing was written", before, store.allRecords().size)
+        // The honest ones go in.
+        store.appendExpense(dto(goa.selfId, listOf(goa.selfId to 100L, meera to 100L), goa.group.id))
+        store.appendExpense(dto(me.id, listOf(me.id to 100L), null))
+        // An edit's new money: someone from another group is refused; the expense's own people are not.
+        val id = store.projectedExpenses().expenses.first { it.expense.group == goa.group.id }.id
+        fun edit(shares: List<Pair<String, Long>>) = uniffi.skipti_core.ExpenseRevisionIn(
+            id, emptyList(), goa.selfId,
+            ExpenseInput(goa.selfId, shares.sumOf { it.second }, "INR", shares.map { IdAmount(it.first, it.second) }, goa.group.id, null),
+            null, null, null,
+        )
+        val records = store.allRecords().size
+        assertTrue(refusedAsOutsider { store.reviseExpense(edit(listOf(goa.selfId to 100L, kabir to 200L))) })
+        assertEquals("the refused edit wrote nothing", records, store.allRecords().size)
+        store.reviseExpense(edit(listOf(goa.selfId to 150L, meera to 150L)))
+        assertEquals(records + 1, store.allRecords().size)
+    }
+
+    /** I1: a re-created Add expense form (process death, a large-screen rotation, a theme switch) finds the group it was
+     *  on by its saved id, and never keeps another group's people under it. */
+    @Test
+    fun a_recreated_form_keeps_its_group_and_never_another_groups_people() {
+        fun g(id: String, vararg members: String) = NamedGroupWire(GroupWire(id, id, "INR", members.toList()), members.first(), emptyList())
+        val a = g("a", "a1", "a2")
+        val b = g("b", "b1", "b2", "b3")
+        val groups = listOf(a, b)
+        // Chosen B, shown A: back on B with B's people kept.
+        assertEquals(AddExpenseRows.Reload(b, resetPeople = false), AddExpenseRows.reload("b", groups, a, "b2", setOf("b1", "b3")))
+        // Chosen B, but the saved people are A's: B, and its people start again.
+        assertEquals(AddExpenseRows.Reload(b, resetPeople = true), AddExpenseRows.reload("b", groups, a, "a1", setOf("a1", "a2")))
+        assertEquals("one share outside", AddExpenseRows.Reload(b, resetPeople = true), AddExpenseRows.reload("b", groups, a, "b1", setOf("b1", "a2")))
+        assertEquals("the payer outside", AddExpenseRows.Reload(b, resetPeople = true), AddExpenseRows.reload("b", groups, a, "a1", setOf("b1")))
+        // The chosen group is gone (made read-only, or left): the shown one, its people again when they are not its own.
+        assertEquals(AddExpenseRows.Reload(a, resetPeople = true), AddExpenseRows.reload("gone", groups, a, "b1", setOf("b1")))
+        assertEquals(AddExpenseRows.Reload(a, resetPeople = false), AddExpenseRows.reload(null, groups, a, "a1", setOf("a1", "a2")))
+        assertEquals(AddExpenseRows.Reload(null, resetPeople = false), AddExpenseRows.reload("b", emptyList(), null, "b1", setOf("b1")))
+        // The screen saves the chosen id and resolves a reload through this function, resetting payer and people.
+        val screen = main("AddExpenseScreen.kt")
+        assertTrue("var chosenGroupId by rememberSaveable { mutableStateOf<String?>(null) }" in screen)
+        assertTrue("val reload = AddExpenseRows.reload(chosenGroupId, all, current, payer, participants)" in screen)
+        assertTrue("if (reload.resetPeople) {\n                            payer = g.selfId\n                            participants = g.group.members.toSet()" in screen)
+        assertEquals("set on every choice and cleared for Just me", 4, screen.split("chosenGroupId = ").size - 1)
+    }
+
+    /** I2: the page's place (view, month, Chart or Table, last read, scroll) lives in a [SpendingKeep] held by the shell
+     *  above its route switch, one per opening of the page, so an expense or Export opened from it comes back to it. */
+    @Test
+    fun the_page_keeps_its_place_above_the_route_switch() {
+        val keep = SpendingKeep(start = SpendingMonth(2026, 10))
+        assertNull(keep.opened)
+        assertEquals(SpendingMonth(2026, 10), keep.month)
+        assertFalse(keep.table)
+        assertEquals(0, keep.scroll.value)
+        keep.opened = SpendingView.ALL
+        keep.month = SpendingMonth(2026, 8)
+        keep.table = true
+        assertEquals(SpendingView.ALL, keep.opened)
+        assertEquals(SpendingMonth(2026, 8), keep.month)
+        assertTrue(keep.table)
+        assertEquals("a fresh one starts on this month", SpendingMonth.current(), SpendingKeep().month)
+        val page = main("Spending.kt").substringAfter("fun SpendingScreen(").substringBefore("\n}\n")
+        for (held in listOf("var opened by keep::opened", "var month by keep::month", "var table by keep::table", "var loaded by keep::loaded", "val scroll = keep.scroll")) {
+            assertTrue(held, held in page)
+        }
+        assertFalse("no state of its own that a route would drop", "SpendingMonth.current()) }" in page || "rememberScrollState()" in page)
+        val root = main("AppRoot.kt")
+        assertTrue("val spendingKeep = remember(vaultPath, spendingOpen) { SpendingKeep() }" in root)
+        assertTrue("above the route switch", root.indexOf("val spendingKeep = ") < root.indexOf("if (r == \"export-justme\")"))
+        assertEquals("both openings pass it", 2, root.split("keep = spendingKeep,").size - 1)
+    }
+
+    /** M2: Home's card says it could not read the month, never "Nothing yet this month". */
+    @Test
+    fun the_card_says_when_the_month_could_not_be_read() {
+        val (loaded, failed) = SpendingLoad.cardRead { error("vault") }
+        assertNull(loaded)
+        assertTrue(failed)
+        assertEquals("Could not read your spending.", SpendingCopy.cardEmpty(true))
+        assertEquals(SpendingCopy.EMPTY, SpendingCopy.cardEmpty(false))
+        assertEquals("Your spending, Just me, Could not read your spending.", SpendingCopy.spoken("Just me", null, failed = true))
+        val card = main("Spending.kt")
+        assertTrue("Text(SpendingCopy.cardEmpty(failed), " in card)
+        assertFalse("Text(SpendingCopy.EMPTY, " in card)
+        val home = main("OverviewTab.kt")
+        assertTrue("SpendingLoad.cardRead { SpendingLoad.load(store, SpendingMonth.current(), view) }" in home)
+        assertTrue("keep.spendingFailed.value = read?.first?.second ?: true" in home)
+        assertTrue("spending, spendingFailed, SpendingPrefs.shownView, myName, myAvatar, dark," in home)
+    }
+
+    /** M4: the Expenses tab always ends with the Just me section (empty when there is no Just me expense), so Your spending
+     *  is reachable with Spending on Home off; a group's chip narrows to that group alone. iOS's twin is
+     *  testTheJustMeHeaderIsAlwaysThere. */
+    @Test
+    fun the_just_me_header_is_always_there() {
+        fun e(id: String, group: String?) = ProjectedExpenseOut(
+            id, ExpenseInput("a", 1, "INR", listOf(IdAmount("a", 1)), group, null),
+            null, null, 1u, null, 1u, false, null, null, emptyList(), emptyList(),
+        )
+        val groupOnly = listOf(e("1", "g"))
+        assertEquals(listOf("g", null), ExpenseSections.build(groupOnly, ExpenseSections.Filter.All).map { it.groupId })
+        assertEquals("empty, its header alone", 0, ExpenseSections.build(groupOnly, ExpenseSections.Filter.All).last().expenses.size)
+        assertEquals(listOf<String?>(null), ExpenseSections.build(groupOnly, ExpenseSections.Filter.JustMe).map { it.groupId })
+        assertEquals("a group's chip", listOf<String?>("g"), ExpenseSections.build(groupOnly, ExpenseSections.Filter.Group("g")).map { it.groupId })
+        assertEquals("one Just me", listOf("g", null), ExpenseSections.build(listOf(e("1", "g"), e("2", null)), ExpenseSections.Filter.All).map { it.groupId })
+        assertTrue("if (section.expenses.isNotEmpty()) Column(Modifier.glassCard(dark, padding = 14)) {" in main("ExpenseListScreen.kt"))
+    }
+
+    /** M5 and M6: Add expense writes Compose state on the main thread only (read off it, set in onSuccess), and the
+     *  spending switches are read in onCreate before the first frame (no flip from the defaults). */
+    @Test
+    fun state_is_set_on_the_main_thread_and_the_switches_load_before_the_first_frame() {
+        val add = main("AddExpenseScreen.kt")
+        val io = add.substringAfter("// D-249 fix wave (M5)").substringBefore("result.fold(")
+        assertFalse("myName =" in io || "myAvatar =" in io)
+        assertTrue("myName = me.first\n                myAvatar = me.second" in add)
+        val root = main("AppRoot.kt")
+        val create = root.substringAfter("override fun onCreate(savedInstanceState: Bundle?) {").substringBefore("setContent {")
+        assertTrue("SpendingPrefs.load(applicationContext)" in create)
+        for ((file, text) in mainSources()) assertFalse("$file loads lazily", "LaunchedEffect(Unit) { SpendingPrefs.load" in text)
     }
 }

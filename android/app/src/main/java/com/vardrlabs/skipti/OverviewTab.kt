@@ -202,6 +202,8 @@ class HomeKeep(val scroll: ScrollState = ScrollState(0)) {
     val error = mutableStateOf<String?>(null)
     /** D-249 (decisions 163, 189): Your spending this month in the card's view, and your name and picture for its tile. */
     val spending = mutableStateOf<SpendingLoad.Loaded?>(null)
+    /** D-249 fix wave (M2): this month's read failed; the card says so. */
+    val spendingFailed = mutableStateOf(false)
     val myName = mutableStateOf<String?>(null)
     val myAvatar = mutableStateOf<Avatar>(Avatar.None)
 
@@ -277,26 +279,27 @@ fun OverviewScreen(
     val loaded by keep.loaded
     val error by keep.error
     val spending by keep.spending
+    val spendingFailed by keep.spendingFailed
     val myName by keep.myName
     val myAvatar by keep.myAvatar
     val context = androidx.compose.ui.platform.LocalContext.current
-    LaunchedEffect(Unit) { SpendingPrefs.load(context) }
     // D-249: this month's Your spending in the card's view, your name and picture for its tile; read again on a sync, a
     // switch of the view and a profile change (the welcome saves your name while Home waits under it). A failed read
-    // leaves the card empty (Home's own error line says the ledger could not be read).
+    // says so on the card (fix wave M2: never "Nothing yet this month", which is not known).
     LaunchedEffect(vaultPath, SyncStatus.revision, SpendingPrefs.shownView, ProfileState.revision) {
         val view = SpendingPrefs.shownView
         val read = withContext(Dispatchers.IO) {
             runCatching {
                 val store = LedgerStore(vaultPath)
                 Triple(
-                    runCatching { SpendingLoad.load(store, SpendingMonth.current(), view) }.getOrNull(),
+                    SpendingLoad.cardRead { SpendingLoad.load(store, SpendingMonth.current(), view) },
                     runCatching { store.loadSelf()?.name }.getOrNull(),
                     runCatching { store.loadAvatar() }.getOrDefault(Avatar.None),
                 )
             }.getOrNull()
         }
-        keep.spending.value = read?.first
+        keep.spending.value = read?.first?.first
+        keep.spendingFailed.value = read?.first?.second ?: true
         keep.myName.value = read?.second
         keep.myAvatar.value = read?.third ?: Avatar.None
     }
@@ -372,7 +375,7 @@ fun OverviewScreen(
                 if (SpendingPrefs.shownOnHome) {
                     SectionLabel(SpendingCopy.TITLE, dark, Modifier.padding(top = 4.dp), color = Tok.text(dark))
                     SpendingCard(
-                        spending, SpendingPrefs.shownView, myName, myAvatar, dark,
+                        spending, spendingFailed, SpendingPrefs.shownView, myName, myAvatar, dark,
                         onView = { SpendingPrefs.setView(context, it) },
                         onOpen = onOpenSpending,
                     )

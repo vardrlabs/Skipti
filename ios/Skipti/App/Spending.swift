@@ -14,9 +14,12 @@ enum SpendingCopy {
     static let thisMonth = "This month"
     static func more(_ n: Int) -> String { "+\(n) more" }
     static let empty = "Nothing yet this month"
+    /// D-249 fix wave (M2): the card when this month could not be read (never "Nothing yet": that is not known).
+    static let unread = "Could not read your spending."
+    static func cardEmpty(failed: Bool) -> String { failed ? unread : empty }
     /// The card to VoiceOver: "Your spending, Just me, four thousand ... this month".
-    static func spoken(view: String, amount: String?) -> String {
-        guard let amount else { return "\(title), \(view), \(empty)" }
+    static func spoken(view: String, amount: String?, failed: Bool = false) -> String {
+        guard let amount else { return "\(title), \(view), \(cardEmpty(failed: failed))" }
         return "\(title), \(view), \(amount) this month"
     }
     static let hint = "Opens your spending"
@@ -170,6 +173,15 @@ enum SpendingLoad {
         var hasAny: Bool
         /// Group id to its name, for "{group}, your share".
         var groupNames: [String: String]
+        /// D-249 fix wave (M1): the groups read once for the page, so a row's expense opens in its group without
+        /// reading the store again per row.
+        var groups: [String: NamedGroupWire] = [:]
+    }
+
+    /// D-249 fix wave (M2): Home's card read: the month, or that it could not be read (the card then says so, never
+    /// "Nothing yet this month").
+    static func cardRead(_ read: () throws -> Loaded) -> (loaded: Loaded?, failed: Bool) {
+        do { return (try read(), false) } catch { return (nil, true) }
     }
 
     /// The live expenses as core's spending inputs: the row keeps the leaf, the slice counts under its parent (as the
@@ -209,7 +221,8 @@ enum SpendingLoad {
             ? !(try ffiSpending(expenses: inputs, groups: yours, fromMs: 0, untilMs: UInt64.max, view: view)).rows.isEmpty
             : true
         return Loaded(out: out, hasAny: ever,
-                      groupNames: Dictionary(named.map { ($0.group.id, $0.group.name) }, uniquingKeysWith: { a, _ in a }))
+                      groupNames: Dictionary(named.map { ($0.group.id, $0.group.name) }, uniquingKeysWith: { a, _ in a }),
+                      groups: Dictionary(named.map { ($0.group.id, $0) }, uniquingKeysWith: { a, _ in a }))
     }
 }
 
@@ -315,6 +328,8 @@ struct SpendingBar: View {
 /// always-present container, CLAUDE.md 10.1).
 struct SpendingCard: View {
     let loaded: SpendingLoad.Loaded?
+    /// D-249 fix wave (M2): this month could not be read.
+    var failed = false
     @Binding var view: SpendingView
     let name: String?
     let avatar: Avatar
@@ -347,7 +362,7 @@ struct SpendingCard: View {
                                     }
                                 }
                             } else {
-                                Text(verbatim: SpendingCopy.empty)
+                                Text(verbatim: SpendingCopy.cardEmpty(failed: failed))
                                     .font(TypeRole.body(TypeScale.prose)).foregroundStyle(Tokens.textDim)
                             }
                         }
@@ -361,7 +376,7 @@ struct SpendingCard: View {
             .buttonStyle(.plain)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Text(verbatim: SpendingCopy.spoken(
-                view: view.label, amount: first.map { RolesMoney.spoken($0.totalMinor, $0.currencyCode) })))
+                view: view.label, amount: first.map { RolesMoney.spoken($0.totalMinor, $0.currencyCode) }, failed: failed)))
             .accessibilityHint(Text(verbatim: SpendingCopy.hint))
             .accessibilityAddTraits(.isButton)
         }
@@ -564,7 +579,7 @@ struct SpendingScreen: View {
             ForEach(Array(l.out.rows.enumerated()), id: \.element.id) { i, row in
                 if i > 0 { Divider().overlay(Tokens.hairline) }
                 NavigationLink {
-                    ExpenseDetailView(store: store, expenseID: row.id, named: named(row.group))
+                    ExpenseDetailView(store: store, expenseID: row.id, named: row.group.flatMap { l.groups[$0] })
                 } label: {
                     SpendingRow(row: row, tree: tree, groupNames: l.groupNames)
                 }
@@ -573,11 +588,6 @@ struct SpendingScreen: View {
             }
         }
         .glassCard(padding: 14)
-    }
-
-    private func named(_ group: String?) -> NamedGroupWire? {
-        guard let group else { return nil }
-        return (try? store.namedGroups())?.first { $0.group.id == group }
     }
 
     private func emptyCard(_ l: SpendingLoad.Loaded) -> some View {

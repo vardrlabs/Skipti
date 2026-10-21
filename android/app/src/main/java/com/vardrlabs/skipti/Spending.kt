@@ -20,7 +20,7 @@ import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.text.TextAutoSize
@@ -88,9 +88,12 @@ object SpendingCopy {
     const val THIS_MONTH = "This month"
     fun more(n: Int) = "+$n more"
     const val EMPTY = "Nothing yet this month"
+    /** D-249 fix wave (M2): the card when this month could not be read (never "Nothing yet": that is not known). */
+    const val UNREAD = "Could not read your spending."
+    fun cardEmpty(failed: Boolean): String = if (failed) UNREAD else EMPTY
     /** The card to TalkBack: "Your spending, Just me, four thousand ... this month". */
-    fun spoken(view: String, amount: String?): String =
-        if (amount == null) "$TITLE, $view, $EMPTY" else "$TITLE, $view, $amount this month"
+    fun spoken(view: String, amount: String?, failed: Boolean = false): String =
+        if (amount == null) "$TITLE, $view, ${cardEmpty(failed)}" else "$TITLE, $view, $amount this month"
     const val HINT = "Opens your spending"
     const val ALL_NOTE = "Your share of group expenses, plus Just me."
     fun groupMeta(group: String) = "$group, your share"
@@ -262,6 +265,11 @@ object SpendingLoad {
         /** Group id to its name, for "{group}, your share". */
         val groupNames: Map<String, String>,
     )
+
+    /** D-249 fix wave (M2): Home's card read: the month, or that it could not be read (the card then says so, never
+     *  "Nothing yet this month"). iOS's twin is `SpendingLoad.cardRead`. */
+    fun cardRead(read: () -> Loaded): Pair<Loaded?, Boolean> =
+        runCatching(read).fold(onSuccess = { it to false }, onFailure = { null to true })
 
     /** The live expenses as core's spending inputs: the row keeps the leaf, the slice counts under its parent (as the
      *  group page's `ffiGroupStats`). */
@@ -442,6 +450,8 @@ fun SpendingBar(slices: List<CategoryShareOut>, dark: Boolean, height: Int = 6) 
 @Composable
 fun SpendingCard(
     loaded: SpendingLoad.Loaded?,
+    /** D-249 fix wave (M2): this month could not be read. */
+    failed: Boolean,
     view: SpendingView,
     name: String?,
     avatar: Avatar,
@@ -459,7 +469,7 @@ fun SpendingCard(
             Spacer(Modifier.weight(1f).widthIn(min = 8.dp))
             SpendingSwitch(view, dark, compact = true, onPick = onView)
         }
-        val spoken = SpendingCopy.spoken(view.label, first?.let { RolesMoney.spoken(it.totalMinor, it.currencyCode) })
+        val spoken = SpendingCopy.spoken(view.label, first?.let { RolesMoney.spoken(it.totalMinor, it.currencyCode) }, failed)
         Column(
             Modifier
                 .fillMaxWidth()
@@ -497,7 +507,7 @@ fun SpendingCard(
                             }
                         }
                     } else {
-                        Text(SpendingCopy.EMPTY, style = Type.bodyDim(dark).copy(fontSize = TypeScale.prose.sp))
+                        Text(SpendingCopy.cardEmpty(failed), style = Type.bodyDim(dark).copy(fontSize = TypeScale.prose.sp))
                     }
                 }
                 RowChevron(Tok.textDim(dark))
@@ -532,6 +542,17 @@ fun ChartTableSwitch(table: Boolean, dark: Boolean, onTable: (Boolean) -> Unit) 
     }
 }
 
+/** D-249 fix wave (I2): the page's place (the view this visit opened in, the month, Chart or Table, the last read, the
+ *  scroll), held by the shell ABOVE its route switch, so an expense or Export opened from the page comes back to it as
+ *  it was, as iOS's NavigationStack keeps it. One per opening of the page: the shell makes a fresh one each time the
+ *  page is opened ([SpendingOpen]); memory only. */
+class SpendingKeep(val scroll: ScrollState = ScrollState(0), start: SpendingMonth = SpendingMonth.current()) {
+    var opened by mutableStateOf<SpendingView?>(null)
+    var month by mutableStateOf(start)
+    var table by mutableStateOf(false)
+    var loaded by mutableStateOf<SpendingLoad.Loaded?>(null)
+}
+
 /** The page "Your spending": the switch, the month, Spent per currency (never converted), where the money went (Chart or
  *  Table, the largest currency's slices), and the month's expenses newest first. Reached from Home's card and from the
  *  Expenses tab's Just me header (decision 190; [fromJustMeHeader], decision 206). The + opens Add expense on Just me
@@ -545,20 +566,21 @@ fun SpendingScreen(
     onBack: () -> Unit,
     onOpenExpense: (String) -> Unit,
     onExport: () -> Unit,
+    /** D-249 fix wave (I2): the page's place, held by the shell above its route switch ([SpendingKeep]). */
+    keep: SpendingKeep,
 ) {
     val context = LocalContext.current
-    LaunchedEffect(Unit) { SpendingPrefs.load(context) }
     // Decision 206: the view this visit opened in until the switch is tapped; null reads the remembered one.
-    var opened by remember { mutableStateOf<SpendingView?>(null) }
+    var opened by keep::opened
     val view = opened ?: SpendingPrefs.pageStart(fromJustMeHeader, SpendingPrefs.shownView)
     fun pick(v: SpendingView) {
         opened = v
         SpendingPrefs.setView(context, v)
     }
-    var month by remember { mutableStateOf(SpendingMonth.current()) }
-    var loaded by remember { mutableStateOf<SpendingLoad.Loaded?>(null) }
+    var month by keep::month
+    var loaded by keep::loaded
     var error by remember { mutableStateOf<String?>(null) }
-    var table by remember { mutableStateOf(false) }
+    var table by keep::table
     var menu by remember { mutableStateOf(false) }
     val isCurrent = month == SpendingMonth.current()
 
@@ -574,7 +596,7 @@ fun SpendingScreen(
         onDispose { SpendingPresence.shown = false }
     }
 
-    val scroll = rememberScrollState()
+    val scroll = keep.scroll
     val ownBackdrop = rememberBackdrop()
     val backdrop = LocalShellBackdrop.current ?: ownBackdrop
     val tree = CategoryLevels.tree

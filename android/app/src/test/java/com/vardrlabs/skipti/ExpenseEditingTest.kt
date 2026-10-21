@@ -159,6 +159,7 @@ class ExpenseEditingTest {
         }
         val path = Files.createTempDirectory("editing-test").resolve("ledger-vault.db").toString()
         val store = LedgerStore(path) { SkiptiVault.open(path, keystore) }
+        HeldLedgers.group(store, group, listOf(me, rahul)) // decision 208
         store.appendExpense(
             ExpenseDTO(
                 payer = me, paidMinor = 120_000, currencyCode = "INR", group = group, conversion = null,

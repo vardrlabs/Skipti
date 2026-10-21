@@ -24,7 +24,15 @@ final class ExpenseRevisionTests: XCTestCase {
     }
 
     private func store() -> LedgerStore {
-        LedgerStore(path: dir.appendingPathComponent("ledger.db").path)
+        let s = LedgerStore(path: dir.appendingPathComponent("ledger.db").path)
+        // Decision 208: the vault holds the group its expenses are written into.
+        try! HeldLedgers.group(s, id: group, members: [me, rahul])
+        return s
+    }
+
+    /// The expense and revision records (decision 208: the held group's own backfilled record is not counted).
+    private func moneyRecords(_ s: LedgerStore) throws -> Int {
+        try s.allRecords().filter { $0.recordType == LedgerStore.Sync.expenseType || $0.recordType == LedgerStore.Sync.revisionType }.count
     }
 
     private func expense(_ amount: Int64, note: String) -> LedgerStore.ExpenseDTO {
@@ -76,7 +84,7 @@ final class ExpenseRevisionTests: XCTestCase {
         XCTAssertEqual(e.lastEditedBy, rahul)
         XCTAssertEqual(e.lastEditedAtMs, 6_000)
         XCTAssertEqual(e.seen.count, 1)
-        XCTAssertEqual(try s.allRecords().count, 2, "the edit is a new record; the original stays")
+        XCTAssertEqual(try moneyRecords(s), 2, "the edit is a new record; the original stays")
     }
 
     func testAMoneyEditMovesTheAmountAndTheShares() throws {
@@ -113,7 +121,7 @@ final class ExpenseRevisionTests: XCTestCase {
         let id = try onlyExpense(s).id
         try s.reviseExpense(edit(id, note: "taxi"), nowMs: 6_000)
         XCTAssertEqual(try LedgerStore.Sync.backfillLegacyRecords(s), 0)
-        XCTAssertEqual(try s.allRecords().count, 2)
+        XCTAssertEqual(try moneyRecords(s), 2)
         try s.rebuildProjection()
         XCTAssertEqual(try s.loadExpenses().map(\.note), ["taxi"], "still ONE expense")
     }
@@ -127,6 +135,6 @@ final class ExpenseRevisionTests: XCTestCase {
                 return XCTFail("expected unknownExpense, got \(error)")
             }
         }
-        XCTAssertEqual(try s.allRecords().count, 1, "nothing was written")
+        XCTAssertEqual(try moneyRecords(s), 1, "nothing was written")
     }
 }

@@ -57,6 +57,7 @@ final class CategoryWiringTests: XCTestCase {
     /// Assign → append → CLOSE → reopen → the category is ON the record.
     func testAssignedCategorySurvivesTheVaultLoop() throws {
         let store = try tempStore()
+        try HeldLedgers.me(store, id: String(repeating: "a", count: 31) + "1") // decision 208: a Just me expense is yours
         _ = try store.appendExpense(dto(category: groceriesId))
 
         let reloaded = try store.loadExpenses()
@@ -81,6 +82,7 @@ final class CategoryWiringTests: XCTestCase {
     /// §9.2: the category rides the envelope (schema v2 on) losslessly.
     func testCategoryRoundTripsThroughTheJsonEnvelope() throws {
         let store = try tempStore()
+        try HeldLedgers.me(store, id: String(repeating: "a", count: 31) + "1") // decision 208: a Just me expense is yours
         _ = try store.appendExpense(dto(category: groceriesId))
         let snapshot = try store.snapshot()
 

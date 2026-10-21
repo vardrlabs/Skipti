@@ -63,12 +63,18 @@ enum Exporter {
 
     /// Every export file's name starts with this (`write`).
     static let filePrefix = "skipti-export-"
-    /// D-249 (U10): "Export Just me" writes `skipti-just-me-YYYY-MM.csv` (or .json): fixed text and the month, never a
-    /// name (SPEC 9.3), UTC as `filenameStamp`.
+    /// D-249 (U10): "Export Just me" writes `skipti-just-me-YYYY-MM-DD.csv` (or .json): fixed text and the day it was
+    /// made, never a name (SPEC 9.3). Decision 207: the phone's own date (Gregorian, in `timeZone`), not UTC, and the
+    /// day, not a month (the file holds every Just me month). Android's twin is `Exporter.justMeName`.
     static let justMePrefix = "skipti-just-me-"
 
-    static func justMeName(_ date: Date, format: Format) -> String {
-        "\(justMePrefix)\(String(filenameStamp(date).prefix(7))).\(format.fileExtension)"
+    static func justMeName(_ date: Date, format: Format, timeZone: TimeZone = .current) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = timeZone
+        formatter.dateFormat = "yyyy-MM-dd"
+        return "\(justMePrefix)\(formatter.string(from: date)).\(format.fileExtension)"
     }
 
     /// D-235 (C4, iOS M1): the plaintext export files in `directory` (the app's tmp): removed once the share sheet is

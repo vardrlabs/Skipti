@@ -249,6 +249,8 @@ class AddExpenseTest {
     @Test
     fun append_expense_persists_through_the_vault_loop() {
         val fixture = VaultFixture()
+        // Decision 208: the vault holds the group (its id is the fixture's) and its people.
+        HeldLedgers.group(fixture.store(), BalanceFixtures.ada, listOf(BalanceFixtures.ada, BalanceFixtures.rahul, BalanceFixtures.amit))
         val first = AddExpenseUi.buildExpense(
             amountText = "25.00", currency = "USD", note = "Taxi",
             category = null,

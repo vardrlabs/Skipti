@@ -2391,6 +2391,37 @@ pub fn ffi_check_expense(expense: ExpenseInput) -> Result<(), CoreError> {
     Ok(())
 }
 
+/// D-249 (decision 208): [`ffi_check_expense`], then the people: the payer
+/// and every share's id must be in `members`, the ledger's people as the
+/// writing phone holds them (a group's members; for Just me, your own ids).
+/// Both shells run it on every expense write path before anything is
+/// written (Add, Edit's new money, import); ingest does not (a peer's record
+/// is not refused for it: CLAUDE.md 10's cursor rule). A money rule broken
+/// is that rule's error; a member that is not an id is `InvalidInput`; an
+/// id not in `members` (an empty list holds nobody) is `UnknownParticipant`.
+#[uniffi::export]
+pub fn ffi_check_expense_members(
+    expense: ExpenseInput,
+    members: Vec<String>,
+) -> Result<(), CoreError> {
+    ffi_check_expense(expense.clone())?;
+    for m in &members {
+        if !crate::straumr::check::is_id(m) {
+            return Err(CoreError::InvalidInput(format!(
+                "member {m:?} is not 32 lowercase hex"
+            )));
+        }
+    }
+    let held: std::collections::HashSet<&str> = members.iter().map(String::as_str).collect();
+    if !held.contains(expense.payer.as_str()) {
+        return Err(CoreError::UnknownParticipant);
+    }
+    if expense.shares.iter().any(|s| !held.contains(s.id.as_str())) {
+        return Err(CoreError::UnknownParticipant);
+    }
+    Ok(())
+}
+
 /// D-235 (decision 103): the rules a settlement record keeps, for both
 /// shells' ingest: two different ids, a known currency, an amount above 0
 /// and at most `straumr::check::MAX_AMOUNT_MINOR`, the group an id.
@@ -6723,6 +6754,165 @@ mod tests {
                 .next()
                 .unwrap()
                 .to_string(),
+        }
+    }
+
+    /// D-249 (decision 208): every `ffi_check_expense_members` verdict, pinned
+    /// from `.drafts/d249/fw/members_goldens.py`, which re-derives them
+    /// independently. A negative per field (payer, first share, last share),
+    /// no members, a member that is not an id, the money rules first, and
+    /// Just me's own ids (you and an alias) against another person.
+    #[test]
+    fn d249_members_goldens_match_the_independent_derivation() {
+        let id = |n: &str| -> String {
+            match n {
+                "a" => format!("{}1", "0".repeat(31)),
+                "b" => format!("{}2", "0".repeat(31)),
+                "c" => format!("{}3", "0".repeat(31)),
+                "d" => format!("{}4", "0".repeat(31)),
+                "me" => format!("{}aa", "0".repeat(30)),
+                "alias" => format!("{}bb", "0".repeat(30)),
+                "UP" => format!("{}AB", "0".repeat(30)),
+                other => panic!("no id {other}"),
+            }
+        };
+        // name, payer, paid, shares, members, verdict
+        type Case<'a> = (
+            &'a str,
+            &'a str,
+            i64,
+            Vec<(&'a str, i64)>,
+            Vec<&'a str>,
+            &'a str,
+        );
+        let cases: Vec<Case> = vec![
+            (
+                "group, all members",
+                "a",
+                300,
+                vec![("a", 100), ("b", 200)],
+                vec!["a", "b", "c"],
+                "ok",
+            ),
+            (
+                "group, payer not a member",
+                "d",
+                300,
+                vec![("a", 100), ("b", 200)],
+                vec!["a", "b", "c"],
+                "UnknownParticipant",
+            ),
+            (
+                "group, first share not a member",
+                "a",
+                300,
+                vec![("d", 100), ("b", 200)],
+                vec!["a", "b", "c"],
+                "UnknownParticipant",
+            ),
+            (
+                "group, last share not a member",
+                "a",
+                300,
+                vec![("a", 100), ("d", 200)],
+                vec!["a", "b", "c"],
+                "UnknownParticipant",
+            ),
+            (
+                "group, payer outside, shares in",
+                "d",
+                300,
+                vec![("a", 300)],
+                vec!["a", "b"],
+                "UnknownParticipant",
+            ),
+            (
+                "no members",
+                "a",
+                100,
+                vec![("a", 100)],
+                vec![],
+                "UnknownParticipant",
+            ),
+            (
+                "a member not an id",
+                "a",
+                100,
+                vec![("a", 100)],
+                vec!["a", "UP"],
+                "InvalidInput",
+            ),
+            (
+                "money first: shares do not add up",
+                "d",
+                300,
+                vec![("a", 100), ("d", 100)],
+                vec!["a"],
+                "TotalMismatch(300,200)",
+            ),
+            (
+                "just me, you",
+                "me",
+                1240,
+                vec![("me", 1240)],
+                vec!["me", "alias"],
+                "ok",
+            ),
+            (
+                "just me, an alias",
+                "alias",
+                500,
+                vec![("alias", 500)],
+                vec!["me", "alias"],
+                "ok",
+            ),
+            (
+                "just me, someone else's share",
+                "me",
+                900,
+                vec![("me", 450), ("b", 450)],
+                vec!["me", "alias"],
+                "UnknownParticipant",
+            ),
+            (
+                "just me, someone else paid",
+                "b",
+                900,
+                vec![("me", 900)],
+                vec!["me", "alias"],
+                "UnknownParticipant",
+            ),
+            (
+                "members listed twice",
+                "a",
+                100,
+                vec![("a", 100)],
+                vec!["a", "a"],
+                "ok",
+            ),
+        ];
+        assert_eq!(cases.len(), 13, "the golden table's rows");
+        for (name, payer, paid, shares, members, want) in cases {
+            let e = ExpenseInput {
+                payer: id(payer),
+                paid_minor: paid,
+                currency_code: "INR".into(),
+                shares: shares
+                    .iter()
+                    .map(|(s, a)| IdAmount {
+                        id: id(s),
+                        amount_minor: *a,
+                    })
+                    .collect(),
+                group: None,
+                conversion: None,
+            };
+            let members = members.iter().map(|m| id(m)).collect();
+            assert_eq!(
+                d235_verdict(ffi_check_expense_members(e, members)),
+                want,
+                "{name}"
+            );
         }
     }
 

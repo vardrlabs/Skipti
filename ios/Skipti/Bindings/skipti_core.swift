@@ -10424,6 +10424,24 @@ public func ffiCheckExpense(expense: ExpenseInput)throws   {try rustCallWithErro
 }
 }
 /**
+ * D-249 (decision 208): [`ffi_check_expense`], then the people: the payer
+ * and every share's id must be in `members`, the ledger's people as the
+ * writing phone holds them (a group's members; for Just me, your own ids).
+ * Both shells run it on every expense write path before anything is
+ * written (Add, Edit's new money, import); ingest does not (a peer's record
+ * is not refused for it: CLAUDE.md 10's cursor rule). A money rule broken
+ * is that rule's error; a member that is not an id is `InvalidInput`; an
+ * id not in `members` (an empty list holds nobody) is `UnknownParticipant`.
+ */
+public func ffiCheckExpenseMembers(expense: ExpenseInput, members: [String])throws   {try rustCallWithError(FfiConverterTypeCoreError_lift) {
+        uniffiCallStatus in
+    uniffi_skipti_core_fn_func_ffi_check_expense_members(
+        FfiConverterTypeExpenseInput_lower(expense),
+        FfiConverterSequenceString.lower(members),uniffiCallStatus
+    )
+}
+}
+/**
  * D-235 (decision 103): the rules a settlement record keeps, for both
  * shells' ingest: two different ids, a known currency, an amount above 0
  * and at most `straumr::check::MAX_AMOUNT_MINOR`, the group an id.
@@ -11206,6 +11224,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_skipti_core_checksum_func_ffi_check_expense() != 62679) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_skipti_core_checksum_func_ffi_check_expense_members() != 57253) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_skipti_core_checksum_func_ffi_check_settlement() != 49524) {

@@ -357,11 +357,14 @@ object ExpenseDetailUi {
      *  expense of ₹1,200 and two amount edits with empty `seen`. Returns the
      *  vault path, the expense id and the group the page names people from. */
     fun seedConflict(dir: java.io.File): Triple<String, String, NamedGroupWire> {
-        val asha = "0".repeat(31) + "1"
-        val ravi = "0".repeat(31) + "2"
-        val group = "0".repeat(31) + "9"
         val path = java.io.File(dir.apply { deleteRecursively(); mkdirs() }, "ledger-vault.db").absolutePath
         val store = LedgerStore(path)
+        // D-249 fix wave (decision 208): a write names only a held group's people, so the throwaway vault holds the
+        // proof fixture group (core-made id) and the proof's two people are its first two members.
+        val held = store.loadGroupsOrSeed().first()
+        val asha = held.members[0]
+        val ravi = held.members[1]
+        val group = held.id
         fun money(minor: Long): uniffi.skipti_core.ExpenseInput = uniffi.skipti_core.ExpenseInput(
             payer = asha, paidMinor = minor, currencyCode = "INR",
             shares = uniffi.skipti_core.ffiSplitCompute(minor, "INR", listOf(asha, ravi), uniffi.skipti_core.SplitSpecInput.Equal)

@@ -32,7 +32,11 @@ class ExpenseRevisionTest {
         }
         val path: String =
             Files.createTempDirectory("revisions-test").resolve("ledger-vault.db").toString()
-        fun store(): LedgerStore = LedgerStore(path) { SkiptiVault.open(path, keystore) }
+        private var held = false
+        // Decision 208: the vault holds the group its expenses are written into.
+        fun store(): LedgerStore = LedgerStore(path) { SkiptiVault.open(path, keystore) }.also {
+            if (!held) { held = true; HeldLedgers.group(it, "0".repeat(31) + "9", listOf("0".repeat(31) + "1", "0".repeat(31) + "2")) }
+        }
     }
 
     private val me = "0".repeat(31) + "1"
@@ -66,6 +70,10 @@ class ExpenseRevisionTest {
         category = null, deleted = deleted,
     )
 
+    /** The expense and revision records (decision 208: the held group's own backfilled record is not counted). */
+    private fun moneyRecords(store: LedgerStore): Int =
+        store.allRecords().count { it.recordType == 1u.toUByte() || it.recordType == LedgerStore.REVISION_TYPE }
+
     private fun onlyExpense(store: LedgerStore): ProjectedExpenseOut {
         val all = store.projectedExpenses().expenses
         assertEquals(1, all.size)
@@ -97,7 +105,7 @@ class ExpenseRevisionTest {
         assertEquals(rahul, e.lastEditedBy)
         assertEquals(6_000uL, e.lastEditedAtMs)
         assertEquals(1, e.seen.size)
-        assertEquals("the edit is a new record; the original stays", 2, s.allRecords().size)
+        assertEquals("the edit is a new record; the original stays", 2, moneyRecords(s))
     }
 
     @Test
@@ -136,7 +144,7 @@ class ExpenseRevisionTest {
         val id = onlyExpense(s).id
         s.reviseExpense(edit(id, note = "taxi"), nowMs = 6_000)
         assertEquals(0, s.backfillLegacyRecords())
-        assertEquals(2, s.allRecords().size)
+        assertEquals(2, moneyRecords(s))
         s.rebuildProjection()
         assertEquals("still ONE expense", listOf("taxi"), s.loadExpenses().map { it.note })
     }

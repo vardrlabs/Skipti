@@ -120,7 +120,7 @@ fun ExportScreen(
         // is the only place bytes are written.
         acknowledged = true
         val stamp = Exporter.filenameStamp(Exporter.utc())
-        val name = if (justMe) Exporter.justMeName(Exporter.utc(), format) else "${Exporter.FILENAME_PREFIX}-$stamp.${format.fileExtension}"
+        val name = if (justMe) Exporter.justMeName(java.time.ZonedDateTime.now(), format) else "${Exporter.FILENAME_PREFIX}-$stamp.${format.fileExtension}"
         if (format == Exporter.Format.CSV) csvCreate.launch(name) else jsonCreate.launch(name)
     }
 

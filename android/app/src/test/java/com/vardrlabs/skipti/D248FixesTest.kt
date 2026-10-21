@@ -106,6 +106,7 @@ class D248FixesTest {
         val keystore = MemoryKeystore()
         val path = Files.createTempDirectory("d248-prefill").resolve("ledger-vault.db").toString()
         val store = LedgerStore(path) { SkiptiVault.open(path, keystore) }
+        HeldLedgers.group(store, group, listOf(me, rahul)) // decision 208
         store.appendExpense(
             ExpenseDTO(
                 payer = me, paidMinor = 1_005, currencyCode = "KWD", group = group,
@@ -307,6 +308,7 @@ class D248FixesTest {
         val keystore = MemoryKeystore()
         val path = Files.createTempDirectory("d248-undo").resolve("ledger-vault.db").toString()
         val store = LedgerStore(path) { SkiptiVault.open(path, keystore) }
+        HeldLedgers.group(store, group, listOf(me, rahul)) // decision 208
         store.appendExpense(
             ExpenseDTO(
                 payer = me, paidMinor = 120_000, currencyCode = "INR", group = group,

@@ -1005,7 +1005,6 @@ private fun MotionRow(dark: Boolean) {
 @Composable
 private fun SpendingHomeRow(dark: Boolean) {
     val context = LocalContext.current
-    LaunchedEffect(Unit) { SpendingPrefs.load(context) }
     ListCard(dark) {
         row {
             ListRow(

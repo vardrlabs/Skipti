@@ -159,6 +159,9 @@ class MainActivity : ComponentActivity() {
         ScreenPrivacy.apply(window)
         // D-165: the default currency (D-244: once chosen, it follows the account).
         DefaultCurrency.load(applicationContext)
+        // D-249 fix wave (M6): Your spending's view and Spending on Home, before the first frame (no flip from the
+        // defaults on Home or the page).
+        SpendingPrefs.load(applicationContext)
         setContent {
             // The phone's configuration with the chosen mode's night bit, so
             // every screen's `isSystemInDarkTheme()` follows the setting, and
@@ -724,6 +727,9 @@ private fun HomeShell(
     /** D-249: Your spending's page, inside the tab it was opened from: [SpendingOpen.CARD] over Balance (Home's card),
      *  [SpendingOpen.HEADER] over Expenses (the Just me header, decision 206); null: not open. */
     var spendingOpen by rememberSaveable { mutableStateOf<String?>(null) }
+    /** D-249 fix wave (I2): the page's place, above the route switch (an expense or Export opened from the page replaces
+     *  it on screen, and Back finds it as it was); a fresh one each time the page opens. */
+    val spendingKeep = remember(vaultPath, spendingOpen) { SpendingKeep() }
     /** D-221 (Design 12; fix wave S8): each group's page memory between loads, kept per group for as long as the app
      *  runs (a pushed page, another tab or another group replaces the page, and this keeps its last settled state and a
      *  waiting celebration), so a group settled while its page was off screen plays when the page is next on screen.
@@ -1348,6 +1354,7 @@ private fun HomeShell(
                                 onBack = { spendingOpen = null },
                                 onOpenExpense = { route = "expense/$it" },
                                 onExport = { route = "export-justme" },
+                                keep = spendingKeep,
                             )
                         } else if (selectedTab == HomeTab.BALANCE) {
                             OverviewScreen(
@@ -1396,6 +1403,7 @@ private fun HomeShell(
                                 onBack = { spendingOpen = null },
                                 onOpenExpense = { route = "expense/$it" },
                                 onExport = { route = "export-justme" },
+                                keep = spendingKeep,
                             )
                         } else {
                             ExpenseListScreen(

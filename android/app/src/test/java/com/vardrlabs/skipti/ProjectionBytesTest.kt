@@ -33,6 +33,7 @@ class ProjectionBytesTest {
 
     private fun seededStore(): LedgerStore {
         val s = LedgerStore(path) { SkiptiVault.open(path, keystore) }
+        HeldLedgers.group(s, group, listOf(me, rahul)) // decision 208
         val base = ExpenseDTO(
             payer = me, paidMinor = 90_000, currencyCode = "INR", group = group, conversion = null,
             shares = listOf(ExpenseDTO.ShareDTO(me, 45_000), ExpenseDTO.ShareDTO(rahul, 45_000)),

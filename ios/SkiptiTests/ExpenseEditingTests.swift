@@ -152,6 +152,7 @@ final class ExpenseEditingTests: XCTestCase {
 
     private func seededStore() throws -> (LedgerStore, String) {
         let store = LedgerStore(path: dir.appendingPathComponent("ledger.db").path)
+        try HeldLedgers.group(store, id: group, members: [me, rahul]) // decision 208
         _ = try store.appendExpense(LedgerStore.ExpenseDTO(
             payer: me, paidMinor: 120_000, currencyCode: "INR", group: group, conversion: nil,
             shares: [.init(id: me, amountMinor: 60_000), .init(id: rahul, amountMinor: 60_000)],

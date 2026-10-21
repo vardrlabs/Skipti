@@ -39,12 +39,18 @@ enum ExpenseSections {
         case group(String)
     }
 
+    /// D-249 fix wave (M4): All and Just me always end with the Just me section, empty when there is no Just me
+    /// expense, so its header (Your spending's door, decision 190) is there with Spending on Home off. Android's twin.
     static func build(_ expenses: [ProjectedExpenseOut], filter: Filter) -> [Section] {
         switch filter {
-        case .all: return build(expenses, only: nil)
+        case .all: return withJustMe(build(expenses, only: nil))
         case .group(let id): return build(expenses, only: id)
-        case .justMe: return build(expenses, only: nil).filter { $0.groupID == nil }
+        case .justMe: return withJustMe(build(expenses, only: nil).filter { $0.groupID == nil })
         }
+    }
+
+    private static func withJustMe(_ sections: [Section]) -> [Section] {
+        sections.contains { $0.groupID == nil } ? sections : sections + [Section(groupID: nil, expenses: [])]
     }
 
     struct Section {
@@ -150,7 +156,8 @@ struct ExpenseListView: View {
                         chips
                         ForEach(ExpenseSections.build(expenses, filter: filter), id: \.groupID) { section in
                             sectionHeader(section)
-                            VStack(spacing: 0) {
+                            // D-249 fix wave (M4): an empty Just me section is its header alone (no count, no card).
+                            if !section.expenses.isEmpty { VStack(spacing: 0) {
                                 ForEach(Array(section.expenses.enumerated()), id: \.element.id) { index, expense in
                                     if index > 0 { Divider().overlay(Tokens.hairline) }
                                     NavigationLink {
@@ -195,7 +202,7 @@ struct ExpenseListView: View {
                                     .hapticWarning(when: confirmingDelete?.id == expense.id)
                                 }
                             }
-                            .glassCard(padding: 14)
+                            .glassCard(padding: 14) }
                         }
                     }
                     .padding(16)
@@ -261,8 +268,10 @@ struct ExpenseListView: View {
             Text(verbatim: named?.group.name ?? ExpenseCopy.justMe)
                 .font(TypeRole.name(17)).foregroundStyle(Tokens.text)
             Spacer()
-            Text(verbatim: Self.countLabel(section.expenses.count))
-                .font(TypeRole.body(TypeScale.groupCount)).foregroundStyle(Tokens.textDim)
+            if !section.expenses.isEmpty {
+                Text(verbatim: Self.countLabel(section.expenses.count))
+                    .font(TypeRole.body(TypeScale.groupCount)).foregroundStyle(Tokens.textDim)
+            }
             if section.groupID == nil { RowChevron(color: Tokens.textDim) }
         }
         .padding(.top, 6)

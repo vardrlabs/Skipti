@@ -183,6 +183,8 @@ extension LedgerStore {
         // D-229: the kv ledger keeps the merged "you"; only the record is
         // written as the group knows this account (`Placing`).
         let placing = try Placing.load(self)
+        // D-249 (decision 208): the payer and every share are people of the expense's ledger, before anything is written.
+        try checkMembers(expense)
         // D-235 (decision 103): never write what every phone (this one included) refuses at ingest: core's rules on
         // the record as written, before anything is.
         try ffiCheckExpense(expense: try placing.expense(expense).asInput)
@@ -216,7 +218,12 @@ extension LedgerStore {
         // D-229: as `appendExpense`: the records as this account's places.
         let placing = try Placing.load(self)
         var records: [RecordWire] = []
+        // D-249 (decision 208): each ledger's people, read once.
+        var people: [String?: [String]] = [:]
         for expense in expenses {
+            let members = try people[expense.group] ?? ledgerMembers(expense.group)
+            people[expense.group] = members
+            try checkMembers(expense, members: members)
             // D-235 (decision 103): as `appendExpense`; one refused leaves the vault untouched (nothing is written yet).
             try ffiCheckExpense(expense: try placing.expense(expense).asInput)
             try NoteLimit.check(expense.note)
@@ -233,6 +240,23 @@ extension LedgerStore {
         vault = try VaultGate.open(path: path, keystore: KeychainKeystore())
         defer { try? vault.closeVault() }
         return try loadExpenses(from: &vault)
+    }
+
+    /// D-249 (decision 208): the people an expense may name, as this phone holds them (the kv ledger's ids, before
+    /// `Placing` maps "you" to a group's place): a group's members, nobody for a group this phone does not hold; for
+    /// Just me (no group), your own ids (you and your aliases; nobody before you exist). Android: `ledgerMembers`.
+    func ledgerMembers(_ group: String?) throws -> [String] {
+        guard let group else {
+            guard let me = try loadSelf() else { return [] }
+            return [me.id] + (me.aliases ?? [])
+        }
+        return try loadGroups().first(where: { $0.id == group })?.members ?? []
+    }
+
+    /// D-249 (decision 208): core's money rules and then the people (`ledgerMembers`), before a write. A refusal is a
+    /// `CoreError` (`.UnknownParticipant` for someone outside the ledger) and nothing is written.
+    func checkMembers(_ expense: ExpenseDTO, members: [String]? = nil) throws {
+        try ffiCheckExpenseMembers(expense: expense.asInput, members: try members ?? ledgerMembers(expense.group))
     }
 
     func loadExpenses() throws -> [ExpenseDTO] {
@@ -1248,6 +1272,14 @@ extension LedgerStore {
         let current = try projectedExpenses()
         guard let target = current.expenses.first(where: { $0.id == revision.target }) else {
             throw LoadError.unknownExpense
+        }
+        // D-249 (decision 208): new money names only the ledger's people, or the people the expense already had (an
+        // edit keeps someone who has since left the group).
+        if let money = revision.money {
+            let had = [target.expense.payer] + target.expense.shares.map(\.id)
+            var members = try ledgerMembers(target.expense.group)
+            for id in had where !members.contains(id) { members.append(id) }
+            try ffiCheckExpenseMembers(expense: money, members: members)
         }
         // D-229: the editor and new money as the group knows this account.
         let placed = try Placing.load(self).revision(revision, group: target.expense.group)

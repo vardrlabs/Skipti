@@ -396,6 +396,11 @@ RustBuffer uniffi_skipti_core_fn_func_ffi_category_tree_default(RustCallStatus *
 void uniffi_skipti_core_fn_func_ffi_check_expense(RustBuffer expense, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SKIPTI_CORE_FN_FUNC_FFI_CHECK_EXPENSE_MEMBERS
+#define UNIFFI_FFIDEF_UNIFFI_SKIPTI_CORE_FN_FUNC_FFI_CHECK_EXPENSE_MEMBERS
+void uniffi_skipti_core_fn_func_ffi_check_expense_members(RustBuffer expense, RustBuffer members, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SKIPTI_CORE_FN_FUNC_FFI_CHECK_SETTLEMENT
 #define UNIFFI_FFIDEF_UNIFFI_SKIPTI_CORE_FN_FUNC_FFI_CHECK_SETTLEMENT
 void uniffi_skipti_core_fn_func_ffi_check_settlement(RustBuffer settlement, RustCallStatus *_Nonnull out_status
@@ -1031,6 +1036,12 @@ uint16_t uniffi_skipti_core_checksum_func_ffi_category_tree_default(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SKIPTI_CORE_CHECKSUM_FUNC_FFI_CHECK_EXPENSE
 #define UNIFFI_FFIDEF_UNIFFI_SKIPTI_CORE_CHECKSUM_FUNC_FFI_CHECK_EXPENSE
 uint16_t uniffi_skipti_core_checksum_func_ffi_check_expense(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SKIPTI_CORE_CHECKSUM_FUNC_FFI_CHECK_EXPENSE_MEMBERS
+#define UNIFFI_FFIDEF_UNIFFI_SKIPTI_CORE_CHECKSUM_FUNC_FFI_CHECK_EXPENSE_MEMBERS
+uint16_t uniffi_skipti_core_checksum_func_ffi_check_expense_members(void
     
 );
 #endif

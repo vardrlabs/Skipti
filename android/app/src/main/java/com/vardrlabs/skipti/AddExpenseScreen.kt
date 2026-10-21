@@ -233,6 +233,20 @@ object AddExpenseRows {
     /** Just me has nothing to split: the Split section, the kind's hint, the itemised cards and the summary line are not
      *  drawn; "Only you. Nothing to split." is. */
     fun showsSplit(justMe: Boolean): Boolean = !justMe
+
+    /** D-249 fix wave (I1): what a re-created form (process death, a large-screen rotation, a theme switch) holds. */
+    data class Reload(val group: NamedGroupWire?, val resetPeople: Boolean)
+
+    /** D-249 fix wave (I1): the group a re-created form is on: the one chosen ([chosenId], saved with the form), else
+     *  [fallback] (the group shown). Its people are kept only when [payer] and every one of [participants] are its
+     *  members; otherwise (the chosen group is gone, or the saved people are another group's) they start again as a new
+     *  choice of that group does: you paying, everyone in. */
+    fun reload(chosenId: String?, groups: List<NamedGroupWire>, fallback: NamedGroupWire?, payer: String, participants: Set<String>): Reload {
+        val group = groups.firstOrNull { it.group.id == chosenId } ?: fallback ?: return Reload(null, resetPeople = false)
+        val members = group.group.members.toSet()
+        val kept = payer in members && participants.isNotEmpty() && members.containsAll(participants)
+        return Reload(group, resetPeople = !kept)
+    }
 }
 
 /**
@@ -530,6 +544,8 @@ fun AddExpenseScreen(
     var participants by rememberSaveable { mutableStateOf(emptySet<String>()) }
     var payer by rememberSaveable { mutableStateOf("") }
     var named by remember { mutableStateOf<NamedGroupWire?>(null) }
+    /** D-249 fix wave (I1): the chosen group's id, saved with the form (the group object is read again on a reload). */
+    var chosenGroupId by rememberSaveable { mutableStateOf<String?>(null) }
     var groupLoaded by remember { mutableStateOf(false) }
     /** D-183: every group, for the Group picker inside the sheet. */
     var groups by remember { mutableStateOf<List<NamedGroupWire>>(emptyList()) }
@@ -622,9 +638,9 @@ fun AddExpenseScreen(
         val result = withContext(Dispatchers.IO) {
             runCatching {
                 val store = LedgerStore(vaultPath)
-                myName = runCatching { store.loadSelf()?.name }.getOrNull()
-                myAvatar = runCatching { store.loadAvatar() }.getOrDefault(Avatar.None)
-                try {
+                // D-249 fix wave (M5): read here, set on the main thread below (Compose state is never written off it).
+                val me = runCatching { store.loadSelf()?.name }.getOrNull() to runCatching { store.loadAvatar() }.getOrDefault(Avatar.None)
+                me to try {
                     // D-183: the sheet can file it under any group. D-210: not a
                     // read-only copy, which takes nothing new.
                     val copies = store.readOnlyChecked().keys
@@ -640,7 +656,10 @@ fun AddExpenseScreen(
             }
         }
         result.fold(
-            onSuccess = { (current, all, created) ->
+            onSuccess = { (me, read) ->
+                val (current, all, created) = read
+                myName = me.first
+                myAvatar = me.second
                 groups = all
                 ledgerCreated = created
                 // Filled in once: coming back from a choice page or a rotation keeps the ledger, people and currency
@@ -652,15 +671,27 @@ fun AddExpenseScreen(
                         justMe = true
                     } else if (current != null) {
                         named = current
+                        chosenGroupId = current.group.id
                         payer = current.selfId
                         if (participants.isEmpty()) participants = current.group.members.toSet()
                         // A fresh form starts in the group's settlement currency
                         // (twin of D-135; iOS started in USD for an INR group).
                         if (amountText.isEmpty()) currency = current.group.settlementCurrency
                     }
-                } else if (!justMe && named == null && current != null) {
-                    // A recreation keeps the chosen group (the choice is saved, the group object is read again).
-                    named = current
+                } else if (!justMe && named == null) {
+                    // D-249 fix wave (I1): a re-created form finds its chosen group again by its saved id; people that
+                    // are not that group's start again (never one group's people under another's expense).
+                    val reload = AddExpenseRows.reload(chosenGroupId, all, current, payer, participants)
+                    reload.group?.let { g ->
+                        named = g
+                        chosenGroupId = g.group.id
+                        if (reload.resetPeople) {
+                            payer = g.selfId
+                            participants = g.group.members.toSet()
+                            draft = AddExpenseUi.allKinds.first { it::class == draft::class }
+                            if (amountText.isEmpty()) currency = g.group.settlementCurrency
+                        }
+                    }
                 }
             },
             onFailure = { error = it.message?.takeIf { m -> m.isNotBlank() } ?: it.toString() },
@@ -681,6 +712,7 @@ fun AddExpenseScreen(
         val previousCurrency = if (justMe) DefaultCurrency.current else named?.group?.settlementCurrency
         justMe = false
         named = next
+        chosenGroupId = next.group.id
         payer = next.selfId
         participants = next.group.members.toSet()
         draft = AddExpenseUi.allKinds.first { it::class == draft::class }
@@ -695,6 +727,7 @@ fun AddExpenseScreen(
                 val previousCurrency = named?.group?.settlementCurrency
                 justMe = true
                 named = null
+                chosenGroupId = null
                 payer = ""
                 participants = emptySet()
                 if (amountText.isEmpty() || currency == previousCurrency) currency = DefaultCurrency.current

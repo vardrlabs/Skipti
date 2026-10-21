@@ -363,9 +363,15 @@ struct ExpenseConflictProofScreen: View {
                 .appendingPathComponent("conflict-proof-\(UUID().uuidString)", isDirectory: true)
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             let store = LedgerStore(path: dir.appendingPathComponent("ledger.db").path)
-            let asha = String(repeating: "0", count: 31) + "1"
-            let ravi = String(repeating: "0", count: 31) + "2"
-            let group = String(repeating: "0", count: 31) + "9"
+            // D-249 fix wave (decision 208): a write names only a held group's people, so the throwaway vault holds the
+            // proof fixture group (core-made id) and the proof's two people are its first two members.
+            guard let held = try store.loadGroupsOrSeed().first, held.members.count >= 2 else {
+                error = "no fixture group"
+                return
+            }
+            let asha = held.members[0]
+            let ravi = held.members[1]
+            let group = held.id
             let named = NamedGroupWire(
                 group: GroupWire(id: group, name: "Goa", settlementCurrency: "INR", members: [asha, ravi]),
                 selfId: asha,

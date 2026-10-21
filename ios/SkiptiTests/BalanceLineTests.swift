@@ -192,10 +192,14 @@ final class BalanceLineTests: XCTestCase {
             spec: .equal
         )
         XCTAssertEqual(computed.map(\.minorUnits), [834, 833, 833], "largest-remainder via core")
+        // Decision 208: a shared expense belongs to a group the vault holds, its people the group's.
+        let trip = String(repeating: "0", count: 31) + "7"
+        try HeldLedgers.group(store, id: trip, members: [Fixtures.ada, Fixtures.rahul, Fixtures.priya], currency: "USD")
         _ = try store.appendExpense(.init(
             payer: Fixtures.ada,
             paidMinor: 2_500,
             currencyCode: "USD",
+            group: trip,
             shares: computed.map { .init(id: $0.id, amountMinor: $0.minorUnits) }
         ))
 
@@ -207,7 +211,7 @@ final class BalanceLineTests: XCTestCase {
             settlements: [],
             redistributions: [],
             removed: [], viewer: Fixtures.ada,
-            group: nil
+            group: trip
         )
         XCTAssertEqual(lines.count, 1)
         XCTAssertEqual(lines[0].currencyCode, "USD")

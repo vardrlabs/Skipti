@@ -731,6 +731,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_skipti_core_checksum_func_ffi_check_expense(
     ): Int
+    external fun uniffi_skipti_core_checksum_func_ffi_check_expense_members(
+    ): Int
     external fun uniffi_skipti_core_checksum_func_ffi_check_settlement(
     ): Int
     external fun uniffi_skipti_core_checksum_func_ffi_convert_minor(
@@ -941,6 +943,8 @@ internal object UniffiLib {
     external fun uniffi_skipti_core_fn_func_ffi_category_tree_default(uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_skipti_core_fn_func_ffi_check_expense(`expense`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_skipti_core_fn_func_ffi_check_expense_members(`expense`: RustBuffer.ByValue,`members`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     external fun uniffi_skipti_core_fn_func_ffi_check_settlement(`settlement`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
@@ -1215,6 +1219,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_skipti_core_checksum_func_ffi_check_expense() != 62679) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_skipti_core_checksum_func_ffi_check_expense_members() != 57253) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_skipti_core_checksum_func_ffi_check_settlement() != 49524) {
@@ -11376,6 +11383,28 @@ public object FfiConverterSequenceTypeCondition: FfiConverterRustBuffer<List<Con
     
         
         FfiConverterTypeExpenseInput.lower(`expense`),_status)
+}
+    
+    
+
+        /**
+         * D-249 (decision 208): [`ffi_check_expense`], then the people: the payer
+         * and every share's id must be in `members`, the ledger's people as the
+         * writing phone holds them (a group's members; for Just me, your own ids).
+         * Both shells run it on every expense write path before anything is
+         * written (Add, Edit's new money, import); ingest does not (a peer's record
+         * is not refused for it: CLAUDE.md 10's cursor rule). A money rule broken
+         * is that rule's error; a member that is not an id is `InvalidInput`; an
+         * id not in `members` (an empty list holds nobody) is `UnknownParticipant`.
+         */
+    @Throws(CoreException::class) fun `ffiCheckExpenseMembers`(`expense`: ExpenseInput, `members`: List<kotlin.String>)
+        = 
+    uniffiRustCallWithError(CoreException) { _status ->
+    UniffiLib.uniffi_skipti_core_fn_func_ffi_check_expense_members(
+    
+        
+        FfiConverterTypeExpenseInput.lower(`expense`),
+        FfiConverterSequenceString.lower(`members`),_status)
 }
     
     

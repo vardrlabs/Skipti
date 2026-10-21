@@ -871,6 +871,12 @@ class LedgerStore(
         checkText(revision.note)
         val target = projectedExpenses().expenses.firstOrNull { it.id == revision.target }
             ?: throw UnknownExpenseException()
+        // D-249 (decision 208): new money names only the ledger's people, or the people the expense already had (an
+        // edit keeps someone who has since left the group).
+        revision.money?.let { money ->
+            val had = listOf(target.expense.payer) + target.expense.shares.map { it.id }
+            uniffi.skipti_core.ffiCheckExpenseMembers(money, (ledgerMembers(target.expense.group) + had).distinct())
+        }
         // D-229: the editor and the new money name the place its group knows
         // this account by (the seen list is untouched).
         val written = Placing.load(this).revision(revision, target.expense.group)
@@ -1411,6 +1417,8 @@ class LedgerStore(
         // first, so a record core refuses leaves the vault untouched.
         val placing = Placing.load(this)
         checkText(expense.note)
+        // D-249 (decision 208): the payer and every share are people of the expense's ledger, before anything is written.
+        checkMembers(expense)
         // D-235: core's money rules, before anything is stamped or written: this phone never writes what every phone
         // (this one included) refuses to read from a group's log. A refusal is a CoreException the screen shows.
         uniffi.skipti_core.ffiCheckExpense(placing.expense(expense).toInput())
@@ -1432,6 +1440,25 @@ class LedgerStore(
     }
 
     /**
+     * D-249 (decision 208): the people an expense may name, as this phone holds them (the kv ledger's ids, before
+     * [Placing] maps "you" to a group's place): a group's members, nobody for a group this phone does not hold; for
+     * Just me (no group), your own ids (you and your aliases; nobody before you exist). iOS: `ledgerMembers`.
+     */
+    fun ledgerMembers(group: String?): List<String> {
+        if (group == null) {
+            val me = loadSelf() ?: return emptyList()
+            return listOf(me.id) + (me.aliases ?: emptyList())
+        }
+        return loadGroups().firstOrNull { it.id == group }?.members ?: emptyList()
+    }
+
+    /** D-249 (decision 208): core's money rules and then the people ([ledgerMembers]), before a write. A refusal is a
+     *  CoreException (`UnknownParticipant` for someone outside the ledger) and nothing is written. */
+    fun checkMembers(expense: ExpenseDTO, members: List<String> = ledgerMembers(expense.group)) {
+        uniffi.skipti_core.ffiCheckExpenseMembers(expense.toInput(), members)
+    }
+
+    /**
      * D-166: an import's expenses in ONE vault session, each as kv state AND
      * an ADR-0034 record (HLC stamped at creation, like [appendExpense]), then
      * read back. Every record is built before anything is written, so a record
@@ -1446,9 +1473,12 @@ class LedgerStore(
         // D-229: the records name the place (the "you" column was bound to the
         // merged "you"); kv keeps the expenses as given.
         val placing = Placing.load(this)
-        // D-235: every one checked before any is stamped or written.
+        // D-235: every one checked before any is stamped or written. D-249 (decision 208): its people too, each
+        // ledger's read once.
+        val people = HashMap<String?, List<String>>()
         expenses.forEach {
             checkText(it.note)
+            checkMembers(it, people.getOrPut(it.group) { ledgerMembers(it.group) })
             uniffi.skipti_core.ffiCheckExpense(placing.expense(it).toInput())
         }
         val records = expenses.map { Sync.expenseRecord(it, Sync.nextHlc(this, nowMs), device, placing) }

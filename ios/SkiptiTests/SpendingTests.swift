@@ -257,6 +257,9 @@ final class SpendingTests: XCTestCase {
         XCTAssertEqual(all.out.currencies.map(\.totalMinor), [169_000])
         XCTAssertEqual(Set(all.out.rows.map(\.amountMinor)), [124_000, 45_000])
         XCTAssertEqual(all.groupNames[group.group.id], "Flat 4B")
+        // Fix wave M1: the page's rows open in their group from this one read (no store read per row).
+        XCTAssertEqual(all.groups[group.group.id]?.group.id, group.group.id)
+        XCTAssertNil(all.groups["not-a-group"])
         // Another month is empty, and says so as a month (there is spending elsewhere).
         let last = try SpendingLoad.load(store, month: month.adding(-1), view: .justMe)
         XCTAssertTrue(last.out.rows.isEmpty)
@@ -302,10 +305,18 @@ final class SpendingTests: XCTestCase {
 
     // MARK: - Export Just me
 
-    func testTheJustMeExportIsNamedByMonthAndCleanedUp() throws {
+    func testTheJustMeExportIsNamedByThePhonesDayAndCleanedUp() throws {
         let date = Date(timeIntervalSince1970: 1_790_835_120) // 2026-10-01T06:12:00Z
-        XCTAssertEqual(Exporter.justMeName(date, format: .csv), "skipti-just-me-2026-10.csv")
-        XCTAssertEqual(Exporter.justMeName(date, format: .json), "skipti-just-me-2026-10.json")
+        let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
+        XCTAssertEqual(Exporter.justMeName(date, format: .csv, timeZone: utc), "skipti-just-me-2026-10-01.csv")
+        XCTAssertEqual(Exporter.justMeName(date, format: .json, timeZone: utc), "skipti-just-me-2026-10-01.json")
+        // Decision 207: the phone's own date, never UTC's. 19:00Z on 31 October is 1 November at 00:30 in Kolkata and
+        // still 31 October in Los Angeles: one instant, each phone's own day.
+        let instant = Date(timeIntervalSince1970: 1_793_473_200)
+        XCTAssertEqual(Exporter.justMeName(instant, format: .csv, timeZone: try XCTUnwrap(TimeZone(identifier: "Asia/Kolkata"))),
+                       "skipti-just-me-2026-11-01.csv")
+        XCTAssertEqual(Exporter.justMeName(instant, format: .csv, timeZone: try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles"))),
+                       "skipti-just-me-2026-10-31.csv")
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("exp-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         try Data("x".utf8).write(to: dir.appendingPathComponent("skipti-just-me-2026-10.csv"))
@@ -371,6 +382,107 @@ final class SpendingTests: XCTestCase {
         XCTAssertEqual(ExpenseSections.build(list, filter: .group("g")).map(\.groupID), ["g"])
     }
 
+    // MARK: - Fix wave (.drafts/d249/review.md)
+
+    /// Decision 208 (I1): every expense write path checks, in core, that the payer and every share are people of the
+    /// expense's ledger before anything is written: a group's members; for Just me, your own ids. Negatives per field
+    /// and per path (Add, an import batch, an edit's new money); an edit keeps the people the expense already had.
+    func testAnExpenseNamesOnlyItsLedgersPeople() throws {
+        let store = try tempStore()
+        try store.setYourName("Sam")
+        let me = try store.ensureSelf()
+        let goa = try store.createGroup(name: "Goa", settlementCurrency: "INR", people: ["Meera"])
+        let flat = try store.createGroup(name: "Flat 4B", settlementCurrency: "INR", people: ["Kabir"])
+        let meera = try XCTUnwrap(goa.group.members.first { $0 != goa.selfId })
+        let kabir = try XCTUnwrap(flat.group.members.first { $0 != flat.selfId })
+        func dto(_ payer: String, _ shares: [(String, Int64)], group: String?) -> LedgerStore.ExpenseDTO {
+            LedgerStore.ExpenseDTO(payer: payer, paidMinor: shares.reduce(0) { $0 + $1.1 }, currencyCode: "INR",
+                                   group: group, conversion: nil,
+                                   shares: shares.map { .init(id: $0.0, amountMinor: $0.1) }, note: nil,
+                                   timestampMs: 1_791_174_600_000, category: nil, addedBy: payer)
+        }
+        func refusedAsOutsider(_ write: () throws -> Void) -> Bool {
+            do { try write(); return false } catch CoreError.UnknownParticipant { return true } catch { return false }
+        }
+        XCTAssertEqual(try store.ledgerMembers(nil), [me.id], "Just me is you alone")
+        XCTAssertEqual(Set(try store.ledgerMembers(goa.group.id)), Set(goa.group.members))
+        XCTAssertEqual(try store.ledgerMembers(String(repeating: "c", count: 32)), [], "a group not held holds nobody")
+        let before = try store.allRecords().count
+        XCTAssertTrue(refusedAsOutsider { _ = try store.appendExpense(dto(kabir, [(goa.selfId, 100), (meera, 100)], group: goa.group.id)) },
+                      "payer from another group")
+        XCTAssertTrue(refusedAsOutsider { _ = try store.appendExpense(dto(goa.selfId, [(goa.selfId, 100), (kabir, 100)], group: goa.group.id)) },
+                      "a share from another group")
+        XCTAssertTrue(refusedAsOutsider { _ = try store.appendExpense(dto(me.id, [(me.id, 100), (meera, 100)], group: nil)) },
+                      "Just me with someone else")
+        XCTAssertTrue(refusedAsOutsider { _ = try store.appendExpense(dto(meera, [(me.id, 100)], group: nil)) },
+                      "Just me paid by someone else")
+        XCTAssertTrue(refusedAsOutsider { _ = try store.appendExpenses([dto(me.id, [(me.id, 100)], group: nil),
+                                                                      dto(me.id, [(kabir, 100)], group: nil)]) },
+                      "one outsider in an import writes none")
+        XCTAssertEqual(try store.allRecords().count, before, "nothing was written")
+        // The honest ones go in.
+        _ = try store.appendExpense(dto(goa.selfId, [(goa.selfId, 100), (meera, 100)], group: goa.group.id))
+        _ = try store.appendExpense(dto(me.id, [(me.id, 100)], group: nil))
+        // An edit's new money: someone from another group is refused; the expense's own people are not.
+        let id = try XCTUnwrap(try store.projectedExpenses().expenses.first { $0.expense.group == goa.group.id }?.id)
+        func edit(_ shares: [(String, Int64)]) -> ExpenseRevisionIn {
+            ExpenseRevisionIn(target: id, seen: [], editor: goa.selfId,
+                              money: ExpenseInput(payer: goa.selfId, paidMinor: shares.reduce(0) { $0 + $1.1 }, currencyCode: "INR",
+                                                  shares: shares.map { IdAmount(id: $0.0, amountMinor: $0.1) },
+                                                  group: goa.group.id, conversion: nil),
+                              note: nil, category: nil, deleted: nil)
+        }
+        let records = try store.allRecords().count
+        XCTAssertTrue(refusedAsOutsider { try store.reviseExpense(edit([(goa.selfId, 100), (kabir, 200)])) })
+        XCTAssertEqual(try store.allRecords().count, records, "the refused edit wrote nothing")
+        XCTAssertNoThrow(try store.reviseExpense(edit([(goa.selfId, 150), (meera, 150)])))
+    }
+
+    /// Fix wave M2: Home's card says it could not read the month, never "Nothing yet this month".
+    func testTheCardSaysWhenTheMonthCouldNotBeRead() {
+        struct Broken: Error {}
+        let failed = SpendingLoad.cardRead { throw Broken() }
+        XCTAssertNil(failed.loaded)
+        XCTAssertTrue(failed.failed)
+        XCTAssertEqual(SpendingCopy.cardEmpty(failed: true), "Could not read your spending.")
+        XCTAssertEqual(SpendingCopy.cardEmpty(failed: false), SpendingCopy.empty)
+        XCTAssertEqual(SpendingCopy.spoken(view: "Just me", amount: nil, failed: true),
+                       "Your spending, Just me, Could not read your spending.")
+        let card = (try? appSource("Spending.swift")) ?? ""
+        XCTAssertTrue(card.contains("Text(verbatim: SpendingCopy.cardEmpty(failed: failed))"))
+        XCTAssertFalse(card.contains("Text(verbatim: SpendingCopy.empty)"))
+        let home = (try? appSource("OverviewScreen.swift")) ?? ""
+        XCTAssertTrue(home.contains("(spending, spendingFailed) = SpendingLoad.cardRead {"))
+        XCTAssertTrue(home.contains("SpendingCard(loaded: spending, failed: spendingFailed,"))
+    }
+
+    /// Fix wave M1: the page reads the groups once (in `SpendingLoad.load`), never per row.
+    func testThePageReadsTheGroupsOnce() throws {
+        let page = try appSource("Spending.swift")
+        XCTAssertEqual(page.components(separatedBy: "store.namedGroups()").count - 1, 1, "SpendingLoad.load's read alone")
+        XCTAssertTrue(page.contains("named: row.group.flatMap { l.groups[$0] })"))
+    }
+
+    /// Fix wave M4: the Expenses tab always ends with the Just me section (empty when there is no Just me expense), so
+    /// Your spending is reachable with Spending on Home off; a group's chip narrows to that group alone.
+    func testTheJustMeHeaderIsAlwaysThere() throws {
+        func e(_ id: String, _ group: String?) -> ProjectedExpenseOut {
+            ProjectedExpenseOut(id: id, expense: ExpenseInput(payer: "a", paidMinor: 1, currencyCode: "INR",
+                                                              shares: [IdAmount(id: "a", amountMinor: 1)], group: group,
+                                                              conversion: nil),
+                                note: nil, category: nil, timestampMs: 1, addedBy: nil, addedAtMs: 1, deleted: false,
+                                lastEditedAtMs: nil, lastEditedBy: nil, seen: [], moneyConflict: [])
+        }
+        let groupOnly = [e("1", "g")]
+        XCTAssertEqual(ExpenseSections.build(groupOnly, filter: .all).map(\.groupID), ["g", nil])
+        XCTAssertEqual(ExpenseSections.build(groupOnly, filter: .all).last?.expenses.count, 0, "empty, its header alone")
+        XCTAssertEqual(ExpenseSections.build(groupOnly, filter: .justMe).map(\.groupID), [nil])
+        XCTAssertEqual(ExpenseSections.build(groupOnly, filter: .group("g")).map(\.groupID), ["g"], "a group's chip")
+        XCTAssertEqual(ExpenseSections.build([e("1", "g"), e("2", nil)], filter: .all).map(\.groupID), ["g", nil], "one Just me")
+        let tab = try appSource("ExpenseListView.swift")
+        XCTAssertTrue(tab.contains("if !section.expenses.isEmpty { VStack(spacing: 0) {"))
+    }
+
     // MARK: - Sabotage pins (D-249 iOS lane, .drafts/d249/sab-ios)
 
     /// Export Just me on the shell's own path: the model hands the flag to `Exporter.write`, so the file is
@@ -413,5 +525,25 @@ final class SpendingTests: XCTestCase {
         let measured = try XCTUnwrap(lines(table, #"label: "Spending on Home", parts: \[SpendingCopy\.homeSummary\], lines: (\d+),"#))
         XCTAssertEqual(drawn, measured, "the row draws what the width table measures")
         XCTAssertEqual(drawn, 2)
+    }
+}
+
+/// D-249 fix wave (decision 208): every expense write checks that its people are the ledger's people as the vault holds
+/// them (`LedgerStore.ledgerMembers`). A test that writes into a fixed group id, or a Just me expense under a fixed
+/// "you", first makes the vault hold that group or that "you", as a phone that made or joined the group would. Android's
+/// twin is `HeldLedgers`.
+enum HeldLedgers {
+    static func group(_ store: LedgerStore, id: String, members: [String], currency: String = "INR") throws {
+        var held = try store.loadGroups().filter { $0.id != id }
+        held.append(LedgerStore.GroupDTO(id: id, name: "Test", settlementCurrency: currency, members: members))
+        let vault = try VaultGate.open(path: store.path, keystore: KeychainKeystore())
+        defer { try? vault.closeVault() }
+        try vault.kvSet(key: LedgerStore.groupsKey, value: try JSONEncoder().encode(held))
+    }
+
+    static func me(_ store: LedgerStore, id: String) throws {
+        let vault = try VaultGate.open(path: store.path, keystore: KeychainKeystore())
+        defer { try? vault.closeVault() }
+        try vault.kvSet(key: LedgerStore.selfKey, value: try JSONEncoder().encode(LedgerStore.SelfDTO(id: id, name: nil)))
     }
 }

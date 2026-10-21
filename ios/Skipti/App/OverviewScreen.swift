@@ -220,6 +220,7 @@ struct OverviewScreen: View {
     @State private var pickingUsername = false
     /// D-249 (decisions 163, 189): Your spending, read with Home; the card's switch and Spending on Home are this phone's.
     @State private var spending: SpendingLoad.Loaded?
+    @State private var spendingFailed = false
     @AppStorage(SpendingPrefs.viewKey) private var spendingViewRaw = SpendingPrefs.justMeRaw
     @AppStorage(SpendingPrefs.onHomeKey) private var spendingOnHome = true
     @State private var openSpending = false
@@ -271,7 +272,7 @@ struct OverviewScreen: View {
                         // D-249 (decision 163): Your spending, full width under the ledgers; Spending on Home hides it.
                         if loaded && spendingOnHome {
                             section(SpendingCopy.title)
-                            SpendingCard(loaded: spending, view: spendingView, name: myName, avatar: myAvatar) {
+                            SpendingCard(loaded: spending, failed: spendingFailed, view: spendingView, name: myName, avatar: myAvatar) {
                                 openSpending = true
                             }
                         }
@@ -391,10 +392,12 @@ struct OverviewScreen: View {
         loaded = true
     }
 
-    /// D-249: this month's Your spending in the card's view, your name and picture for its tile. A failed read leaves
-    /// the card empty (Home's own error line says the ledger could not be read).
+    /// D-249: this month's Your spending in the card's view, your name and picture for its tile. A failed read says so on
+    /// the card (fix wave M2: never "Nothing yet this month", which is not known).
     private func loadSpending() {
-        spending = try? SpendingLoad.load(store, month: .current(), view: SpendingPrefs.view(spendingViewRaw))
+        (spending, spendingFailed) = SpendingLoad.cardRead {
+            try SpendingLoad.load(store, month: .current(), view: SpendingPrefs.view(spendingViewRaw))
+        }
         let me = try? store.loadSelf()
         myName = me?.name
         myAvatar = (try? store.loadAvatar()) ?? .none

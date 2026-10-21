@@ -60,12 +60,14 @@ object Exporter {
     }
 
     const val FILENAME_PREFIX = "skipti-export"
-    /** D-249 (U10): "Export Just me" names its file `skipti-just-me-YYYY-MM.csv` (or .json): fixed text and the month,
-     *  never a name (SPEC 9.3), UTC as [filenameStamp]. The twin of iOS's `Exporter.justMeName`. */
+    /** D-249 (U10): "Export Just me" names its file `skipti-just-me-YYYY-MM-DD.csv` (or .json): fixed text and the day
+     *  it was made, never a name (SPEC 9.3). Decision 207: the phone's own date ([date]'s zone; the screen passes
+     *  [ZonedDateTime.now]), not UTC, and the day, not a month (the file holds every Just me month). The twin of iOS's
+     *  `Exporter.justMeName`. */
     const val JUST_ME_PREFIX = "skipti-just-me-"
 
     fun justMeName(date: ZonedDateTime, format: Format): String =
-        "$JUST_ME_PREFIX${filenameStamp(date).take(7)}.${format.fileExtension}"
+        "$JUST_ME_PREFIX${DateTimeFormatter.ofPattern("yyyy-MM-dd", java.util.Locale.ROOT).format(date)}.${format.fileExtension}"
 
     val utf8Bom: ByteArray = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte())
 

@@ -103,6 +103,7 @@ final class D248FixesTests: XCTestCase {
             XCTAssertEqual(AmountEntry.minor(want, currency: "KWD", locale: locale), 1_005)
         }
         let store = LedgerStore(path: dir.appendingPathComponent("ledger.db").path)
+        try HeldLedgers.group(store, id: group, members: [me, rahul]) // decision 208
         _ = try store.appendExpense(LedgerStore.ExpenseDTO(
             payer: me, paidMinor: 1_005, currencyCode: "KWD", group: group, conversion: nil,
             shares: [.init(id: me, amountMinor: 1_000), .init(id: rahul, amountMinor: 5)],
@@ -242,6 +243,7 @@ final class D248FixesTests: XCTestCase {
     @MainActor
     func testTheDeleteUndoIsTheToastWhereverTheDetailOpened() throws {
         let store = LedgerStore(path: dir.appendingPathComponent("ledger.db").path)
+        try HeldLedgers.group(store, id: group, members: [me, rahul]) // decision 208
         _ = try store.appendExpense(LedgerStore.ExpenseDTO(
             payer: me, paidMinor: 120_000, currencyCode: "INR", group: group, conversion: nil,
             shares: [.init(id: me, amountMinor: 70_000), .init(id: rahul, amountMinor: 50_000)],

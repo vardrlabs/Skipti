@@ -163,11 +163,16 @@ object ExpenseSections {
         data class Group(val id: String) : Filter()
     }
 
+    /** D-249 fix wave (M4): All and Just me always end with the Just me section, empty when there is no Just me
+     *  expense, so its header (Your spending's door, decision 190) is there with Spending on Home off. iOS's twin. */
     fun build(expenses: List<ProjectedExpenseOut>, filter: Filter): List<Section> = when (filter) {
-        Filter.All -> build(expenses, only = null)
+        Filter.All -> withJustMe(build(expenses, only = null))
         is Filter.Group -> build(expenses, only = filter.id)
-        Filter.JustMe -> build(expenses, only = null).filter { it.groupId == null }
+        Filter.JustMe -> withJustMe(build(expenses, only = null).filter { it.groupId == null })
     }
+
+    private fun withJustMe(sections: List<Section>): List<Section> =
+        if (sections.any { it.groupId == null }) sections else sections + Section(null, emptyList())
 
     fun build(expenses: List<ProjectedExpenseOut>, only: String?): List<Section> {
         val sorted = ExpenseListUi.sortedProjected(expenses).filter { only == null || it.expense.group == only }
@@ -347,11 +352,14 @@ fun ExpenseListScreen(
                                         Spacer(Modifier.width(10.dp))
                                     }
                                     Text(named?.group?.name ?: ExpenseCopy.JUST_ME, style = Type.name(dark, 17), modifier = Modifier.weight(1f))
-                                    Text(ExpenseEditingUi.countLabel(section.expenses.size), style = Type.bodyDim(dark).copy(fontSize = TypeScale.groupCount.sp))
+                                    // D-249 fix wave (M4): an empty Just me section is its header alone (no count, no card).
+                                    if (section.expenses.isNotEmpty()) {
+                                        Text(ExpenseEditingUi.countLabel(section.expenses.size), style = Type.bodyDim(dark).copy(fontSize = TypeScale.groupCount.sp))
+                                    }
                                     if (justMe) RowChevron(Tok.textDim(dark))
                                 }
                                 // D-234 (L12-d): iOS's 14 inside the group's card.
-                                Column(Modifier.glassCard(dark, padding = 14)) {
+                                if (section.expenses.isNotEmpty()) Column(Modifier.glassCard(dark, padding = 14)) {
                                     section.expenses.forEachIndexed { index, expense ->
                                         if (index > 0) HorizontalDivider(color = Tok.hairline(dark))
                                         Box {
