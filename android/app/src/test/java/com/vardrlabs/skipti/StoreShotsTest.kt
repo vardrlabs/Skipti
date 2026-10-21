@@ -33,6 +33,9 @@ class StoreShotsTest {
     }
 
     private fun main(name: String) = File("src/main/java/com/vardrlabs/skipti/$name").readText()
+    /** Review M3: the seed is in the debug source set; release compiles a stub. */
+    private fun debug(name: String) = File("src/debug/java/com/vardrlabs/skipti/$name").readText()
+    private fun release(name: String) = File("src/release/java/com/vardrlabs/skipti/$name").readText()
     private fun swift(name: String) = File("../../ios/Skipti/App/$name").readText()
     private fun mainSources(): Map<String, String> =
         File("src/main/java/com/vardrlabs/skipti").listFiles { f -> f.name.endsWith(".kt") }!!.associate { it.name to it.readText() }
@@ -118,20 +121,75 @@ class StoreShotsTest {
         assertNull("a release build: no seed", StoreShots.launch(args, debuggable = false))
         assertNull("a release build: no proof", ProofArgs.proof(args, debuggable = false))
         assertEquals(args, ProofArgs.proof(args, debuggable = true))
-        assertNull("the proof's own flag first", StoreShots.launch("--emulators --store-shots", debuggable = true))
+        // Review M5: the flag anywhere, as on iOS; the proof puts it first (AppRoot's headless word), and `--emulators`
+        // does not ride along with it.
+        assertNotNull(StoreShots.launch("--emulators --store-shots", debuggable = true))
+        assertEquals(AppTheme.NORSE, StoreShots.launch("--store-theme norse --store-shots", debuggable = true)!!.theme)
+        assertEquals("--store-shots --emulators --store-theme norse",
+            ProofArgs.proof("--emulators --store-theme norse --store-shots", debuggable = true))
+        assertNull(ProofArgs.proof("--emulators --store-shots", debuggable = false))
+        assertFalse(ProofArgs.emulators("--emulators --store-shots", debuggable = true))
+        assertTrue(ProofArgs.emulators("--emulators", debuggable = true))
+        assertNull("not the flag", StoreShots.launch("--store-shotsx", debuggable = true))
         val root = main("AppRoot.kt")
-        assertTrue(root.contains("private fun proofArg(): String? = ProofArgs.proof(intent?.getStringExtra(\"args\"), debuggable())"))
+        assertTrue(root.contains("private fun proofArg(): String? = ProofArgs.proof(launchArgs, debuggable())"))
         assertTrue(root.contains("verificationArg = proofArg(),"))
-        val prepare = main("StoreShots.kt").substringAfter("fun prepare(context: Context, args: String?, debuggable: Boolean) {")
-        assertTrue(prepare.trimStart().startsWith("val launch = launch(args, debuggable) ?: return"))
+        val prepare = debug("StoreShots.kt").substringAfter("fun prepare(context: Context, intent: Intent?, restored: Boolean, debuggable: Boolean): String? {")
+        assertTrue(prepare.contains("\n        val launch = launch(args, debuggable) ?: return args\n"))
         assertEquals(listOf<String>(), stray(mainSources()))
     }
+
+    /** Review I1: a launch's store-shots args are used once: kept for the activity's re-creations in the process that
+     *  admitted them, never from Recents, never after the process died, and the extra is removed once read. */
+    @Test
+    fun the_store_shots_args_are_used_once() {
+        val args = "--store-shots --store-theme norse"
+        val a = StoreShots.Admission()
+        assertEquals(args, a.args(args, fromHistory = false, restored = false, debuggable = true))
+        assertEquals("a re-creation (the extra already removed) keeps them", args, a.args(null, false, true, true))
+        assertEquals(args, a.args(args, false, true, true))
+        assertNull("a fresh ordinary launch in the same process ends them", a.args(null, false, false, true))
+        assertNull("and its re-creation is ordinary", a.args(null, false, true, true))
+        assertNull("the process died, the activity restored with its first intent", StoreShots.Admission().args(args, false, true, true))
+        assertNull("from Recents", StoreShots.Admission().args(args, true, false, true))
+        assertEquals("other args untouched", "--balance", StoreShots.Admission().args("--balance", true, true, true))
+        assertEquals("not debuggable: passed through (ProofArgs honours none)", args, StoreShots.Admission().args(args, false, false, false))
+        val prepare = debug("StoreShots.kt").substringAfter("fun prepare(").substringBefore("\n    }\n")
+        assertTrue("if (launch(raw, debuggable) != null) intent?.removeExtra(\"args\")" in prepare)
+        assertTrue("(intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0" in prepare)
+        assertTrue("val args = admission.args(raw, fromHistory, restored, debuggable)" in prepare)
+    }
+
+    /** Review M3: the seed is compiled into debug builds only; the release stub names no vault, preference or seed. */
+    @Test
+    fun the_seed_is_in_debug_builds_only() {
+        assertFalse(File("src/main/java/com/vardrlabs/skipti/StoreShots.kt").exists())
+        val seed = debug("StoreShots.kt")
+        val stub = release("StoreShots.kt")
+        assertTrue("fun seed(" in seed && "fun setAside(" in seed)
+        assertEquals(listOf<String>(), stubLeaks(stub))
+        assertTrue("fun prepare(context: Context, intent: Intent?, restored: Boolean, debuggable: Boolean): String? =\n        intent?.getStringExtra(\"args\")" in stub)
+        for (signature in listOf(
+            "fun prepare(context: Context, intent: Intent?, restored: Boolean, debuggable: Boolean): String?",
+            "fun StoreShotsProof(vaultPath: String, shell: @Composable () -> Unit)",
+        )) {
+            assertTrue("debug: $signature", signature in seed)
+            assertTrue("release: $signature", signature in stub)
+        }
+        assertTrue("the stub draws nothing", stub.trimEnd().endsWith("fun StoreShotsProof(vaultPath: String, shell: @Composable () -> Unit) {\n}"))
+        // The negative: a stub that seeds is seen.
+        assertEquals(listOf("setAside", "LedgerStore"), stubLeaks(stub + "\nfun x(p: String) = StoreShots.setAside(LedgerStore(p))\n"))
+    }
+
+    private fun stubLeaks(stub: String): List<String> =
+        listOf("setAside", "seed(", "seedOnce", "rawKv", "LedgerStore", "File(", "SettingsSync", "applyAppearance", "edit()", "shell()", "removeExtra")
+            .filter { it in stub }
 
     /** Every reference to the seed outside StoreShots.kt: the onCreate call (behind [StoreShots.launch]) and the proof
      *  branch (reached only through ProofArgs.proof) are the only ones allowed. */
     private fun stray(sources: Map<String, String>): List<String> {
         val allowed = listOf(
-            "StoreShots.prepare(applicationContext, intent?.getStringExtra(\"args\"), debuggable())",
+            "launchArgs = StoreShots.prepare(applicationContext, intent, savedInstanceState != null, debuggable())",
             "StoreShotsProof(vaultPath) { HomeShell(vaultPath = vaultPath, startOn = HomeTab.BALANCE) }",
         )
         val out = mutableListOf<String>()
@@ -165,11 +223,13 @@ class StoreShotsTest {
 
     @Test
     fun the_seed_signs_in_to_nothing_and_starts_no_sync() {
-        val file = main("StoreShots.kt")
+        val file = debug("StoreShots.kt")
         for (entry in listOf("FirebaseConfig", "FirebaseAuth", "FirebaseFirestore", "FirebaseMessaging", "CloudSync", "Push.",
-                             "SettingsSync.set(", "SettingsSync.write(", "SettingsSync.pageClosed", "appendGroupOps", "EmulatorSignIn", "Account.", "signIn", "AppLock", "applock")) {
+                             "SettingsSync.set(", "SettingsSync.write(", "SettingsSync.pageClosed", "appendGroupOps", "EmulatorSignIn", "signIn", "AppLock", "applock")) {
             assertFalse("the seed: $entry", entry in file)
         }
+        // The account is only ever read (the refusal), never written or signed in.
+        assertEquals(listOf("Account.readOwner("), Regex("""Account\.\w+\(?""").findAll(file).map { it.value }.distinct().toList())
         val root = main("AppRoot.kt")
         assertTrue("no CloudSync for a proof", root.contains("if (proofArg() == null) {\n            // D-192: coming to the front reaches the cloud sync"))
         assertTrue("no lock for a proof", root.contains("super.onStart()\n        if (proofArg() != null) return"))
@@ -277,24 +337,101 @@ class StoreShotsTest {
         assertEquals(listOf("Sam", "Meera"), StoreShots.split(99_800, listOf("Sam", "Meera")).map { it.first })
     }
 
-    // ---- Set aside, never deleted ----
+    // ---- Set aside, never deleted (review fix wave: only a vault carrying the seed's flag is ever deleted) ----
+
+    private fun storeIn(dir: File): LedgerStore {
+        val path = File(dir, "ledger-vault.db").absolutePath
+        return LedgerStore(path) { SkiptiVault.open(path, keystore) }
+    }
+
+    /** A store whose vault cannot be read (a stand-in file, not a vault: SQLite would treat a tiny main file as empty
+     *  and drop its write-ahead file on open). It counts as a ledger: set aside, never deleted. */
+    private fun unreadableIn(dir: File): LedgerStore =
+        LedgerStore(File(dir, "ledger-vault.db").absolutePath) { throw IllegalStateException("not a vault") }
+
+    private fun contents(dir: File): Map<String, List<Byte>> = dir.listFiles()!!.associate { it.name to it.readBytes().toList() }
 
     @Test
-    fun the_old_vault_is_set_aside_once_and_an_earlier_seed_replaced() {
+    fun the_old_vault_is_set_aside_once_and_only_a_seed_replaced() {
         val dir = Files.createTempDirectory("d251-aside").toFile()
-        val vault = File(dir, "ledger-vault.db").absolutePath
-        StoreShots.setAside(vault)
+        val store = storeIn(dir)
+        val vault = store.path
+        StoreShots.setAside(store)
         assertEquals("nothing there, nothing done", 0, dir.list()!!.size)
         File(vault).writeText("mine")
         File("$vault-wal").writeText("wal")
-        StoreShots.setAside(vault)
+        StoreShots.setAside(unreadableIn(dir))
         assertFalse(File(vault).exists())
         assertEquals("mine", File("$vault.before-store-shots").readText())
         assertEquals("wal", File("$vault.before-store-shots-wal").readText())
-        File(vault).writeText("seed")
-        StoreShots.setAside(vault)
+        // The seed marks its vault; a later run deletes that vault, and the set-aside one stays.
+        StoreShots.seed(store, late, ZoneOffset.UTC)
+        assertTrue(store.rawKvGet(StoreShots.SEEDED_KEY)!!.contentEquals(byteArrayOf(1)))
+        assertEquals(StoreShots.Found.SEED, StoreShots.check(store))
+        StoreShots.setAside(store)
         assertFalse("an earlier seed goes", File(vault).exists())
         assertEquals("the first vault is kept", "mine", File("$vault.before-store-shots").readText())
+    }
+
+    private fun refusal(block: () -> Unit): String? =
+        try { block(); null } catch (e: StoreShots.Refusal) { e.words }
+
+    /** I1: a vault without the seed's flag while an aside exists is refused with the screen's words; no file changes. */
+    @Test
+    fun a_vault_without_the_flag_is_refused_while_an_aside_exists() {
+        val dir = Files.createTempDirectory("d251-flag").toFile()
+        val store = storeIn(dir)
+        store.setYourName("Priya")
+        assertNull(store.rawKvGet(StoreShots.SEEDED_KEY))
+        File(store.path + ".before-store-shots").writeText("older")
+        val before = contents(dir)
+        assertEquals("A set-aside ledger already exists. Restore or remove it first.", refusal { StoreShots.setAside(store) })
+        assertEquals("nothing moved, nothing deleted", before, contents(dir))
+        // A stray set-aside write-ahead file is a destination in use too.
+        val other = Files.createTempDirectory("d251-wal").toFile()
+        val plain = unreadableIn(other)
+        File(plain.path).writeText("mine")
+        File(plain.path + ".before-store-shots-wal").writeText("old wal")
+        val was = contents(other)
+        assertEquals(StoreShots.Refusal.ASIDE_EXISTS, refusal { StoreShots.setAside(plain) })
+        assertEquals(was, contents(other))
+    }
+
+    /** I1: a phone with an account is refused, with or without an aside, the seed's flag included. */
+    @Test
+    fun a_vault_with_an_account_is_refused() {
+        val dir = Files.createTempDirectory("d251-owner").toFile()
+        val store = storeIn(dir)
+        store.rawKvSet(Account.OWNER_KEY, "uid-1".toByteArray())
+        val before = contents(dir)
+        assertEquals("This phone has an account. The store seed runs only on a throwaway device.", refusal { StoreShots.setAside(store) })
+        assertEquals("nothing moved, nothing deleted", before, contents(dir))
+        store.rawKvSet(StoreShots.SEEDED_KEY, byteArrayOf(1))
+        assertEquals(StoreShots.Refusal.ACCOUNT, refusal { StoreShots.setAside(store) })
+        assertTrue(File(store.path).exists())
+    }
+
+    /** The move is the main file first, all or nothing: a later move that fails puts the moved files back. */
+    @Test
+    fun the_move_is_all_or_nothing() {
+        val dir = Files.createTempDirectory("d251-move").toFile()
+        val store = unreadableIn(dir)
+        File(store.path).writeText("mine")
+        File(store.path + "-wal").writeText("wal")
+        File(store.path + "-shm").writeText("shm")
+        val before = contents(dir)
+        val order = mutableListOf<String>()
+        try {
+            StoreShots.setAside(store) { from, to ->
+                order += from.path
+                from.path != store.path + "-shm" && from.renameTo(to)
+            }
+            fail("a move failed")
+        } catch (e: StoreShots.SeedException) {
+            assertTrue(e.message!!.contains("-shm"))
+        }
+        assertEquals("the main file first", store.path, order.first())
+        assertEquals("every moved file put back", before, contents(dir))
     }
 
     @Test

@@ -3,11 +3,15 @@ import SwiftUI
 
 // D-251 (U32): `--store-shots`, the store pages' seed. Debug builds only: this whole file is compiled out of Release, so
 // a Release build has no such argument (StoreShotsTests holds every reference inside `#if DEBUG`). A look's tool, not a
-// user flow: the launch sets the old vault aside, writes a fresh one through the ordinary store paths (core's checks
-// run on every expense and payment), names no account and starts nothing in the cloud (it is a proof launch:
-// `SkiptiApp.verificationArg` lists it, so the gate, the lock, the curtain, the welcome and the sync never run), and the
-// app lock stays off for that launch only (nothing is written to its setting). Android's twin is StoreShots.kt; its
-// StoreShotsTest compares the seed table below with its own, row by row.
+// user flow, and for a THROWAWAY device only (`.drafts/u32/plan.md`, "Restoring after the store seed"): the launch sets
+// the old vault aside, writes a fresh one through the ordinary store paths (core's checks run on every expense and
+// payment), names no account and starts nothing in the cloud (it is a proof launch: `SkiptiApp.verificationArg` lists
+// it, so the gate, the lock, the curtain, the welcome and the sync never run), and the app lock stays off for that
+// launch only (nothing is written to its setting). Review fix wave (I1): a vault is deleted only when it carries the
+// seed's own flag (`seededKey`); a vault with an account, or any other vault while a set-aside one exists, is refused
+// with words on the screen and nothing changes, the theme and mode included. The theme and mode a run writes stay
+// written (they are the phone's settings, as Appearance writes them), and D-232's migrated mark goes. Android's twin is
+// StoreShots.kt; its StoreShotsTest compares the seed table below with its own, row by row.
 
 /// One group of the seed: you ("Sam") plus `people`.
 struct StoreShotsGroup: Equatable {
@@ -50,6 +54,8 @@ enum StoreShots {
     static let keptFromHours = 8_760
     /// The vault an earlier launch left is moved here once (never deleted); a later launch's seeded vault is replaced.
     static let asideSuffix = ".before-store-shots"
+    /// Written into a vault first of all by `seed`: the one mark that lets a later run delete it.
+    static let seededKey = "storeshots/seeded"
 
     // MARK: - The seed table (Android's StoreShots.kt holds the same rows, in the same order)
 
@@ -110,10 +116,12 @@ enum StoreShots {
     }
 
     /// Before the first frame (`SkiptiApp.init`): the theme and mode the shot asks for, through the settings funnel's
-    /// local write (the one an arrival from the account uses: the value on this phone, never a record, and nothing that
-    /// opens the vault), so You > Appearance shows the chosen theme. A mode named is a choice: D-232's migrated mark goes.
-    static func applyAppearance(_ args: [String], defaults: UserDefaults = .standard) {
-        guard active(args) else { return }
+    /// local write (the one an arrival from the account uses: the value on this phone, never a record), so You >
+    /// Appearance shows the chosen theme. A mode named is a choice: D-232's migrated mark goes. A run the seed would
+    /// refuse (`check`, which reads an existing vault after D-232's settle and never creates one) writes nothing here.
+    static func applyAppearance(_ args: [String], defaults: UserDefaults = .standard,
+                                store: @autoclosure () -> LedgerStore = LedgerStore.defaultStore()) {
+        guard active(args), (try? check(store())) != nil else { return }
         if let theme = theme(args) { SettingsSync.applyFromAccount(AppTheme.storageKey, theme.rawValue, defaults: defaults) }
         if let mode = mode(args) {
             SettingsSync.applyFromAccount(AppearanceMode.storageKey, mode.rawValue, defaults: defaults)
@@ -154,19 +162,85 @@ enum StoreShots {
         case launch(String)
     }
 
-    /// The vault an earlier launch left: moved aside once (with its write-ahead files), so nothing a person typed is
-    /// deleted; when an aside already exists, the vault is an earlier seed's and is removed. The key stays, so the
-    /// aside still opens if it is moved back.
-    static func setAside(vaultPath: String, fileManager: FileManager = .default) throws {
-        let files = LedgerErase.files(vaultPath)
-        guard files.contains(where: { fileManager.fileExists(atPath: $0) }) else { return }
-        let keepFirst = !fileManager.fileExists(atPath: vaultPath + asideSuffix)
-        for file in files where fileManager.fileExists(atPath: file) {
-            if keepFirst {
-                let suffix = String(file.dropFirst(vaultPath.count))
-                try fileManager.moveItem(atPath: file, toPath: vaultPath + asideSuffix + suffix)
-            } else {
+    /// Why a run refuses. Nothing has changed when one is thrown; the words are the proof screen's.
+    enum Refusal: Error, Equatable {
+        case account
+        case asideExists
+
+        var words: String {
+            switch self {
+            case .account: return "This phone has an account. The store seed runs only on a throwaway device."
+            case .asideExists: return "A set-aside ledger already exists. Restore or remove it first."
+            }
+        }
+    }
+
+    /// What is at the vault path now.
+    enum Found: Equatable {
+        case nothing
+        /// An earlier run's seed: it carries `seededKey`.
+        case seed
+        /// Anything else: a person's ledger, or a vault that cannot be read (never deleted, only set aside).
+        case ledger
+    }
+
+    /// What a vault says: an owner, the seed's flag. A vault that cannot be read says neither.
+    struct Marks: Equatable {
+        let owner: Bool
+        let seeded: Bool
+    }
+
+    static func marks(_ store: LedgerStore) -> Marks {
+        Marks(owner: (try? Account.readOwner(store)) != nil, seeded: (try? store.kvFlag(key: seededKey)) ?? false)
+    }
+
+    /// Reads, never writes: the vault is opened only when its main file exists (an open creates one). A vault with an
+    /// owner is refused; one that cannot be read counts as a ledger (set aside, never deleted); a ledger is refused while
+    /// any set-aside file exists, so every destination of the move is free before anything moves.
+    static func check(_ store: LedgerStore, fileManager: FileManager = .default,
+                      read: (LedgerStore) -> Marks = StoreShots.marks) throws -> Found {
+        let path = store.path
+        guard LedgerErase.files(path).contains(where: { fileManager.fileExists(atPath: $0) }) else { return .nothing }
+        var seeded = false
+        if fileManager.fileExists(atPath: path) {
+            let marks = read(store)
+            if marks.owner { throw Refusal.account }
+            seeded = marks.seeded
+        }
+        if seeded { return .seed }
+        if LedgerErase.files(path + asideSuffix).contains(where: { fileManager.fileExists(atPath: $0) }) {
+            throw Refusal.asideExists
+        }
+        return .ledger
+    }
+
+    /// Clears the vault path for the seed. An earlier seed (and only a vault carrying `seededKey`) is deleted; any other
+    /// vault is moved aside with its write-ahead files, the main file first, all or nothing: a move that fails puts back
+    /// every file already moved. The key stays, so the aside still opens when it is moved back.
+    static func setAside(_ store: LedgerStore, fileManager: FileManager = .default,
+                         read: (LedgerStore) -> Marks = StoreShots.marks,
+                         move: (String, String) throws -> Void = { try FileManager.default.moveItem(atPath: $0, toPath: $1) })
+        throws {
+        let path = store.path
+        switch try check(store, fileManager: fileManager, read: read) {
+        case .nothing:
+            return
+        case .seed:
+            for file in LedgerErase.files(path) where fileManager.fileExists(atPath: file) {
                 try fileManager.removeItem(atPath: file)
+            }
+        case .ledger:
+            let pairs = ["", "-wal", "-shm", "-journal"].map { (path + $0, path + asideSuffix + $0) }
+                .filter { fileManager.fileExists(atPath: $0.0) }
+            var moved: [(String, String)] = []
+            do {
+                for pair in pairs {
+                    try move(pair.0, pair.1)
+                    moved.append(pair)
+                }
+            } catch {
+                for pair in moved.reversed() { try? move(pair.1, pair.0) }
+                throw error
             }
         }
     }
@@ -177,6 +251,8 @@ enum StoreShots {
     static func seed(_ store: LedgerStore, nowMs: UInt64 = UInt64(Date().timeIntervalSince1970 * 1000),
                      timeZone: TimeZone = .current) throws {
         guard !FileManager.default.fileExists(atPath: store.path) else { throw SeedError.notFresh }
+        // First of all, so even a seed that fails halfway is known as a seed by the next run.
+        try store.setKvFlag(key: seededKey)
         let monthStart = SpendingMonth.containing(ms: nowMs, timeZone: timeZone).bounds(timeZone: timeZone).fromMs
         let at = times(hoursAgo: expenses.map(\.hoursAgo) + settlements.map(\.hoursAgo), nowMs: nowMs,
                        monthStartMs: monthStart)
@@ -257,9 +333,11 @@ struct StoreShotsScreen: View {
                 let path = LedgerStore.defaultStore().path
                 let outcome: String? = await Task.detached {
                     do {
-                        try StoreShots.setAside(vaultPath: path)
+                        try StoreShots.setAside(LedgerStore(path: path))
                         try StoreShots.seed(LedgerStore(path: path))
                         return nil
+                    } catch let refusal as StoreShots.Refusal {
+                        return refusal.words
                     } catch {
                         return "store shots: \(error)"
                     }

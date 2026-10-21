@@ -1,6 +1,7 @@
 package com.vardrlabs.skipti
 
 import android.content.Context
+import android.content.Intent
 import android.content.SharedPreferences
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
@@ -22,13 +23,19 @@ import kotlinx.coroutines.async
 import uniffi.skipti_core.NamedGroupWire
 import uniffi.skipti_core.ffiCategoryTreeDefault
 
-// D-251 (U32): `--es args "--store-shots --store-theme <theme> [--store-mode <mode>]"`, the store pages' seed.
-// Debuggable builds only: it is a proof argument (ProofArgs.proof answers null in a release build, and [StoreShots.launch]
-// does too), so a release build never sets a vault aside or seeds one. A look's tool, not a user flow: the launch sets
+// D-251 (U32): `--es args "--store-shots --store-theme <theme> [--store-mode <mode>]"` (the flag anywhere, as on iOS),
+// the store pages' seed. Debug builds only, twice over: this file is in `src/debug` (a release build compiles
+// `src/release`'s stub, which seeds nothing: review M3), and it is a proof argument (ProofArgs.proof and [StoreShots.launch]
+// answer null when the build is not debuggable). A look's tool, not a user flow, and for a THROWAWAY device only
+// (`.drafts/u32/plan.md`, "Restoring after the store seed"): MainActivity is exported, so on a DEBUG install any app on
+// the phone can start it with `--store-shots`; what bounds that is below (a phone with an account is refused, a vault is
+// deleted only when it carries the seed's own flag, any other vault is set aside once, never deleted). The launch sets
 // the old vault aside, writes a fresh one through the ordinary store paths (core's checks run on every expense and
 // payment), names no account and starts nothing in the cloud (a proof launch: MainActivity skips the sync and the lock
-// for it), and the app lock stays off for that launch only (nothing is written to its setting). iOS's twin is
-// StoreShots.swift; StoreShotsTest compares the seed table below with it, row by row.
+// for it), and the app lock stays off for that launch only (nothing is written to its setting). The theme and mode it
+// writes stay written (the phone's settings), and D-232's migrated mark goes. The launch's args are used once (review
+// I1): the extra is removed, and a relaunch from Recents or a re-creation after the process died runs the ordinary app.
+// iOS's twin is StoreShots.swift; StoreShotsTest compares the seed table below with it, row by row.
 
 /** One group of the seed: you ("Sam") plus [people]. */
 data class StoreShotsGroup(val name: String, val currency: String, val people: List<String>)
@@ -61,6 +68,10 @@ object StoreShots {
     const val KEPT_FROM_HOURS = 8_760
     /** The vault an earlier launch left is moved here once (never deleted); a later launch's seeded vault is replaced. */
     const val ASIDE_SUFFIX = ".before-store-shots"
+    /** Written into a vault first of all by [seed]: the one mark that lets a later run delete it. */
+    const val SEEDED_KEY = "storeshots/seeded"
+    /** AppRoot's vault (`File(context.filesDir, "ledger-vault.db")`). */
+    private const val VAULT_FILE = "ledger-vault.db"
 
     // ---- The seed table (iOS's StoreShots.swift holds the same rows, in the same order) ----
 
@@ -112,14 +123,34 @@ object StoreShots {
         return if (i >= 0) tokens.getOrNull(i + 1) else null
     }
 
-    /** What a launch asks for, or null: debuggable builds only, and `--store-shots` first (the proof's own flag). */
+    /** What a launch asks for, or null: debuggable builds only, `--store-shots` anywhere among the args (as on iOS). */
     data class Launch(val theme: AppTheme?, val mode: AppearanceMode?)
 
     fun launch(args: String?, debuggable: Boolean): Launch? {
         val t = tokens(args)
-        if (!debuggable || t.firstOrNull() != FLAG) return null
+        if (!debuggable || FLAG !in t) return null
         return Launch(theme(t), mode(t))
     }
+
+    /** Review I1: a launch's `--store-shots` args are used once. A process keeps the args its first fresh launch
+     *  admitted, for the activity's re-creations (a theme's night mode makes it again); a launch from Recents
+     *  (`FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY`) or a re-creation in a process that admitted nothing (the process died and
+     *  the system restored the activity with its first intent) gets no args: the ordinary app, no seed. */
+    internal class Admission {
+        private var held: String? = null
+
+        @Synchronized
+        fun args(raw: String?, fromHistory: Boolean, restored: Boolean, debuggable: Boolean): String? {
+            if (restored) held?.let { return it }
+            if (!restored) held = null
+            if (launch(raw, debuggable) == null) return raw
+            if (fromHistory || restored) return null
+            held = raw
+            return raw
+        }
+    }
+
+    private val admission = Admission()
 
     /** `--store-theme norse|aurora|vardr`; anything else, or none, is null (the stored theme is left alone). */
     fun theme(tokens: List<String>): AppTheme? = value(tokens, THEME_FLAG)?.let { v -> AppTheme.entries.firstOrNull { it.stored == v } }
@@ -131,13 +162,24 @@ object StoreShots {
 
     private val prepared = AtomicBoolean(false)
 
-    /** `MainActivity.onCreate`, before the night mode is told and the appearance read: once per process (a theme's
-     *  night mode makes the activity again), the theme and mode the shot asks for, where Appearance stores them (so You
-     *  > Appearance shows the chosen theme), on this phone only: no setting record, no account. */
-    fun prepare(context: Context, args: String?, debuggable: Boolean) {
-        val launch = launch(args, debuggable) ?: return
-        if (!prepared.compareAndSet(false, true)) return
-        applyAppearance(SettingsSync.prefsOf(context), launch)
+    /** `MainActivity.onCreate`, before the night mode is told and the appearance read. Answers the args this activity
+     *  runs with ([Admission]; the `args` extra is removed once read, so it is used once). For an admitted store-shots
+     *  launch, once per process (a theme's night mode makes the activity again): the theme and mode the shot asks for,
+     *  where Appearance stores them (so You > Appearance shows the chosen theme), on this phone only: no setting record,
+     *  no account; nothing when the seed would refuse ([check]). */
+    fun prepare(context: Context, intent: Intent?, restored: Boolean, debuggable: Boolean): String? {
+        val raw = intent?.getStringExtra("args")
+        val fromHistory = intent != null && (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0
+        val args = admission.args(raw, fromHistory, restored, debuggable)
+        if (launch(raw, debuggable) != null) intent?.removeExtra("args")
+        val launch = launch(args, debuggable) ?: return args
+        if (!prepared.compareAndSet(false, true)) return args
+        // The check opens an existing vault (after D-232's settle; never creates one) through VaultGate, which onCreate
+        // gives its context only after this call.
+        VaultGate.appContextRef = context.applicationContext
+        val store = LedgerStore(File(context.filesDir, VAULT_FILE).absolutePath)
+        if (runCatching { check(store) }.isSuccess) applyAppearance(SettingsSync.prefsOf(context), launch)
+        return args
     }
 
     /** The write itself, through the settings funnel's local write (the one an arrival from the account uses: the value
@@ -181,18 +223,62 @@ object StoreShots {
 
     class SeedException(message: String) : Exception(message)
 
-    /** The vault an earlier launch left: moved aside once (with its write-ahead files), so nothing a person typed is
-     *  deleted; when an aside already exists, the vault is an earlier seed's and is removed. The key stays, so the aside
-     *  still opens if it is moved back. */
-    fun setAside(vaultPath: String) {
-        val files = LedgerErase.ORDER.map { File(vaultPath + it) }
-        if (files.none { it.exists() }) return
-        val keepFirst = !File(vaultPath + ASIDE_SUFFIX).exists()
-        for (suffix in LedgerErase.ORDER) {
-            val file = File(vaultPath + suffix)
-            if (!file.exists()) continue
-            val done = if (keepFirst) file.renameTo(File(vaultPath + ASIDE_SUFFIX + suffix)) else file.delete()
-            if (!done) throw SeedException("could not set ${file.name} aside")
+    /** Why a run refuses. Nothing has changed when one is thrown; [words] are the proof screen's. */
+    class Refusal(val words: String) : Exception(words) {
+        companion object {
+            const val ACCOUNT = "This phone has an account. The store seed runs only on a throwaway device."
+            const val ASIDE_EXISTS = "A set-aside ledger already exists. Restore or remove it first."
+        }
+    }
+
+    /** What is at the vault path now. */
+    enum class Found {
+        NOTHING,
+        /** An earlier run's seed: it carries [SEEDED_KEY]. */
+        SEED,
+        /** Anything else: a person's ledger, or a vault that cannot be read (never deleted, only set aside). */
+        LEDGER,
+    }
+
+    /** Reads, never writes: the vault is opened only when its main file exists (an open creates one). A vault with an
+     *  owner is refused; one that cannot be read counts as a ledger (set aside, never deleted); a ledger is refused while
+     *  any set-aside file exists, so every destination of the move is free before anything moves. */
+    fun check(store: LedgerStore): Found {
+        val path = store.path
+        if (LedgerErase.ORDER.none { File(path + it).exists() }) return Found.NOTHING
+        var seeded = false
+        if (File(path).exists()) {
+            if (runCatching { Account.readOwner(store) }.getOrNull() != null) throw Refusal(Refusal.ACCOUNT)
+            seeded = runCatching { store.rawKvGet(SEEDED_KEY)?.contentEquals(byteArrayOf(1)) == true }.getOrDefault(false)
+        }
+        if (seeded) return Found.SEED
+        if (LedgerErase.ORDER.any { File(path + ASIDE_SUFFIX + it).exists() }) throw Refusal(Refusal.ASIDE_EXISTS)
+        return Found.LEDGER
+    }
+
+    /** Clears the vault path for the seed. An earlier seed (and only a vault carrying [SEEDED_KEY]) is deleted; any
+     *  other vault is moved aside with its write-ahead files, the main file first, all or nothing: a move that fails puts
+     *  back every file already moved. The key stays, so the aside still opens when it is moved back. */
+    fun setAside(store: LedgerStore, move: (File, File) -> Boolean = { from, to -> from.renameTo(to) }) {
+        val path = store.path
+        when (check(store)) {
+            Found.NOTHING -> return
+            Found.SEED -> for (suffix in LedgerErase.ORDER) {
+                val file = File(path + suffix)
+                if (file.exists() && !file.delete()) throw SeedException("could not remove ${file.name}")
+            }
+            Found.LEDGER -> {
+                val pairs = listOf("", "-wal", "-shm", "-journal").map { File(path + it) to File(path + ASIDE_SUFFIX + it) }
+                    .filter { it.first.exists() }
+                val moved = mutableListOf<Pair<File, File>>()
+                for (pair in pairs) {
+                    if (!move(pair.first, pair.second)) {
+                        for (back in moved.asReversed()) move(back.second, back.first)
+                        throw SeedException("could not set ${pair.first.name} aside")
+                    }
+                    moved += pair
+                }
+            }
         }
     }
 
@@ -201,6 +287,8 @@ object StoreShots {
      *  with the welcome not pending. */
     fun seed(store: LedgerStore, nowMs: Long = System.currentTimeMillis(), zone: ZoneId = ZoneId.systemDefault()) {
         if (File(store.path).exists()) throw SeedException("the seed writes only a fresh vault")
+        // First of all, so even a seed that fails halfway is known as a seed by the next run.
+        store.rawKvSet(SEEDED_KEY, byteArrayOf(1))
         val monthStart = SpendingMonth.containing(nowMs, zone).bounds(zone).fromMs.toLong()
         val at = times(EXPENSES.map { it.hoursAgo } + SETTLEMENTS.map { it.hoursAgo }, nowMs, monthStart)
         val start = (at.minOrNull() ?: nowMs) - 3_600_000L
@@ -260,7 +348,7 @@ object StoreShots {
     fun seedOnce(vaultPath: String): Deferred<Result<Unit>> = synchronized(lock) {
         seeding ?: CoroutineScope(Dispatchers.IO).async {
             runCatching {
-                setAside(vaultPath)
+                setAside(LedgerStore(vaultPath))
                 seed(LedgerStore(vaultPath))
             }
         }.also { seeding = it }
@@ -274,7 +362,7 @@ fun StoreShotsProof(vaultPath: String, shell: @Composable () -> Unit) {
     LaunchedEffect(Unit) { result = StoreShots.seedOnce(vaultPath).await() }
     val done = result ?: return
     done.exceptionOrNull()?.let {
-        Text("store shots: ${it.message}", modifier = Modifier.padding(20.dp))
+        Text(if (it is StoreShots.Refusal) it.words else "store shots: ${it.message}", modifier = Modifier.padding(20.dp))
         return
     }
     shell()

@@ -179,6 +179,9 @@ android {
             it.inputs.file(rootDir.parentFile.resolve("brand/skipti-icon-assets/ic_stat_skipti.xml"))
             // D-165: AppearanceTest reads the Kotlin sources (chip colours).
             it.inputs.dir(file("src/main/java"))
+            // D-251 review (M3): StoreShotsTest reads the debug seed and the release stub.
+            it.inputs.dir(file("src/debug/java"))
+            it.inputs.dir(file("src/release/java"))
             // D-193: AccountTest compares CloudProfile's fields with the rules.
             it.inputs.file(rootDir.parentFile.resolve("firebase/firestore.rules"))
             // D-196: the channel the push Function names (AccountTest).

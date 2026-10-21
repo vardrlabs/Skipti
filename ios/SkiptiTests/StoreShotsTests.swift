@@ -133,9 +133,18 @@ final class StoreShotsTests: XCTestCase {
         let defaults = try! XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set(true, forKey: AppearanceMode.migratedKey)
-        StoreShots.applyAppearance(["--store-theme", "norse"], defaults: defaults)
+        let fresh = LedgerStore(path: tempDir().appendingPathComponent("v.db").path)
+        StoreShots.applyAppearance(["--store-theme", "norse"], defaults: defaults, store: fresh)
         XCTAssertNil(defaults.string(forKey: AppTheme.storageKey), "without --store-shots nothing is written")
-        StoreShots.applyAppearance(["--store-shots", "--store-theme", "vardr", "--store-mode", "light"], defaults: defaults)
+        // Review fix wave: a run the seed refuses (here, a phone with an account) writes no theme either.
+        let owned = LedgerStore(path: tempDir().appendingPathComponent("v.db").path)
+        try! owned.kvSet(key: Account.ownerKey, value: Data("uid-1".utf8))
+        StoreShots.applyAppearance(["--store-shots", "--store-theme", "vardr"], defaults: defaults, store: owned)
+        XCTAssertNil(defaults.string(forKey: AppTheme.storageKey), "refused: nothing written")
+        XCTAssertTrue(defaults.bool(forKey: AppearanceMode.migratedKey))
+        // The flag anywhere among the arguments (Android takes it anywhere too).
+        StoreShots.applyAppearance(["--store-theme", "vardr", "--store-mode", "light", "--store-shots"], defaults: defaults,
+                                   store: fresh)
         XCTAssertEqual(defaults.string(forKey: AppTheme.storageKey), "vardr")
         XCTAssertEqual(defaults.string(forKey: AppearanceMode.storageKey), "light")
         XCTAssertFalse(defaults.bool(forKey: AppearanceMode.migratedKey), "a chosen mode")
@@ -174,24 +183,103 @@ final class StoreShotsTests: XCTestCase {
         XCTAssertEqual(StoreShots.split(99_800, among: ["Sam", "Meera"]).map(\.name), ["Sam", "Meera"])
     }
 
-    // MARK: - Set aside, never deleted
+    // MARK: - Set aside, never deleted (review fix wave: only a vault carrying the seed's flag is ever deleted)
 
-    func testTheOldVaultIsSetAsideOnceAndAnEarlierSeedReplaced() throws {
+    private func contents(_ dir: URL) -> [String: Data] {
+        let fm = FileManager.default
+        var out: [String: Data] = [:]
+        for name in (try? fm.contentsOfDirectory(atPath: dir.path)) ?? [] {
+            out[name] = fm.contents(atPath: dir.appendingPathComponent(name).path)
+        }
+        return out
+    }
+
+    /// A vault that cannot be read (the stand-in files below are not vaults: SQLite would treat a tiny main file as empty
+    /// and drop its write-ahead file on open). It counts as a ledger: set aside, never deleted.
+    private let unreadable: (LedgerStore) -> StoreShots.Marks = { _ in StoreShots.Marks(owner: false, seeded: false) }
+
+    func testTheOldVaultIsSetAsideOnceAndOnlyASeedIsReplaced() throws {
         let dir = tempDir()
         let vault = dir.appendingPathComponent("ledger-vault.db").path
         let fm = FileManager.default
-        try StoreShots.setAside(vaultPath: vault)
+        try StoreShots.setAside(LedgerStore(path: vault))
         XCTAssertEqual(try fm.contentsOfDirectory(atPath: dir.path), [], "nothing there, nothing done")
         fm.createFile(atPath: vault, contents: Data("mine".utf8))
         fm.createFile(atPath: vault + "-wal", contents: Data("wal".utf8))
-        try StoreShots.setAside(vaultPath: vault)
+        try StoreShots.setAside(LedgerStore(path: vault), read: unreadable)
         XCTAssertFalse(fm.fileExists(atPath: vault))
         XCTAssertEqual(fm.contents(atPath: vault + ".before-store-shots"), Data("mine".utf8))
         XCTAssertEqual(fm.contents(atPath: vault + ".before-store-shots-wal"), Data("wal".utf8))
-        fm.createFile(atPath: vault, contents: Data("seed".utf8))
-        try StoreShots.setAside(vaultPath: vault)
+        // The seed marks its vault; a later run deletes that vault, and the set-aside one stays.
+        try StoreShots.seed(LedgerStore(path: vault), nowMs: late, timeZone: utc)
+        XCTAssertTrue(try LedgerStore(path: vault).kvFlag(key: StoreShots.seededKey))
+        XCTAssertEqual(try StoreShots.check(LedgerStore(path: vault)), .seed)
+        try StoreShots.setAside(LedgerStore(path: vault))
         XCTAssertFalse(fm.fileExists(atPath: vault), "an earlier seed goes")
         XCTAssertEqual(fm.contents(atPath: vault + ".before-store-shots"), Data("mine".utf8), "the first vault is kept")
+    }
+
+    /// I1: a vault without the seed's flag while an aside exists (a ledger copied back, a second ledger) is refused
+    /// with the screen's words, and no file changes.
+    func testAVaultWithoutTheFlagIsRefusedWhileAnAsideExists() throws {
+        let dir = tempDir()
+        let vault = dir.appendingPathComponent("ledger-vault.db").path
+        let store = LedgerStore(path: vault)
+        _ = try store.setYourName("Priya")
+        XCTAssertFalse(try store.kvFlag(key: StoreShots.seededKey))
+        FileManager.default.createFile(atPath: vault + ".before-store-shots", contents: Data("older".utf8))
+        let before = contents(dir)
+        XCTAssertThrowsError(try StoreShots.setAside(store)) {
+            XCTAssertEqual($0 as? StoreShots.Refusal, .asideExists)
+        }
+        XCTAssertEqual(contents(dir), before, "nothing moved, nothing deleted")
+        XCTAssertEqual(StoreShots.Refusal.asideExists.words, "A set-aside ledger already exists. Restore or remove it first.")
+        // A stray set-aside write-ahead file is a destination in use too.
+        let other = tempDir()
+        let path = other.appendingPathComponent("ledger-vault.db").path
+        FileManager.default.createFile(atPath: path, contents: Data("mine".utf8))
+        FileManager.default.createFile(atPath: path + ".before-store-shots-wal", contents: Data("old wal".utf8))
+        let was = contents(other)
+        XCTAssertThrowsError(try StoreShots.setAside(LedgerStore(path: path), read: unreadable)) {
+            XCTAssertEqual($0 as? StoreShots.Refusal, .asideExists)
+        }
+        XCTAssertEqual(contents(other), was)
+    }
+
+    /// I1: a phone with an account is refused, with or without an aside, the seed's flag included.
+    func testAVaultWithAnAccountIsRefused() throws {
+        let dir = tempDir()
+        let vault = dir.appendingPathComponent("ledger-vault.db").path
+        let store = LedgerStore(path: vault)
+        try store.kvSet(key: Account.ownerKey, value: Data("uid-1".utf8))
+        let before = contents(dir)
+        XCTAssertThrowsError(try StoreShots.setAside(store)) { XCTAssertEqual($0 as? StoreShots.Refusal, .account) }
+        XCTAssertEqual(contents(dir), before, "nothing moved, nothing deleted")
+        try store.setKvFlag(key: StoreShots.seededKey)
+        XCTAssertThrowsError(try StoreShots.setAside(store)) { XCTAssertEqual($0 as? StoreShots.Refusal, .account) }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: vault))
+        XCTAssertEqual(StoreShots.Refusal.account.words,
+                       "This phone has an account. The store seed runs only on a throwaway device.")
+    }
+
+    /// The move is the main file first, all or nothing: a later move that fails puts the moved files back.
+    func testTheMoveIsAllOrNothing() throws {
+        let dir = tempDir()
+        let vault = dir.appendingPathComponent("ledger-vault.db").path
+        let fm = FileManager.default
+        fm.createFile(atPath: vault, contents: Data("mine".utf8))
+        fm.createFile(atPath: vault + "-wal", contents: Data("wal".utf8))
+        fm.createFile(atPath: vault + "-shm", contents: Data("shm".utf8))
+        let before = contents(dir)
+        var order: [String] = []
+        let failing: (String, String) throws -> Void = { from, to in
+            order.append(from)
+            if from == vault + "-shm" { throw CocoaError(.fileWriteUnknown) }
+            try fm.moveItem(atPath: from, toPath: to)
+        }
+        XCTAssertThrowsError(try StoreShots.setAside(LedgerStore(path: vault), read: unreadable, move: failing))
+        XCTAssertEqual(order.first, vault, "the main file first")
+        XCTAssertEqual(contents(dir), before, "every moved file put back")
     }
 
     func testTheSeedWritesOnlyAFreshVault() throws {

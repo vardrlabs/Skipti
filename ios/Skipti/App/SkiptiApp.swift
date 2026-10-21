@@ -114,7 +114,9 @@ struct SkiptiApp: App {
         #if DEBUG
         // D-194: `--emulators` runs the ordinary app (not a proof screen)
         // against the local Auth and Firestore emulators. Debug builds only.
-        if ProcessInfo.processInfo.arguments.contains("--emulators") {
+        // D-251 review: a store-shots launch is a proof with no account; `--emulators` (and its sign-in) rides along with
+        // it on neither shell.
+        if ProcessInfo.processInfo.arguments.contains("--emulators"), !StoreShots.active(ProcessInfo.processInfo.arguments) {
             // D-235 round 5: Auth is pointed at the emulator when the gate configures (never configured here).
             Cloud.emulator = true
             // D-210: `--emulator-as <sub>` signs in to the Auth emulator as
