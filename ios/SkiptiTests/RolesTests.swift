@@ -2234,16 +2234,50 @@ final class GroupEndTests: XCTestCase {
         XCTAssertEqual(GroupGone.decide(.notFound), .readOnly)
         XCTAssertEqual(GroupGone.decide(.networkError), .retry, "no answer changes nothing")
         XCTAssertEqual(GroupGone.decide(.exists), .keep)
-        XCTAssertEqual(GroupGone.read(.found([:])), .exists)
-        XCTAssertEqual(GroupGone.read(.missing), .notFound)
-        XCTAssertEqual(GroupGone.read(.refused), .refused)
-        XCTAssertEqual(GroupGone.read(nil), .networkError)
+        XCTAssertEqual(GroupGone.decide(.former), .readOnly, "removed, the notice lost: the copy ends")
+        XCTAssertEqual(GroupGone.decide(.notMember), .readOnly)
+        XCTAssertEqual(GroupGone.read(.missing, uid: "me"), .notFound)
+        XCTAssertEqual(GroupGone.read(.refused, uid: "me"), .refused)
+        XCTAssertEqual(GroupGone.read(nil, uid: "me"), .networkError)
         // The Firestore codes as the removal read maps them (pinned in RolesTests): only these two are the server's word.
-        XCTAssertEqual(GroupGone.read(Notices.groupRead(forFirestoreCode: .permissionDenied)), .refused)
-        XCTAssertEqual(GroupGone.read(Notices.groupRead(forFirestoreCode: .notFound)), .refused)
+        XCTAssertEqual(GroupGone.read(Notices.groupRead(forFirestoreCode: .permissionDenied), uid: "me"), .refused)
+        XCTAssertEqual(GroupGone.read(Notices.groupRead(forFirestoreCode: .notFound), uid: "me"), .refused)
         for code: FirestoreErrorCode.Code in [.unavailable, .deadlineExceeded, .unauthenticated, .cancelled, .internal] {
-            XCTAssertEqual(GroupGone.decide(GroupGone.read(Notices.groupRead(forFirestoreCode: code))), .retry, "\(code)")
+            XCTAssertEqual(GroupGone.decide(GroupGone.read(Notices.groupRead(forFirestoreCode: code), uid: "me")), .retry, "\(code)")
         }
+    }
+
+    /// D-252 fix wave (M2): a document that is there is "still shared" only for a member. The rules let a removed
+    /// account read its group (`former`, firestore.rules), so a removal whose notice was lost reads `found`: before
+    /// this, that kept the copy writable for good.
+    func testAGroupThatIsThereIsSharedOnlyWithAMember() {
+        let removedAt = Timestamp(seconds: 1_760_000_000, nanoseconds: 0)
+        let member: [String: Any] = ["memberUids": ["ow", "me"], "name": "Goa"]
+        XCTAssertEqual(GroupGone.read(.found(member), uid: "me"), .exists)
+        XCTAssertEqual(GroupGone.decide(GroupGone.read(.found(member), uid: "me")), .keep)
+        let removed: [String: Any] = ["memberUids": ["ow"], "former": ["me": ["at": removedAt, "by": "ow"]]]
+        XCTAssertEqual(GroupGone.read(.found(removed), uid: "me"), .former)
+        XCTAssertEqual(GroupGone.decide(GroupGone.read(.found(removed), uid: "me")), .readOnly, "removed, the notice lost")
+        XCTAssertEqual(GroupGone.read(.found(removed), uid: "ow"), .exists, "the owner is still in it")
+        XCTAssertEqual(GroupGone.read(.found(["memberUids": ["ow"]]), uid: "me"), .notMember)
+        XCTAssertEqual(GroupGone.read(.found([:]), uid: "me"), .notMember, "no member list: not shared")
+        XCTAssertEqual(GroupGone.read(.found(member), uid: ""), .notMember, "no account: never a member")
+        XCTAssertEqual(GroupGone.read(.found(["memberUids": ["ow"], "former": ["": ["at": removedAt]]]), uid: ""), .notMember)
+        // Rejoined: `former` cleared, a member again (acceptInvite): shared.
+        XCTAssertEqual(GroupGone.read(.found(["memberUids": ["ow", "me"], "former": [String: Any]()]), uid: "me"), .exists)
+    }
+
+    /// D-252 fix wave (M3): a listing like the last one checked is passed by (no vault read, no main-thread work); a
+    /// new group, a lost one or a confirmation is a change; nil (a new session, a failed read) always checks.
+    func testAListingLikeTheLastCheckedIsPassedBy() {
+        let last = ["a": true, "b": false]
+        XCTAssertTrue(GroupGone.unchanged(["a": true, "b": false], last: last))
+        XCTAssertFalse(GroupGone.unchanged(["a": true, "b": true], last: last), "a confirmation can lift a mark")
+        XCTAssertFalse(GroupGone.unchanged(["a": true], last: last), "a group left the listing")
+        XCTAssertFalse(GroupGone.unchanged(["a": true, "b": false, "c": true], last: last), "a group joined it")
+        XCTAssertFalse(GroupGone.unchanged(last, last: nil), "the session's first listing, or one that must run again")
+        XCTAssertFalse(GroupGone.unchanged([:], last: nil), "even an empty first listing is checked (the sweep)")
+        XCTAssertTrue(GroupGone.unchanged([:], last: [:]))
     }
 
     /// Which held groups are asked about: the session's first listing sweeps every one in the cloud from this phone that
@@ -2368,9 +2402,21 @@ final class GroupEndTests: XCTestCase {
         XCTAssertTrue(cloud.contains("let fromCache = snapshot.metadata.isFromCache"))
         XCTAssertTrue(cloud.contains("if !fromCache { checkVanished(listed: groups.map { ($0.0, $0.2) }, uid: uid, store: store) }"),
                       "a listing from the cache asks nothing")
-        let check = try XCTUnwrap(cloud.components(separatedBy: "private func checkVanished(").dropFirst().first?
+        let vanished = try XCTUnwrap(cloud.components(separatedBy: "private func checkVanished(").dropFirst().first?
             .components(separatedBy: "\n    }\n").first)
-        XCTAssertTrue(check.contains("GroupGone.decide(GroupGone.read(await Self.groupRead(groupId)))"), "the one read, the removal's own")
+        let check = vanished + (try XCTUnwrap(cloud.components(separatedBy: "private func askVanished(").dropFirst().first?
+            .components(separatedBy: "\n    }\n").first))
+        XCTAssertTrue(check.contains("GroupGone.decide(GroupGone.read(await Self.groupRead(groupId), uid: uid))"),
+                      "the one read, the removal's own, for this account (M2)")
+        // D-252 fix wave (M3): a listing like the last checked is passed by before anything is read, and the vault is
+        // read off the main thread: nothing before the detached read touches the store.
+        let head = try XCTUnwrap(vanished.components(separatedBy: "Task { @MainActor in").first)
+        XCTAssertTrue(head.contains("guard !GroupGone.unchanged(listing, last: vanishListing) else { return }\n        vanishListing = listing"))
+        XCTAssertFalse(head.contains("store."), "no vault work on the main thread for a snapshot")
+        XCTAssertTrue(vanished.contains("let seen = await Task.detached(priority: .utility) { GroupGone.see(store) }.value"))
+        XCTAssertEqual(vanished.components(separatedBy: "sync.vanishListing = nil").count - 1, 2, "a failed read or lift checks again")
+        XCTAssertTrue(check.contains("sync.vanishAsked.remove(groupId)\n                sync.vanishListing = nil\n                return"),
+                      "no answer: the next listing asks again")
         XCTAssertTrue(check.contains("guard GroupGone.marks(over: try store.readOnlyChecked()[groupId]) else { return }"))
         XCTAssertTrue(check.contains("try store.markReadOnly(groupId, GroupGone.mark(at: Date()))"))
         XCTAssertTrue(check.contains("guard sync.groupsListener != nil, Account.shared.uid == uid else { return }"), "never after sign-out")
@@ -2381,7 +2427,7 @@ final class GroupEndTests: XCTestCase {
         // D-235/D-244 style count: the group read is the removal's (`groupRead`); D-252 adds no new server read.
         XCTAssertEqual(cloud.components(separatedBy: "getDocument(source: .server)").count - 1, 3,
                        "ensureGroup's existence read, the record existence read, groupRead (removal and D-252 share it)")
-        XCTAssertTrue(cloud.contains("vanishAsked = []\n        listedNow = []"), "a new session sweeps again")
+        XCTAssertTrue(cloud.contains("vanishAsked = []\n        listedNow = []\n        vanishListing = nil"), "a new session sweeps again")
         let handle = try XCTUnwrap(cloud.components(separatedBy: "                case .deleted:").dropFirst().first?
             .components(separatedBy: "                case .role, .declined:").first)
         XCTAssertTrue(handle.contains("if let mark = Notices.deletedMark(item, uid: Account.shared.uid, existing: try store.readOnlyChecked()[item.groupId]) {"))

@@ -514,6 +514,11 @@ object CloudSync {
      *  [listenLock]. */
     private val vanishAsked = mutableSetOf<String>()
 
+    /** D-252 fix wave (M3): the listing the last check read ([GroupGone.unchanged]); a listing like it is passed by.
+     *  Null: the next listing is checked (a new session, a vault read that failed, a read with no answer). Guarded by
+     *  [listenLock]. */
+    private var vanishListing: Map<String, Boolean>? = null
+
     /** D-252 (decision 218): on every listing from the server, a vanished mark lifts from a group listed again, and each
      *  held group the listing no longer has, with no notice to say why, is asked about once ([GroupGone]): a refusal or
      *  no document makes the copy read-only ("This group is no longer shared with you."), no answer changes nothing
@@ -523,21 +528,29 @@ object CloudSync {
     private fun checkVanished(listed: List<Pair<String, Boolean>>, uid: String, store: LedgerStore) {
         val ids = listed.map { it.first }.toSet()
         vanishAsked.removeAll(ids)
+        // D-252 fix wave (M3): every snapshot from the server comes here (metadata changes too); one like the last
+        // checked is passed by (iOS's twin does the same, and reads its vault off the main thread too).
+        val listing = listed.toMap()
+        if (GroupGone.unchanged(listing, vanishListing)) return
+        vanishListing = listing
         // The notices that say why a group ended (read here, where the screens' list is current).
         val noticed = Notices.items.filter { it.kind.endsSync }.map { it.groupId }.toSet()
         scope.launch {
-            class Held(val lifted: Boolean, val held: Set<String>, val up: Set<String>, val copies: Set<String>)
+            class Held(val lifted: Boolean, val again: Boolean, val held: Set<String>, val up: Set<String>, val copies: Set<String>)
             val seen = withContext(serial) {
                 val marks = runCatching { store.readOnlyChecked() }.getOrNull() ?: return@withContext null
                 var lifted = false
+                var again = false
                 for ((groupId, confirmed) in listed) {
-                    if (GroupGone.lifts(marks[groupId], listedConfirmed = confirmed) && runCatching { store.clearReadOnly(groupId) }.isSuccess) {
-                        lifted = true
-                    }
+                    if (!GroupGone.lifts(marks[groupId], listedConfirmed = confirmed)) continue
+                    if (runCatching { store.clearReadOnly(groupId) }.isSuccess) lifted = true else again = true
                 }
-                runCatching { Held(lifted, store.loadGroups().map { it.id }.toSet(), CloudRecords.groupsUp(store), marks.keys) }
-                    .getOrDefault(Held(lifted, emptySet(), emptySet(), emptySet()))
-            } ?: return@launch
+                runCatching { Held(lifted, again, store.loadGroups().map { it.id }.toSet(), CloudRecords.groupsUp(store), marks.keys) }
+                    .getOrDefault(Held(lifted, true, emptySet(), emptySet(), emptySet()))
+            }
+            // The vault would not say (or a lift failed): the next listing is checked again.
+            if (seen == null || seen.again) synchronized(listenLock) { vanishListing = null }
+            if (seen == null) return@launch
             if (seen.lifted) withContext(Dispatchers.Main) { SyncStatus.changed() }
             val ask = synchronized(listenLock) {
                 if (groupsListener == null) return@launch
@@ -550,7 +563,7 @@ object CloudSync {
     /** The one read for a group [checkVanished] chose: the removal's own ([groupRead]), no new server read. */
     private fun askVanished(groupId: String, uid: String, store: LedgerStore) {
         scope.launch {
-            val outcome = GroupGone.decide(GroupGone.read(groupRead(groupId)))
+            val outcome = GroupGone.decide(GroupGone.read(groupRead(groupId), uid))
             val mark = synchronized(listenLock) {
                 // Signed out, or listening as someone else, while it was asked: what it said does not count.
                 if (groupsListener == null || Account.uid() != uid) return@launch
@@ -558,6 +571,7 @@ object CloudSync {
                     GroupGone.Outcome.KEEP -> return@launch
                     GroupGone.Outcome.RETRY -> {
                         vanishAsked.remove(groupId)
+                        vanishListing = null
                         return@launch
                     }
                     GroupGone.Outcome.READ_ONLY -> {
@@ -656,6 +670,7 @@ object CloudSync {
         // D-252: a new session asks again (its first listing is the sweep).
         vanishAsked.clear()
         listedNow = emptySet()
+        vanishListing = null
         phoneListener?.remove()
         phoneListener = null
         personalListener?.remove()

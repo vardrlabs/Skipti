@@ -677,8 +677,13 @@ final class GroupRoles: ObservableObject {
 enum GroupGone {
     /// What the one read said.
     enum Read: Equatable {
-        /// The document is there and this account may read it (a member, or a removed person: their notice says why).
+        /// The document is there and this account is in its `memberUids`: still shared (a listing that missed it).
         case exists
+        /// D-252 fix wave (M2): the document is there and this account is in its `former` (the rules let a removed
+        /// account read it), not in `memberUids`: removed, and the removal's notice is lost or still on its way.
+        case former
+        /// The document is there and this account is in neither list (no reading the rules allow; refused in kind).
+        case notMember
         /// The rules refused it: the account is no longer in it, or it is gone (a deleted group refuses every read).
         case refused
         case notFound
@@ -697,17 +702,23 @@ enum GroupGone {
 
     static func decide(_ read: Read) -> Outcome {
         switch read {
-        case .refused, .notFound: return .readOnly
+        case .refused, .notFound, .former, .notMember: return .readOnly
         case .networkError: return .retry
         case .exists: return .keep
         }
     }
 
     /// The read as `CloudSync.groupRead` gives it (the D-210 removal read: permission-denied and not-found are
-    /// `.refused`, nil is no answer).
-    static func read(_ answer: Notices.GroupRead?) -> Read {
+    /// `.refused`, nil is no answer), for the account `uid`. D-252 fix wave (M2): a document that is there says
+    /// `exists` only when the account is a member; a removed account still reads it (`former`, firestore.rules), so a
+    /// removal whose notice never came ends the copy too, in the neutral words (the remover's name is not in the
+    /// document; the removal's notice, when it comes, says more).
+    static func read(_ answer: Notices.GroupRead?, uid: String) -> Read {
         switch answer {
-        case .found?: return .exists
+        case .found(let data)?:
+            let members = (data["memberUids"] as? [Any])?.compactMap { $0 as? String } ?? []
+            if !uid.isEmpty, members.contains(uid) { return .exists }
+            return (data["former"] as? [String: Any])?[uid] != nil && !uid.isEmpty ? .former : .notMember
         case .missing?: return .notFound
         case .refused?: return .refused
         case nil: return .networkError
@@ -739,6 +750,28 @@ enum GroupGone {
     /// again: its vanished mark lifts. Only that mark: a removal or a deletion lifts only through an accepted invite.
     static func lifts(_ mark: LedgerStore.ReadOnly?, listedConfirmed: Bool) -> Bool {
         listedConfirmed && mark?.kind == LedgerStore.ReadOnly.vanishedKind
+    }
+
+    /// D-252 fix wave (M3): whether a listing from the server can be passed by: the same groups, each as confirmed as
+    /// in the listing the last check read (a confirmation can lift a vanished mark, so it is a change). Nil `last`:
+    /// the session's first listing, or a check that must run again (a vault read that failed, a read with no answer).
+    static func unchanged(_ listing: [String: Bool], last: [String: Bool]?) -> Bool {
+        guard let last else { return false }
+        return last == listing
+    }
+
+    /// What a check reads from the vault, off the main thread (D-252 fix wave, M3): the marks, the groups held here
+    /// and the groups in the cloud from here. Nil when the vault would not give them all (nothing is decided on a guess).
+    struct Seen {
+        let marks: [String: LedgerStore.ReadOnly]
+        let held: Set<String>
+        let up: Set<String>
+    }
+
+    static func see(_ store: LedgerStore) -> Seen? {
+        guard let marks = try? store.readOnlyChecked(), let groups = try? store.loadGroups(),
+              let up = try? CloudRecords.groupsUp(store) else { return nil }
+        return Seen(marks: marks, held: Set(groups.map(\.id)), up: up)
     }
 }
 

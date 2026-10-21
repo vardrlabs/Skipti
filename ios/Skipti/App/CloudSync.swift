@@ -544,6 +544,10 @@ final class CloudSync {
     /// `stopListening`, and for a group the listing holds again (it is asked again if it leaves again).
     private var vanishAsked = Set<String>()
 
+    /// D-252 fix wave (M3): the listing the last check read (`GroupGone.unchanged`); a listing like it is passed by.
+    /// Nil: the next listing is checked (a new session, a vault read that failed, a read with no answer).
+    private var vanishListing: [String: Bool]?
+
     /// D-252 (decision 218): on every listing from the server, a vanished mark lifts from a group listed again, and
     /// each held group the listing no longer has, with no notice to say why, is asked about once (`GroupGone`): a
     /// refusal or no document makes the copy read-only ("This group is no longer shared with you."), no answer
@@ -553,40 +557,59 @@ final class CloudSync {
     private func checkVanished(listed: [(String, Bool)], uid: String, store: LedgerStore) {
         let ids = Set(listed.map(\.0))
         vanishAsked.subtract(ids)
-        guard let marks = try? store.readOnlyChecked() else { return }
-        var lifted = false
-        for (groupId, confirmed) in listed where GroupGone.lifts(marks[groupId], listedConfirmed: confirmed) {
-            if (try? store.clearReadOnly(groupId)) != nil { lifted = true }
-        }
-        if lifted { SyncStatus.shared.changed() }
-        guard let held = try? Set(store.loadGroups().map(\.id)), let up = try? CloudRecords.groupsUp(store) else { return }
+        // D-252 fix wave (M3): every snapshot from the server comes here (metadata changes too); one like the last
+        // checked is passed by, and the vault is read off the main thread (Android's twin reads on its serial thread).
+        let listing = Dictionary(listed, uniquingKeysWith: { first, _ in first })
+        guard !GroupGone.unchanged(listing, last: vanishListing) else { return }
+        vanishListing = listing
         let noticed = Set(Notices.shared.items.filter(\.kind.endsSync).map(\.groupId))
-        let ask = GroupGone.toCheck(held: held, groupsUp: up, listed: ids, copies: Set(marks.keys), noticed: noticed,
-                                    asked: vanishAsked)
-        for groupId in ask {
-            vanishAsked.insert(groupId)
-            Task { @MainActor in
-                let outcome = GroupGone.decide(GroupGone.read(await Self.groupRead(groupId)))
-                let sync = CloudSync.shared
-                // Signed out, or listening as someone else, while it was asked: what it said does not count.
-                guard sync.groupsListener != nil, Account.shared.uid == uid else { return }
-                switch outcome {
-                case .keep:
-                    return
-                case .retry:
-                    sync.vanishAsked.remove(groupId)
-                    return
-                case .readOnly:
-                    sync.vanishAsked.remove(groupId)
-                    // Listed again meanwhile, or a notice marked it first: the newer word stands.
-                    guard !sync.listedNow.contains(groupId) else { return }
-                    do {
-                        guard GroupGone.marks(over: try store.readOnlyChecked()[groupId]) else { return }
-                        try store.markReadOnly(groupId, GroupGone.mark(at: Date()))
-                    } catch { return }
-                    sync.groupListeners?.remove(groupId)
-                    SyncStatus.shared.changed()
-                }
+        Task { @MainActor in
+            let seen = await Task.detached(priority: .utility) { GroupGone.see(store) }.value
+            let sync = CloudSync.shared
+            // Signed out, or listening as someone else, while the vault was read: nothing more.
+            guard sync.groupsListener != nil, Account.shared.uid == uid else { return }
+            guard let seen else {
+                sync.vanishListing = nil
+                return
+            }
+            var lifted = false
+            for (groupId, confirmed) in listed where GroupGone.lifts(seen.marks[groupId], listedConfirmed: confirmed) {
+                if (try? store.clearReadOnly(groupId)) != nil { lifted = true } else { sync.vanishListing = nil }
+            }
+            if lifted { SyncStatus.shared.changed() }
+            let ask = GroupGone.toCheck(held: seen.held, groupsUp: seen.up, listed: ids, copies: Set(seen.marks.keys),
+                                        noticed: noticed, asked: sync.vanishAsked)
+            for groupId in ask {
+                sync.vanishAsked.insert(groupId)
+                sync.askVanished(groupId, uid: uid, store: store)
+            }
+        }
+    }
+
+    /// The one read for a group `checkVanished` chose: the removal's own (`groupRead`), no new server read.
+    private func askVanished(_ groupId: String, uid: String, store: LedgerStore) {
+        Task { @MainActor in
+            let outcome = GroupGone.decide(GroupGone.read(await Self.groupRead(groupId), uid: uid))
+            let sync = CloudSync.shared
+            // Signed out, or listening as someone else, while it was asked: what it said does not count.
+            guard sync.groupsListener != nil, Account.shared.uid == uid else { return }
+            switch outcome {
+            case .keep:
+                return
+            case .retry:
+                sync.vanishAsked.remove(groupId)
+                sync.vanishListing = nil
+                return
+            case .readOnly:
+                sync.vanishAsked.remove(groupId)
+                // Listed again meanwhile, or a notice marked it first: the newer word stands.
+                guard !sync.listedNow.contains(groupId) else { return }
+                do {
+                    guard GroupGone.marks(over: try store.readOnlyChecked()[groupId]) else { return }
+                    try store.markReadOnly(groupId, GroupGone.mark(at: Date()))
+                } catch { return }
+                sync.groupListeners?.remove(groupId)
+                SyncStatus.shared.changed()
             }
         }
     }
@@ -660,6 +683,7 @@ final class CloudSync {
         // D-252: a new session asks again (its first listing is the sweep).
         vanishAsked = []
         listedNow = []
+        vanishListing = nil
         roleRetries.values.forEach { $0.cancel() }
         roleRetries = [:]
         phoneListener?.remove()

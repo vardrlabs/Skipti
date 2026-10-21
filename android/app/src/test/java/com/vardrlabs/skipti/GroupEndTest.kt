@@ -140,16 +140,58 @@ class GroupEndTest {
         assertEquals(GroupGone.Outcome.READ_ONLY, GroupGone.decide(GroupGone.Read.NOT_FOUND))
         assertEquals("no answer changes nothing", GroupGone.Outcome.RETRY, GroupGone.decide(GroupGone.Read.NETWORK_ERROR))
         assertEquals(GroupGone.Outcome.KEEP, GroupGone.decide(GroupGone.Read.EXISTS))
-        assertEquals(GroupGone.Read.EXISTS, GroupGone.read(Notices.GroupRead.Found(emptyMap())))
-        assertEquals(GroupGone.Read.NOT_FOUND, GroupGone.read(Notices.GroupRead.Missing))
-        assertEquals(GroupGone.Read.REFUSED, GroupGone.read(Notices.GroupRead.Refused))
-        assertEquals(GroupGone.Read.NETWORK_ERROR, GroupGone.read(null))
+        assertEquals("removed, the notice lost: the copy ends", GroupGone.Outcome.READ_ONLY, GroupGone.decide(GroupGone.Read.FORMER))
+        assertEquals(GroupGone.Outcome.READ_ONLY, GroupGone.decide(GroupGone.Read.NOT_MEMBER))
+        assertEquals(GroupGone.Read.NOT_FOUND, GroupGone.read(Notices.GroupRead.Missing, "me"))
+        assertEquals(GroupGone.Read.REFUSED, GroupGone.read(Notices.GroupRead.Refused, "me"))
+        assertEquals(GroupGone.Read.NETWORK_ERROR, GroupGone.read(null, "me"))
         // The Firestore codes as the removal read maps them (pinned in RolesTest): only these two are the server's word.
-        assertEquals(GroupGone.Read.REFUSED, GroupGone.read(Notices.groupRead("PERMISSION_DENIED")))
-        assertEquals(GroupGone.Read.REFUSED, GroupGone.read(Notices.groupRead("NOT_FOUND")))
+        assertEquals(GroupGone.Read.REFUSED, GroupGone.read(Notices.groupRead("PERMISSION_DENIED"), "me"))
+        assertEquals(GroupGone.Read.REFUSED, GroupGone.read(Notices.groupRead("NOT_FOUND"), "me"))
         for (code in listOf("UNAVAILABLE", "DEADLINE_EXCEEDED", "UNAUTHENTICATED", "CANCELLED", "INTERNAL", null)) {
-            assertEquals("$code", GroupGone.Outcome.RETRY, GroupGone.decide(GroupGone.read(Notices.groupRead(code))))
+            assertEquals("$code", GroupGone.Outcome.RETRY, GroupGone.decide(GroupGone.read(Notices.groupRead(code), "me")))
         }
+    }
+
+    /** D-252 fix wave (M2): a document that is there is "still shared" only for a member. The rules let a removed
+     *  account read its group (`former`, firestore.rules), so a removal whose notice was lost reads Found: before this,
+     *  that kept the copy writable for good. iOS: testAGroupThatIsThereIsSharedOnlyWithAMember. */
+    @Test
+    fun a_group_that_is_there_is_shared_only_with_a_member() {
+        val member = mapOf("memberUids" to listOf("ow", "me"), "name" to "Goa")
+        assertEquals(GroupGone.Read.EXISTS, GroupGone.read(Notices.GroupRead.Found(member), "me"))
+        assertEquals(GroupGone.Outcome.KEEP, GroupGone.decide(GroupGone.read(Notices.GroupRead.Found(member), "me")))
+        val removed = mapOf("memberUids" to listOf("ow"), "former" to mapOf("me" to mapOf("at" to at, "by" to "ow")))
+        assertEquals(GroupGone.Read.FORMER, GroupGone.read(Notices.GroupRead.Found(removed), "me"))
+        assertEquals("removed, the notice lost", GroupGone.Outcome.READ_ONLY, GroupGone.decide(GroupGone.read(Notices.GroupRead.Found(removed), "me")))
+        assertEquals("the owner is still in it", GroupGone.Read.EXISTS, GroupGone.read(Notices.GroupRead.Found(removed), "ow"))
+        assertEquals(GroupGone.Read.NOT_MEMBER, GroupGone.read(Notices.GroupRead.Found(mapOf("memberUids" to listOf("ow"))), "me"))
+        assertEquals("no member list: not shared", GroupGone.Read.NOT_MEMBER, GroupGone.read(Notices.GroupRead.Found(emptyMap()), "me"))
+        assertEquals("no account: never a member", GroupGone.Read.NOT_MEMBER, GroupGone.read(Notices.GroupRead.Found(member), ""))
+        assertEquals(
+            GroupGone.Read.NOT_MEMBER,
+            GroupGone.read(Notices.GroupRead.Found(mapOf("memberUids" to listOf("ow"), "former" to mapOf("" to mapOf("at" to at)))), ""),
+        )
+        // Rejoined: `former` cleared, a member again (acceptInvite): shared.
+        assertEquals(
+            GroupGone.Read.EXISTS,
+            GroupGone.read(Notices.GroupRead.Found(mapOf("memberUids" to listOf("ow", "me"), "former" to emptyMap<String, Any>())), "me"),
+        )
+    }
+
+    /** D-252 fix wave (M3): a listing like the last one checked is passed by (no vault read); a new group, a lost one
+     *  or a confirmation is a change; null (a new session, a failed read) always checks. iOS:
+     *  testAListingLikeTheLastCheckedIsPassedBy. */
+    @Test
+    fun a_listing_like_the_last_checked_is_passed_by() {
+        val last = mapOf("a" to true, "b" to false)
+        assertTrue(GroupGone.unchanged(mapOf("a" to true, "b" to false), last))
+        assertFalse("a confirmation can lift a mark", GroupGone.unchanged(mapOf("a" to true, "b" to true), last))
+        assertFalse("a group left the listing", GroupGone.unchanged(mapOf("a" to true), last))
+        assertFalse("a group joined it", GroupGone.unchanged(mapOf("a" to true, "b" to false, "c" to true), last))
+        assertFalse("the session's first listing, or one that must run again", GroupGone.unchanged(last, null))
+        assertFalse("even an empty first listing is checked (the sweep)", GroupGone.unchanged(emptyMap(), null))
+        assertTrue(GroupGone.unchanged(emptyMap(), emptyMap()))
     }
 
     /** Which held groups are asked about: the session's first listing sweeps every one in the cloud from this phone that
@@ -294,7 +336,13 @@ class GroupEndTest {
         )
         val check = cloud.substringAfter("private fun checkVanished(").substringBefore("\n    /** One `groupRoles` call")
         assertTrue("found", check.contains("private fun askVanished("))
-        assertTrue("the one read, the removal's own", check.contains("GroupGone.decide(GroupGone.read(groupRead(groupId)))"))
+        assertTrue("the one read, the removal's own, for this account (M2)", check.contains("GroupGone.decide(GroupGone.read(groupRead(groupId), uid))"))
+        // D-252 fix wave (M3): a listing like the last checked is passed by before anything is launched.
+        val head = check.substringBefore("scope.launch {")
+        assertTrue(head.contains("if (GroupGone.unchanged(listing, vanishListing)) return\n        vanishListing = listing"))
+        assertFalse("no vault work on the listener's thread", head.contains("store."))
+        assertTrue("a failed read or lift checks again", check.contains("if (seen == null || seen.again) synchronized(listenLock) { vanishListing = null }"))
+        assertTrue("no answer: the next listing asks again", check.contains("vanishAsked.remove(groupId)\n                        vanishListing = null\n                        return@launch"))
         assertTrue(check.contains("if (!GroupGone.marks(over = store.readOnlyChecked()[groupId])) return@runCatching false"))
         assertTrue(check.contains("store.markReadOnly(groupId, GroupGone.mark(System.currentTimeMillis()))"))
         assertTrue("never after sign-out", check.contains("if (groupsListener == null || Account.uid() != uid) return@launch"))
@@ -308,7 +356,7 @@ class GroupEndTest {
             "a record's existence, a group's existence, groupRead (removal and D-252 share it), the catch-up",
             4, cloud.split("get(Source.SERVER)").size - 1,
         )
-        assertTrue("a new session sweeps again", cloud.contains("vanishAsked.clear()\n        listedNow = emptySet()"))
+        assertTrue("a new session sweeps again", cloud.contains("vanishAsked.clear()\n        listedNow = emptySet()\n        vanishListing = null"))
         val handle = cloud.substringAfter("                    Notices.Kind.DELETED -> {").substringBefore("                    Notices.Kind.ROLE, Notices.Kind.DECLINED -> {")
         assertTrue(handle.contains("Notices.deletedMark(item, uid, store.readOnlyChecked()[item.groupId])?.let {"))
         // Every write path loads the marks: Placing.load reads them, and `check` throws a copy's words first.

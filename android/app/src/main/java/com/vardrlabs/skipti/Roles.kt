@@ -411,8 +411,15 @@ object GroupEndCopy {
 object GroupGone {
     /** What the one read said. */
     enum class Read {
-        /** The document is there and this account may read it (a member, or a removed person: their notice says why). */
+        /** The document is there and this account is in its `memberUids`: still shared (a listing that missed it). */
         EXISTS,
+
+        /** D-252 fix wave (M2): the document is there and this account is in its `former` (the rules let a removed
+         *  account read it), not in `memberUids`: removed, and the removal's notice is lost or still on its way. */
+        FORMER,
+
+        /** The document is there and this account is in neither list (no reading the rules allow; refused in kind). */
+        NOT_MEMBER,
 
         /** The rules refused it: the account is no longer in it, or it is gone (a deleted group refuses every read). */
         REFUSED,
@@ -434,15 +441,25 @@ object GroupGone {
     }
 
     fun decide(read: Read): Outcome = when (read) {
-        Read.REFUSED, Read.NOT_FOUND -> Outcome.READ_ONLY
+        Read.REFUSED, Read.NOT_FOUND, Read.FORMER, Read.NOT_MEMBER -> Outcome.READ_ONLY
         Read.NETWORK_ERROR -> Outcome.RETRY
         Read.EXISTS -> Outcome.KEEP
     }
 
     /** The read as `CloudSync.groupRead` gives it (the D-210 removal read: permission-denied and not-found are
-     *  [Notices.GroupRead.Refused], null is no answer). */
-    fun read(answer: Notices.GroupRead?): Read = when (answer) {
-        is Notices.GroupRead.Found -> Read.EXISTS
+     *  [Notices.GroupRead.Refused], null is no answer), for the account [uid]. D-252 fix wave (M2): a document that is
+     *  there says EXISTS only when the account is a member; a removed account still reads it (`former`,
+     *  firestore.rules), so a removal whose notice never came ends the copy too, in the neutral words (the remover's
+     *  name is not in the document; the removal's notice, when it comes, says more). */
+    fun read(answer: Notices.GroupRead?, uid: String): Read = when (answer) {
+        is Notices.GroupRead.Found -> {
+            val members = (answer.data["memberUids"] as? List<*>)?.filterIsInstance<String>().orEmpty()
+            when {
+                uid.isNotEmpty() && uid in members -> Read.EXISTS
+                uid.isNotEmpty() && (answer.data["former"] as? Map<*, *>)?.get(uid) != null -> Read.FORMER
+                else -> Read.NOT_MEMBER
+            }
+        }
         Notices.GroupRead.Missing -> Read.NOT_FOUND
         Notices.GroupRead.Refused -> Read.REFUSED
         null -> Read.NETWORK_ERROR
@@ -473,6 +490,11 @@ object GroupGone {
      *  its vanished mark lifts. Only that mark: a removal or a deletion lifts only through an accepted invite. */
     fun lifts(mark: ReadOnlyDTO?, listedConfirmed: Boolean): Boolean =
         listedConfirmed && mark?.kind == ReadOnlyDTO.VANISHED
+
+    /** D-252 fix wave (M3): whether a listing from the server can be passed by: the same groups, each as confirmed as
+     *  in the listing the last check read (a confirmation can lift a vanished mark, so it is a change). Null [last]:
+     *  the session's first listing, or a check that must run again (a vault read that failed, a read with no answer). */
+    fun unchanged(listing: Map<String, Boolean>, last: Map<String, Boolean>?): Boolean = last != null && last == listing
 }
 
 // ---- The main thread, as a seam ----
