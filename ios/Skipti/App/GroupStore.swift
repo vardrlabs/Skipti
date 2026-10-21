@@ -107,9 +107,12 @@ extension LedgerStore {
         try write(me, key: Self.selfKey)
         try Sync.appendGroupOps(self, [.you(id: me.id, name: name)], placing: .none, nowMs: nowMs)
         // D-229 decision 45: a group where this account lost its place keeps its names (nothing is written there).
-        let lost = try Placing.load(self).lost
+        // D-252: nor does a read-only copy (removed, deleted, no longer shared): its Placing refuses the rename too, and
+        // the whole name change with it (Android's twin: `setYourName` in LedgerStore.kt).
+        let placing = try Placing.load(self)
         let renamed = try namedGroups().map { named -> NamedGroupWire in
-            named.members.contains(where: { $0.id == me.id }) && !lost.contains(named.group.id)
+            let frozen = placing.lost.contains(named.group.id) || placing.copyRefusal(group: named.group.id) != nil
+            return named.members.contains(where: { $0.id == me.id }) && !frozen
                 ? try ffiRenameMember(named: named, memberId: me.id, name: name)
                 : named
         }

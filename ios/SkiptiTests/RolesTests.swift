@@ -2339,6 +2339,28 @@ final class GroupEndTests: XCTestCase {
         XCTAssertEqual(try store.allRecords().count, records + 2)
     }
 
+    /// A name change passes a read-only copy by (it keeps its names), and still renames every group still shared: the
+    /// twin of Android's `a_new_name_passes_a_read_only_copy_by` (D-252 stage 3; before it, the copy's Placing refused
+    /// the rename and the whole name change failed).
+    func testANewNamePassesAReadOnlyCopyBy() throws {
+        let store = device("rename")
+        let me = try store.setYourName("Tim")
+        let goa = try store.createGroup(name: "Goa", settlementCurrency: "INR", people: ["Rahul"])
+        let lisbon = try store.createGroup(name: "Lisbon", settlementCurrency: "INR", people: ["Rahul"])
+        try store.markReadOnly(goa.group.id, LedgerStore.ReadOnly(kind: "deleted", by: "Tim", at: at, byYou: true))
+        try store.setYourName("Timothy")
+        func nameIn(_ group: String) throws -> String? {
+            try XCTUnwrap(try store.namedGroups().first { $0.group.id == group }).members.first { $0.id == me.id }?.name
+        }
+        XCTAssertEqual(try nameIn(lisbon.group.id), "Timothy")
+        XCTAssertEqual(try nameIn(goa.group.id), "Tim", "the copy keeps its names")
+        let renames = try store.allRecords().filter { $0.recordType == LedgerStore.Sync.groupOpType }.compactMap { record -> String? in
+            guard case .renameMember(let groupId, _, _)? = try? ffiDecodeGroupOp(blob: record.blob) else { return nil }
+            return groupId
+        }
+        XCTAssertEqual(renames, [lisbon.group.id], "one rename, in the group still shared")
+    }
+
     // MARK: The sync layer's wiring (pure rules above; these pin where they run)
 
     func testTheSyncLayerAsksOnlyFromTheServerAndNeverDeletesAnything() throws {
