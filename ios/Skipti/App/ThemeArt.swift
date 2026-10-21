@@ -1203,6 +1203,16 @@ enum BarTint {
 extension View {
     /// A bar item's tint: the ground's accent (BarTint).
     func barTint() -> some View { tint(Tokens.groundAccent) }
+
+    /// D-248 (decision 204): a text bar button (Cancel, Done, Close, a toolbar link) in the bar button's own font, 17 to
+    /// 20 (`TitleStyle.barButtonFont`), as UIKit draws its own bar buttons on iOS 26 and later and as Android's pill is
+    /// (`BarDecisions.pillTextDp`). Without it a SwiftUI toolbar Button takes the root's `.font(TypeRole.body())`
+    /// (AppearanceApplier), the body face scaled with no cap: 44 pt at the largest step, a pill 171 pt wide (the look).
+    /// Applied per text Button, never inside `barTint()` (which also wraps the avatar link); a source guard in
+    /// D248FixesTests checks every text toolbar Button carries it.
+    func barButtonText() -> some View {
+        font(Font(TitleStyle.barButtonFont(theme: AppearanceState.shared.theme, category: AppearanceState.shared.contentSizeCategory)))
+    }
 }
 
 /// D-213 (the founder, demo option A): every navigation title in the theme's display face, set on the
@@ -1290,10 +1300,16 @@ enum TitleStyle {
     /// 17, so it gets the theme's body face at 17, scaled like the system's `.body` text. Colour stays the bar's tint.
     /// D-248 fix wave (review I3): it stops growing at `barButtonCap`.
     static func barButtonAttributes(theme: AppTheme, category: UIContentSizeCategory) -> [NSAttributedString.Key: Any] {
+        [.font: barButtonFont(theme: theme, category: category)]
+    }
+
+    /// The bar button's font: the theme's body face at 17 scaled like `.body`, kept to 17 to 20 (`barText`, `barButtonCap`).
+    /// UIKit's bar buttons take it through `barButtonAttributes`; SwiftUI's through `View.barButtonText()`.
+    static func barButtonFont(theme: AppTheme, category: UIContentSizeCategory) -> UIFont {
         let base = TypeRole.base(TypeRole.face(.body, theme: theme), size: 17, weight: 400, tabular: false)
         let font = UIFontMetrics(forTextStyle: .body)
             .scaledFont(for: base, maximumPointSize: barButtonCap, compatibleWith: UITraitCollection(preferredContentSizeCategory: category))
-        return [.font: barText(font)]
+        return barText(font)
     }
 
     /// D-248 fix wave (review I3): the largest a bar button's text is drawn. iOS 26 and later draw it at 20 at most

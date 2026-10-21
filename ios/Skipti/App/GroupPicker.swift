@@ -320,7 +320,7 @@ struct PeopleScreen: View {
                             onChange()
                         })
                         .toolbar {
-                            ToolbarItem(placement: .cancellationAction) { Button(RolesCopy.cancel) { personSheet = nil }.barTint() }
+                            ToolbarItem(placement: .cancellationAction) { Button(RolesCopy.cancel) { personSheet = nil }.barButtonText().barTint() }
                         }
                 }
                 .presentationDetents([.medium, .large])

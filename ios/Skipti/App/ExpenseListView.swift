@@ -188,7 +188,7 @@ struct ExpenseListView: View {
                 AddExpenseScreen(onSaved: { editing = nil; load() }, editing: target)
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
-                            Button("Cancel") { editing = nil }.barTint()
+                            Button("Cancel") { editing = nil }.barButtonText().barTint()
                         }
                     }
             }

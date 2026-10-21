@@ -262,7 +262,7 @@ struct GroupPictureSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(GroupPictures.cancel) { dismiss() }.barTint()
+                    Button(GroupPictures.cancel) { dismiss() }.barButtonText().barTint()
                 }
             }
         }

@@ -1007,7 +1007,7 @@ struct RemovalSheet: View {
         NavigationStack {
             RemovalFlowView(store: store, named: named, target: target, shared: shared, onFinished: onFinished)
                 .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button(RolesCopy.cancel) { onClose() }.barTint() }
+                    ToolbarItem(placement: .cancellationAction) { Button(RolesCopy.cancel) { onClose() }.barButtonText().barTint() }
                 }
         }
     }

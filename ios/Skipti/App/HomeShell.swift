@@ -195,7 +195,7 @@ struct HomeShell: View {
                 })
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { adding = false }.barTint()
+                        Button("Cancel") { adding = false }.barButtonText().barTint()
                     }
                 }
             }

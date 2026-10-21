@@ -315,10 +315,10 @@ class ScreenBarsTest {
     fun the_review_and_the_push_only_pages_are_sheets_as_on_ios() {
         assertEquals("Close", BarDecisions.CLOSE_LABEL)
         val ios = java.io.File("../../ios/Skipti/App/SkiptiApp.swift").readText()
-        assertTrue(ios.contains("Button(\"Close\") { push.opened = nil }.barTint()"))
-        assertTrue(ios.contains("Button(\"Close\") { push.openedInvitations = false }.barTint()"))
+        assertTrue(ios.contains("Button(\"Close\") { push.opened = nil }.barButtonText().barTint()"))
+        assertTrue(ios.contains("Button(\"Close\") { push.openedInvitations = false }.barButtonText().barTint()"))
         assertTrue(java.io.File("../../ios/Skipti/App/RemovalFlow.swift").readText()
-            .contains("ToolbarItem(placement: .cancellationAction) { Button(RolesCopy.cancel) { onClose() }.barTint() }"))
+            .contains("ToolbarItem(placement: .cancellationAction) { Button(RolesCopy.cancel) { onClose() }.barButtonText().barTint() }"))
         // The removal flow: FlowScreen draws the sheet bar when given a cancel; only the review's root is.
         val flow = src("RemovalFlow.kt")
         assertTrue(flow.contains("    cancel: (() -> Unit)? = null,\n"))

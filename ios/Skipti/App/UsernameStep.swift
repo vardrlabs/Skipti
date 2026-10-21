@@ -275,7 +275,7 @@ struct UsernameStep: View {
         .toolbar {
             if let onCancel {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(UsernameCopy.cancel) { onCancel() }.barTint()
+                    Button(UsernameCopy.cancel) { onCancel() }.barButtonText().barTint()
                 }
             }
         }
@@ -383,7 +383,7 @@ struct UsernameChangeSheet: View {
         .auroraBackground()
         .navigationTitle(UsernameCopy.change)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .cancellationAction) { Button(UsernameCopy.cancel) { dismiss() }.barTint() } }
+        .toolbar { ToolbarItem(placement: .cancellationAction) { Button(UsernameCopy.cancel) { dismiss() }.barButtonText().barTint() } }
         .alert(UsernameCopy.confirmTitle(pending ?? ""), isPresented: $confirming) {
             Button(UsernameCopy.change) {
                 if let h = pending { Task { await save(h) } }

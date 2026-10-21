@@ -544,6 +544,173 @@ final class D248FixesTests: XCTestCase {
         XCTAssertLessThan(long.convert(long.bounds, to: nil).width, long.intrinsicContentSize.width - 10)
     }
 
+    // MARK: - Decision 204: bar buttons as SwiftUI draws them
+
+    /// A sheet's bar as the app draws it: SwiftUI `content` in a NavigationStack, presented as a sheet over a plain root
+    /// on a 375 pt window, under the app's root font (`AppearanceApplier`'s `.font(TypeRole.body())`, pinned below) with
+    /// the app's appearance applied for `theme` at text `step`. Returns the title label and the Cancel/Done/Close glass
+    /// pill (the leading glass view in the bar).
+    @MainActor
+    private func hostedSheet(_ content: some View, title: String, theme: AppTheme, step: Int)
+        throws -> (title: UILabel, pill: CGRect, window: UIWindow) {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let shared = AppearanceState.shared
+        shared.theme = theme
+        shared.phoneCategory = .large
+        shared.textStep = step
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: TitleWidth.phone, height: 812)
+        Appearance.apply(shared, to: window)
+        window.rootViewController = UIViewController()
+        window.isHidden = false
+        let host = UIHostingController(rootView: NavigationStack { content }.font(TypeRole.body()))
+        window.rootViewController?.present(host, animated: false)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+        var label: UILabel?
+        var glass: [CGRect] = []
+        func walk(_ view: UIView) {
+            let frame = view.convert(view.bounds, to: nil)
+            if let l = view as? UILabel, (l.attributedText?.string ?? l.text) == title, frame.minY < 160 { label = l }
+            if String(describing: type(of: view)).contains("GlassInteraction"), frame.minY < 160 { glass.append(frame) }
+            for sub in view.subviews { walk(sub) }
+        }
+        walk(window)
+        let pill = try XCTUnwrap(glass.filter { $0.minX < TitleWidth.phone / 2 }.min { $0.minX < $1.minX }, "\(theme) \(step) '\(title)': no pill")
+        return (try XCTUnwrap(label, "\(theme) \(step) '\(title)'"), pill, window)
+    }
+
+    @MainActor
+    private func closeHosted(_ window: UIWindow) {
+        window.rootViewController?.dismiss(animated: false)
+        window.isHidden = true
+    }
+
+    /// Where UIKit puts a sheet's title beside a pill `pill` wide (TitleWidth's rule, measured on iOS 27): centred when
+    /// that clears the pill by `pillGap`, else just clear of it.
+    private func expectedTitleMinX(width: CGFloat, pill: CGFloat) -> CGFloat {
+        let centred = (TitleWidth.phone - width) / 2
+        let least = TitleWidth.edge + pill + TitleWidth.pillGap
+        return min(max(centred, least), TitleWidth.phone - TitleWidth.edge - width)
+    }
+
+    /// The app's own New group sheet (CreateGroupSheet), as SwiftUI draws it, in every theme at the phone's size and at
+    /// the largest step: the Cancel pill is as wide as the bar button's 17 to 20 font makes it (`TitleWidth.pill`),
+    /// the title is whole, drawn at the tables' size, and centred where the table says (centred on the screen at both
+    /// steps here). Before decision 204 the pill took the root's uncapped body font: about 171 pt at the largest step
+    /// and the title pushed off centre (the look); removing `.barButtonText()` from this sheet's Cancel turns it red.
+    @MainActor
+    func testTheNewGroupSheetIsDrawnAsTheTableSays() throws {
+        let shared = AppearanceState.shared
+        let saved = (shared.theme, shared.phoneCategory, shared.textStep)
+        defer { (shared.theme, shared.phoneCategory, shared.textStep) = saved }
+        let store = LedgerStore(path: dir.appendingPathComponent("ledger.db").path)
+        for theme in AppTheme.allCases {
+            for step in [0, 8] {
+                let category = TextSize.category(phone: .large, step: step)
+                closeHosted(try hostedSheet(Color.clear.navigationTitle("Settle").toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") {}.barButtonText() } },
+                                            title: "Settle", theme: theme, step: step).window)
+                let (label, pill, window) = try hostedSheet(CreateGroupSheet(store: store, needsYourName: false) { _ in },
+                                                            title: "New group", theme: theme, step: step)
+                defer { closeHosted(window) }
+                let at = "\(theme) \(category.rawValue)"
+                let frame = label.convert(label.bounds, to: nil)
+                XCTAssertEqual(pill.minX, TitleWidth.edge, accuracy: 0.5, "\(at): the pill's place")
+                XCTAssertEqual(pill.width, TitleWidth.pill("Cancel", theme: theme, category: category), accuracy: 1.5, "\(at): the pill")
+                XCTAssertGreaterThanOrEqual(frame.width, label.intrinsicContentSize.width - 0.5, "\(at): cut")
+                XCTAssertEqual(frame.minX, expectedTitleMinX(width: label.intrinsicContentSize.width, pill: pill.width), accuracy: 1, "\(at): the title's place")
+                XCTAssertEqual(frame.midX, TitleWidth.phone / 2, accuracy: 1, "\(at): centred")
+                let font = (label.attributedText?.length ?? 0) > 0 ? label.attributedText?.attribute(.font, at: 0, effectiveRange: nil) as? UIFont : label.font
+                XCTAssertEqual(try XCTUnwrap(font).pointSize, TitleStyle.font(large: false, theme: theme, category: category).pointSize, accuracy: 0.01, at)
+            }
+        }
+    }
+
+    /// Every sheet title in the table, in a bar SwiftUI draws (the app's root font, the button through
+    /// `.barButtonText()`), in every theme at the largest step: whole, clear of the pill by `pillGap`, inside `edge` of
+    /// the far side, placed by the table's rule, and the pill as wide as `TitleWidth.pill`. The negative: the same bar
+    /// with a plain Button (the root's font, as before decision 204) draws the pill far wider than the table.
+    @MainActor
+    func testEverySheetTitleIsDrawnAsTheTableSaysInSwiftUI() throws {
+        let shared = AppearanceState.shared
+        let saved = (shared.theme, shared.phoneCategory, shared.textStep)
+        defer { (shared.theme, shared.phoneCategory, shared.textStep) = saved }
+        let biggest = try XCTUnwrap(TextSize.ladder.last)
+        var drawn = 0
+        for theme in AppTheme.allCases {
+            // A new theme or text size reaches a bar's button on the next turn (as in the UIKit-bar test): let it land.
+            closeHosted(try hostedSheet(Color.clear.navigationTitle("Settle").toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") {}.barButtonText() } },
+                                        title: "Settle", theme: theme, step: 8).window)
+            for (title, pill) in sheetTitles {
+                guard let pill else { continue }
+                let bar = Color.clear.navigationTitle(title).navigationBarTitleDisplayMode(.inline)
+                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button(pill) {}.barButtonText().barTint() } }
+                let (label, glass, window) = try hostedSheet(bar, title: title, theme: theme, step: 8)
+                defer { closeHosted(window) }
+                let at = "\(theme) '\(title)' beside \(pill)"
+                let frame = label.convert(label.bounds, to: nil)
+                XCTAssertEqual(glass.width, TitleWidth.pill(pill, theme: theme, category: biggest), accuracy: 1.5, "\(at): the pill")
+                XCTAssertGreaterThanOrEqual(frame.width, label.intrinsicContentSize.width - 0.5, "\(at): cut")
+                XCTAssertGreaterThanOrEqual(frame.minX, glass.maxX + TitleWidth.pillGap - 0.5, "\(at): runs into the pill")
+                XCTAssertLessThanOrEqual(frame.maxX, TitleWidth.phone - TitleWidth.edge + 0.5, at)
+                XCTAssertEqual(frame.minX, expectedTitleMinX(width: label.intrinsicContentSize.width, pill: glass.width), accuracy: 1, "\(at): placed")
+                drawn += 1
+            }
+        }
+        XCTAssertEqual(drawn, AppTheme.allCases.count * sheetTitles.filter { $0.pill != nil }.count)
+        // The negative: a plain Button takes the root's body font, uncapped.
+        let plain = Color.clear.navigationTitle("New group").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") {}.barTint() } }
+        let (_, wide, window) = try hostedSheet(plain, title: "New group", theme: .norse, step: 8)
+        closeHosted(window)
+        XCTAssertGreaterThan(wide.width, TitleWidth.pill("Cancel", theme: .norse, category: biggest) + 40, "plain: \(wide.width)")
+    }
+
+    /// The scanner the guard below runs: every `ToolbarItem` block in `source` whose content is a text Button or a
+    /// NavigationLink, and does not carry `.barButtonText()`, by its first line.
+    private func barButtonsWithoutTheFont(_ source: String) -> [String] {
+        var missing: [String] = []
+        var rest = source[...]
+        while let start = rest.range(of: "ToolbarItem(") {
+            guard let open = rest[start.upperBound...].firstIndex(of: "{") else { break }
+            var depth = 0
+            var end = open
+            for i in rest[open...].indices {
+                if rest[i] == "{" { depth += 1 }
+                if rest[i] == "}" { depth -= 1; if depth == 0 { end = i; break } }
+            }
+            let block = rest[open...end]
+            if (block.contains("Button(") || block.contains("NavigationLink(")) && !block.contains(".barButtonText()") {
+                missing.append(String(block.prefix(80)))
+            }
+            rest = rest[rest.index(after: end)...]
+        }
+        return missing
+    }
+
+    /// Decision 204: every text toolbar Button and link in the app goes through `.barButtonText()` (the image-only
+    /// avatar link does not need it), and the root font the hosted tests mirror is the app's. Negative: the scanner
+    /// flags a toolbar Button without it.
+    func testEveryTextBarButtonTakesTheBarButtonFont() throws {
+        let folder = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Skipti/App")
+        let files = try FileManager.default.contentsOfDirectory(atPath: folder.path).filter { $0.hasSuffix(".swift") }
+        var items = 0
+        for file in files {
+            let source = try String(contentsOf: folder.appendingPathComponent(file), encoding: .utf8)
+            items += source.components(separatedBy: "ToolbarItem(").count - 1
+            XCTAssertEqual(barButtonsWithoutTheFont(source), [], file)
+        }
+        XCTAssertGreaterThanOrEqual(items, 20, "the scan found the toolbars")
+        XCTAssertFalse(try appSource("ThemeArt.swift").contains("func barTint() -> some View { tint(Tokens.groundAccent).barButtonText"),
+                       "never inside barTint (it wraps the avatar)")
+        XCTAssertTrue(try appSource("Appearance.swift").contains(".font(TypeRole.body())\n            .tint(Tokens.accent)"),
+                      "the root font the hosted tests mirror")
+        // The negatives: the scanner sees a missing one, and passes one that has it.
+        let bad = "x.toolbar {\n ToolbarItem(placement: .cancellationAction) { Button(\"Cancel\") { dismiss() }.barTint() }\n}"
+        XCTAssertEqual(barButtonsWithoutTheFont(bad).count, 1)
+        XCTAssertEqual(barButtonsWithoutTheFont(bad.replacingOccurrences(of: "}.barTint()", with: "}.barButtonText().barTint()")).count, 0)
+        XCTAssertEqual(barButtonsWithoutTheFont("ToolbarItem(placement: .topBarTrailing) { accountLink.barTint() }").count, 0)
+    }
+
     // MARK: - U31 cause 1: a live bar measures its title again (review M4)
 
     /// The cut the founder saw was a live bar's stale title width (the look: the same page entered again was whole). A

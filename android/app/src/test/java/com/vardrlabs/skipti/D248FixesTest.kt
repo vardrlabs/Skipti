@@ -512,7 +512,7 @@ class D248FixesTest {
         val ios = java.io.File("../../ios/Skipti/App/ThemeArt.swift").readText()
         assertTrue("static let floor: CGFloat = 17" in ios)
         assertTrue("font.pointSize < TitleWidth.floor ? font.withSize(TitleWidth.floor) : font" in ios)
-        assertTrue("return [.font: barText(font)]" in ios)
+        assertTrue("return barText(font)" in ios)
     }
 
     // ---- Review I3: sheet titles beside their pill ----

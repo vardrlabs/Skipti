@@ -33,6 +33,7 @@ struct SmokeScreenView: View {
                 NavigationLink("Balance") {
                     BalanceScreen(source: .vault)
                 }
+                .barButtonText()
                 .barTint()
             }
             ToolbarItem(placement: .bottomBar) {
@@ -57,6 +58,7 @@ struct SmokeScreenView: View {
                         SettleScreen(source: .vault)
                     }
                 }
+                .barButtonText()
                 .barTint()
             }
         }

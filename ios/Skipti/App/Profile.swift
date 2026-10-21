@@ -296,6 +296,7 @@ struct PictureViewer: View {
                     // app accent in light mode (pale purple on black, weak
                     // contrast) and white only in dark (found in the look).
                     Button(ProfileCopy.done) { dismiss() }
+                        .barButtonText()
                         .foregroundStyle(Color.white)
                 }
             }

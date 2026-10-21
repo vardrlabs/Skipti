@@ -263,7 +263,7 @@ struct SkiptiApp: App {
                         PushedExpenseView(store: LedgerStore.defaultStore(), target: target)
                             .toolbar {
                                 ToolbarItem(placement: .cancellationAction) {
-                                    Button("Close") { push.opened = nil }.barTint()
+                                    Button("Close") { push.opened = nil }.barButtonText().barTint()
                                 }
                             }
                     }
@@ -277,7 +277,7 @@ struct SkiptiApp: App {
                         GroupPageScreen(groupID: opened.id)
                             .toolbar {
                                 ToolbarItem(placement: .cancellationAction) {
-                                    Button("Close") { push.openedGroup = nil }.barTint()
+                                    Button("Close") { push.openedGroup = nil }.barButtonText().barTint()
                                 }
                             }
                     }
@@ -291,7 +291,7 @@ struct SkiptiApp: App {
                         PhonesScreen()
                             .toolbar {
                                 ToolbarItem(placement: .cancellationAction) {
-                                    Button("Close") { push.openedPhones = false }.barTint()
+                                    Button("Close") { push.openedPhones = false }.barButtonText().barTint()
                                 }
                             }
                     }
@@ -313,7 +313,7 @@ struct SkiptiApp: App {
                         InvitationsScreen(store: LedgerStore.defaultStore()) { push.openedInvitations = false }
                             .toolbar {
                                 ToolbarItem(placement: .cancellationAction) {
-                                    Button("Close") { push.openedInvitations = false }.barTint()
+                                    Button("Close") { push.openedInvitations = false }.barButtonText().barTint()
                                 }
                             }
                     }

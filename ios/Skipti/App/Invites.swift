@@ -552,7 +552,7 @@ struct JoinScreen: View {
         .toolbar {
             if let onCancel, !phase.locked {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { onCancel() }.barTint()
+                    Button("Cancel") { onCancel() }.barButtonText().barTint()
                 }
             }
         }

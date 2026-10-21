@@ -44,7 +44,7 @@ struct YourNameSheet: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") { dismiss() }.barTint()
+                Button("Cancel") { dismiss() }.barButtonText().barTint()
             }
         }
     }
@@ -230,7 +230,7 @@ struct CreateGroupSheet: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") { dismiss() }.barTint()
+                Button("Cancel") { dismiss() }.barButtonText().barTint()
             }
         }
         .sheet(isPresented: $choosingPicture) {

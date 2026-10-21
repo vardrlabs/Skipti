@@ -907,7 +907,7 @@ struct AddPersonSheet: View {
         .auroraBackground()
         .navigationTitle(AddPersonCopy.title)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() }.barTint() } }
+        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() }.barButtonText().barTint() } }
         // D-224 (Design 8): the done bar became the toast, with the same words, drawn by this sheet's own host.
         .overlay { DoneToastHost(center: localDone) }
         .task { recents = People.recents(store, groupID: groupID) }
