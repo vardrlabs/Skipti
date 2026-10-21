@@ -1601,30 +1601,30 @@ class LedgerStore(
     /** Created on first need. A vault written by the old fixture seeding adopts
      *  the fixture Ada's id: its expenses already name that id as payer, so the
      *  migration rewrites no record. */
-    fun ensureSelf(): SelfDTO {
+    fun ensureSelf(nowMs: Long = System.currentTimeMillis()): SelfDTO {
         loadSelf()?.let { return it }
         val legacy = loadGroups().any { LEGACY_ADA in it.members }
         val created = SelfDTO(id = if (legacy) LEGACY_ADA else ffiNewParticipantId())
         writeKv(SELF_KEY, json.encodeToString(SelfDTO.serializer(), created))
         // D-153: "you" is a record, so the account's other devices know it.
-        appendGroupOps(listOf(GroupOpIn.You(created.id, null)), Placing.NONE)
+        appendGroupOps(listOf(GroupOpIn.You(created.id, null)), Placing.NONE, nowMs)
         return created
     }
 
     /** Sets your name (trimmed and validated by core) and carries it into every
      *  group you are in, so others see the new name too. */
-    fun setYourName(raw: String): SelfDTO {
+    fun setYourName(raw: String, nowMs: Long = System.currentTimeMillis()): SelfDTO {
         val name = ffiMemberName(raw)
-        val me = ensureSelf().copy(name = name)
+        val me = ensureSelf(nowMs).copy(name = name)
         writeKv(SELF_KEY, json.encodeToString(SelfDTO.serializer(), me))
-        appendGroupOps(listOf(GroupOpIn.You(me.id, name)), Placing.NONE)
+        appendGroupOps(listOf(GroupOpIn.You(me.id, name)), Placing.NONE, nowMs)
         // D-229 decision 45: a group whose place is lost takes no rename (its
         // Placing refuses every record there); every other group does.
         val placing = Placing.load(this)
         val renamed = namedGroups().map { named ->
             if (named.members.any { it.id == me.id } && !placing.refuses(named.group.id)) ffiRenameMember(named, me.id, name) else named
         }
-        saveNamed(renamed)
+        saveNamed(renamed, nowMs)
         return me
     }
 
@@ -1687,8 +1687,13 @@ class LedgerStore(
 
     /** Creates a group with you in it plus the people named, selects it, and
      *  returns it. Needs your name first. */
-    fun createGroup(name: String, settlementCurrency: String, people: List<String>): NamedGroupWire {
-        val me = ensureSelf()
+    fun createGroup(
+        name: String,
+        settlementCurrency: String,
+        people: List<String>,
+        nowMs: Long = System.currentTimeMillis(),
+    ): NamedGroupWire {
+        val me = ensureSelf(nowMs)
         val myName = me.name ?: throw NeedsYourNameException()
         val created = ffiCreateNamedGroup(
             name, settlementCurrency, MemberWire(me.id, myName), people.filter { it.isNotBlank() },
@@ -1697,7 +1702,7 @@ class LedgerStore(
         // Swallowing it would write ONLY the new group and erase the rest (the
         // bug caught in the iOS draft, D-135).
         val existing = namedGroups()
-        saveNamed(existing + created)
+        saveNamed(existing + created, nowMs)
         selectGroup(created.group.id)
         return created
     }
@@ -1817,11 +1822,12 @@ class LedgerStore(
     /** D-153: a change is saved as OPERATIONS, then the kv groups are rebuilt
      *  from the records, so this device and every other one see the same
      *  groups (iOS: GroupStore.save). */
-    private fun saveNamed(groups: List<NamedGroupWire>) {
+    private fun saveNamed(groups: List<NamedGroupWire>, nowMs: Long = System.currentTimeMillis()) {
         val before = namedGroups()
         val created = projectGroups().groups.map { it.group.id }.toSet()
-        // D-229: a rename of you is written as the place each group knows you by.
-        appendGroupOps(Sync.operations(before, groups, created), Placing.load(this))
+        // D-229: a rename of you is written as the place each group knows you by. D-251: `nowMs` stamps the records (the
+        // store-shots seed writes a ledger with a past; every other caller: now).
+        appendGroupOps(Sync.operations(before, groups, created), Placing.load(this), nowMs)
         rebuildGroups()
     }
 

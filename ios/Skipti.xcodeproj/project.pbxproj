@@ -52,6 +52,7 @@
 		A10150 /* People.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10162 /* People.swift */; };
 		A10261 /* Spending.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10261 /* Spending.swift */; };
 		A10246 /* Welcome.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10246 /* Welcome.swift */; };
+		A10263 /* StoreShots.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10263 /* StoreShots.swift */; };
 		A10245 /* ProfileConfirm.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10245 /* ProfileConfirm.swift */; };
 		A10222 /* SettingsSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10222 /* SettingsSync.swift */; };
 		A10220 /* ListRows.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10220 /* ListRows.swift */; };
@@ -116,6 +117,7 @@
 		A10248 /* SettleUpTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10248 /* SettleUpTests.swift */; };
 		A10260 /* D248FixesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10260 /* D248FixesTests.swift */; };
 		A10247 /* WelcomeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10247 /* WelcomeTests.swift */; };
+		A10264 /* StoreShotsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10264 /* StoreShotsTests.swift */; };
 		A10262 /* SpendingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10262 /* SpendingTests.swift */; };
 		A10110 /* Profile.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10125 /* Profile.swift */; };
 		A10111 /* ProfileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10126 /* ProfileTests.swift */; };
@@ -205,6 +207,7 @@
 		B10162 /* People.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = People.swift; sourceTree = "<group>"; };
 		B10261 /* Spending.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Spending.swift; sourceTree = "<group>"; };
 		B10246 /* Welcome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Welcome.swift; sourceTree = "<group>"; };
+		B10263 /* StoreShots.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreShots.swift; sourceTree = "<group>"; };
 		B10245 /* ProfileConfirm.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileConfirm.swift; sourceTree = "<group>"; };
 		B10222 /* SettingsSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsSync.swift; sourceTree = "<group>"; };
 		B10220 /* ListRows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListRows.swift; sourceTree = "<group>"; };
@@ -256,6 +259,7 @@
 		B10248 /* SettleUpTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettleUpTests.swift; sourceTree = "<group>"; };
 		B10260 /* D248FixesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = D248FixesTests.swift; sourceTree = "<group>"; };
 		B10247 /* WelcomeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeTests.swift; sourceTree = "<group>"; };
+		B10264 /* StoreShotsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreShotsTests.swift; sourceTree = "<group>"; };
 		B10262 /* SpendingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpendingTests.swift; sourceTree = "<group>"; };
 		B10125 /* Profile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Profile.swift; sourceTree = "<group>"; };
 		B10126 /* ProfileTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileTests.swift; sourceTree = "<group>"; };
@@ -367,6 +371,7 @@
 				B10162 /* People.swift */,
 				B10261 /* Spending.swift */,
 				B10246 /* Welcome.swift */,
+				B10263 /* StoreShots.swift */,
 				B10245 /* ProfileConfirm.swift */,
 				B10222 /* SettingsSync.swift */,
 				B10220 /* ListRows.swift */,
@@ -419,6 +424,7 @@
 				B10248 /* SettleUpTests.swift */,
 				B10260 /* D248FixesTests.swift */,
 				B10247 /* WelcomeTests.swift */,
+				B10264 /* StoreShotsTests.swift */,
 				B10262 /* SpendingTests.swift */,
 				B10126 /* ProfileTests.swift */,
 				B10128 /* AboutTests.swift */,
@@ -654,6 +660,7 @@
 				A10150 /* People.swift in Sources */,
 				A10261 /* Spending.swift in Sources */,
 				A10246 /* Welcome.swift in Sources */,
+				A10263 /* StoreShots.swift in Sources */,
 				A10245 /* ProfileConfirm.swift in Sources */,
 				A10222 /* SettingsSync.swift in Sources */,
 				A10220 /* ListRows.swift in Sources */,
@@ -704,6 +711,7 @@
 				A10248 /* SettleUpTests.swift in Sources */,
 				A10260 /* D248FixesTests.swift in Sources */,
 				A10247 /* WelcomeTests.swift in Sources */,
+				A10264 /* StoreShotsTests.swift in Sources */,
 				A10262 /* SpendingTests.swift in Sources */,
 				A10111 /* ProfileTests.swift in Sources */,
 				A10113 /* AboutTests.swift in Sources */,

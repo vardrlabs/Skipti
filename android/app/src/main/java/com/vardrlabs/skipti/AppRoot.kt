@@ -113,6 +113,11 @@ class MainActivity : ComponentActivity() {
         // D-232 (decision 74): the appearance default is settled first of all, before anything can read the mode or
         // open (and so create) the vault: the `--emulator-as` sign-in below opens it on an IO thread.
         Appearance.settleDefault(applicationContext)
+        // D-251: `--store-shots` (a store page's seed, debug builds only: StoreShots.kt is in src/debug, release has a
+        // stub): the theme and mode it asks for, before the night mode is told and the appearance read; the vault is set
+        // aside and seeded by StoreShotsProof. Review I1: the launch's args, read once here (a store-shots extra is used
+        // once: never again from Recents or after the process died).
+        launchArgs = StoreShots.prepare(applicationContext, intent, savedInstanceState != null, debuggable())
         // D-232 (decision 78): Android 12+ is told the app's own night mode, so the window theme, the selection
         // toolbar and the next launch's splash follow it. Changing it makes this activity again, once.
         Appearance.tellNightMode(applicationContext)
@@ -127,7 +132,6 @@ class MainActivity : ComponentActivity() {
         // D-194: `--emulators` runs the ordinary app against the local Auth
         // and Firestore emulators. Debug builds only: another app can start
         // this activity with any extras.
-        val launchArgs = intent?.getStringExtra("args")
         if (ProofArgs.emulators(launchArgs, debuggable())) {
             com.google.firebase.auth.FirebaseAuth.getInstance().useEmulator("localhost", 9099)
             Cloud.emulator = true
@@ -215,7 +219,7 @@ class MainActivity : ComponentActivity() {
                         CompositionLocalProvider(LocalArtBackdrop provides rememberArtBackdrop()) {
                             AppRoot(
                                 verificationArg = proofArg(),
-                                forceWelcome = ProofArgs.welcome(intent?.getStringExtra("args"), debuggable()),
+                                forceWelcome = ProofArgs.welcome(launchArgs, debuggable()),
                                 openedInvite = openedInvite.value,
                                 onInviteHandled = { openedInvite.value = null },
                                 openedPush = openedPush.value,
@@ -248,7 +252,10 @@ class MainActivity : ComponentActivity() {
     private fun debuggable(): Boolean =
         (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
 
-    private fun proofArg(): String? = ProofArgs.proof(intent?.getStringExtra("args"), debuggable())
+    /** The `args` extra as onCreate read it (D-251 review I1: StoreShots.prepare uses a store-shots extra once). */
+    private var launchArgs: String? = null
+
+    private fun proofArg(): String? = ProofArgs.proof(launchArgs, debuggable())
 
     override fun onResume() {
         super.onResume()
@@ -435,6 +442,11 @@ fun AppRoot(
                     else -> HomeShell(vaultPath = vaultPath, startOn = HomeTab.SETTLE)
                 }
             }
+            return
+        }
+        "store-shots" -> {
+            // D-251: the store pages' seed (a proof launch: no lock, no welcome, no cloud), then the ordinary tabs on Home.
+            StoreShotsProof(vaultPath) { HomeShell(vaultPath = vaultPath, startOn = HomeTab.BALANCE) }
             return
         }
         "balance" -> {
@@ -625,7 +637,7 @@ fun AppRoot(
 
 /** The vault flag "this phone has opened SKIPTI before" (D-175's
  *  `app/launched`; it lived on KitGate until D-192). */
-private const val LAUNCHED_KEY = "app/launched"
+internal const val LAUNCHED_KEY = "app/launched"
 
 /** D-224 (Design 5, `ToastPlace.bottom(barShown)`): whether the shell's tab bar is composed, so the toast sits clear of
  *  it (and of the +) or near the bottom of a route without it. Memory only. */
@@ -1694,6 +1706,11 @@ object ProofArgs {
 
     fun proof(args: String?, debuggable: Boolean): String? {
         val trimmed = args?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        // D-251 review (M5): `--store-shots` anywhere is the store seed's proof, as on iOS; its flag is put first, the
+        // headless word AppRoot reads.
+        if (debuggable && "--store-shots" in tokens(trimmed)) {
+            return (listOf("--store-shots") + tokens(trimmed).filter { it != "--store-shots" }).joinToString(" ")
+        }
         if (!debuggable || tokens(trimmed).first() == "--emulators" || tokens(trimmed).first() == "--welcome") return null
         return trimmed
     }
@@ -1705,7 +1722,9 @@ object ProofArgs {
     /** `--emulators` (Debug builds only): the ordinary app against the local
      *  emulators. It may carry `--emulator-as <sub>`. */
     fun emulators(args: String?, debuggable: Boolean): Boolean =
-        debuggable && tokens(args).firstOrNull() == "--emulators"
+        // D-251 review: a store-shots launch is a proof with no account; `--emulators` (and its sign-in) rides along with
+        // it on neither shell.
+        debuggable && tokens(args).firstOrNull() == "--emulators" && "--store-shots" !in tokens(args)
 
     /** D-210: `--emulators --emulator-as <sub>` signs in to the Auth emulator
      *  as that subject first (a look with several accounts), then the ordinary

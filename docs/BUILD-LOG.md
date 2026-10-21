@@ -301,6 +301,7 @@ surface; 0026 the WebAuthn relying-party ID, superseded by 0027: the RP ID is `s
 | D-248 | **The small bugs and friction (U29 to U31; decisions 184 to 186 and 202 to 204).** A typed amount follows the phone's decimal mark through a new core parser (`ffi_money_parse_typed(text, currency, decimal_mark)`; a comma is decimal only on a comma phone, an ambiguous "1.234" refused on one; files keep the strict parser) with prefills and the example in the phone's mark from core (`ffi_money_typed_digits`) and the words "Enter an amount like 12.50."; Return on the last New group row adds a person; a new expense focuses its amount; the "0" hint in the floored ground colour; "Add your name first." / "Create a group first."; blank tax, tip and item amounts are 0 and a blank exact row names its person; the delete Undo is a toast wherever an expense is deleted ("Not restored." if it fails); a new group opens its page; PlaceLost in words on iOS; bar titles and bar buttons stay between 17 and 20 on both phones, measured as each draws them against the back button and a growing Cancel, which also ends iOS Norse's "APPEARAN..." cut (a stale title width too). Not reproduced: "No groups yet" after the first group, the Aurora tile's square halo. Two implementer stages, a review fix wave (the review's I1: "1,234" read as 1.234 KD on a dot phone), a title wave and a bar-button wave from the looks. | Not on a real phone; the delete Undo restores within the toast's window only. | `.drafts/u29/calls.md`, `.drafts/d246/plan.md` (its D-247 section is this unit), `.drafts/d248/` (stage reports, review, fixwave, titles-report, look/, sab-ios/, stage2/, fix/, gate.log) |
 | D-249 | **Just me and All my spending (the founder's U10: 163 to 166, 175, 176, 180, 193; mine 187 to 191, 205 to 208).** Expenses that belong to no group: the existing Expense record in the personal scope (group none, payer you, shares [you: total]), never in Balance, the hero, People, Settle up or the group count; synced only through your own log (no rules or Functions change, no deploy). Home gains a full-width "Your spending" section below Your ledgers (ᛁ in Norse, your picture elsewhere; a Just me / All my spending switch; this month's total and a category bar), hidden by You > Appearance "Spending on Home" (both local to the phone). The page "Your spending": month switcher, totals per currency never converted, Where the money went with a table, the list, and in All my spending your share of every group expense, counted per group with that group's own "you" (core `ffi_spending`). Add expense's Ledger row puts Just me first and hides the split; the Ledger page shows each ledger's tile and "Since {Month Year} · {n} people" / "Only you". The Expenses tab's Just me section, Edit for Just me, Export Just me (personal only, dated), a Wallet file into Just me, the CSV's `category` column appended last, the no-group hero asking to start a group, and the welcome's last line naming Just me. Every expense write checks its people belong to its ledger (decision 208). | Moving an expense between Just me and a group is not offered (delete and add again); your share in a group you left is not counted; a real Wallet file not imported on a device; not on a real phone. | `.drafts/u10/brief.md`, `.drafts/d248/plan.md` (the D-249 spec, folder named before a renumbering), `.drafts/d248/u10-stage1-report.recovered.md`, `.drafts/d249/` (stage reports, review, fixwave, look/, sab-ios/, stage3/, fw/, gate.log), mock-up https://claude.ai/artifact/FwwzuzRkyyxiuGvJKNMPCG (v2) |
 | D-250 | **The fluidity sweep (the founder's 194; mine 209, 215).** Things move instead of jumping, on both phones and identically: `ChangeMotion` names the UI changes from values that already existed (change 0.2 s, number 0.2 s, page 0.25 s, fill 0.9 s, fade 0.15 s); amounts roll by core's integers (counting up or down, left-to-right single lines only, else a cut); rows slide in and out on stable keys (Settle up's cards, the group page, Home's people, Expenses, New group, the split section); lines and errors rise in; meters and the You ring fill as the welcome's road does; pills slide (Just me/All, Chart/Table, Light/Dark); the theme change crossfades (never over the lock); buttons brighten and dim; Android's pages push and return like iOS's (their own layers, the leaving page recorded once, the tab bar dropping outside the slide, the outgoing page taking no taps). Every helper is a cut under Reduce Motion or Less motion and never stilled by power saving. New Group's ungated `withAnimation` now passes the door. | Android pushes measure p90 27 to 32 ms on the emulator (a full-window slide's cost there): the real-phone check is owed (decision 215); predictive back not wired. | `.drafts/d249/plan.md` and `audit.md` (the D-250 plan), `.drafts/d250/` (stage reports, review, fixwave, rec/ (iOS and Android clips), stage2/, fix/gfx/, sab/, gate.log) |
+| D-251 | **A store-shots seed for real screens (the founder's U32 store pages; decisions 173, 175 his; 216, 217 mine).** `--store-shots` (iOS DEBUG builds; Android debug builds, the code in the debug source set with a release no-op stub) fills a throwaway device with a deterministic sample ledger: you are Sam; Goa trip (Meera, Kiran, Rahul; INR; twelve expenses, a payment, the year milestone due), Flat 4B (Meera), Paris (Ana; EUR), and this month's Just me spending; through the normal checked store paths, with record times placed in this month (a `nowMs` parameter defaulting to now); no account, no cloud, no app lock written; the theme from `--store-theme`. It never deletes a ledger it did not make: the first run sets the vault aside (its key kept), a later run deletes only a vault marked `storeshots/seeded`, a vault with an account owner or an unmarked vault beside an aside is refused in words, moves are all or nothing, and Android uses the launch once. A restore recipe is in `.drafts/u32/plan.md`. | The seed writes the theme and mode for real; restoring the ledger does not restore them (the recipe says so). | `.drafts/u32/plan.md`, `.drafts/d251/` (report, review, look/, sabotage/, fix/, times.py, expected.py, gate.log) |
 | D-55 | **The networking boundary + OTP sign-in, end to end against the real relay.** The largest architectural gap closed: the relay is complete (auth, passkeys, subject-owned authz, restart-proven persistence — 163 tests) and the iOS app contained ZERO networking code. Boundary: `RelayTransport` protocol — URLSessionRelayTransport (real, localhost:8080) and a stub both satisfy it; screens talk to IdentityService, never to URLSession (ADR-0025's rule applied to networking). **D-27's contract is structural in the error type:** the 401 rejection maps to ONE `.rejected` case covering unknown accounts and wrong codes — the app cannot distinguish them and the UI copy never suggests which. OTP is the first leg landed (simpler transport — no entitlements); §4.2 makes passkeys the primary path and they follow over the SAME transport, recorded plainly. Tests: stub suite (uniform rejection across unknown/wrong-code shapes, 429/5xx mapping, malformed body → badResponse, session decode with explicit snake_case keys per D-18's wire format) + an E2E against a REAL running relay that SKIPS honestly when the relay is down (D-23: a skip is recorded, never mistaken for a pass). The E2E proved the request path + uniform rejection against the real axum handlers; a SUCCESSFUL verify is not provable from the test host (the relay never exposes the code — it goes out-of-band), covered server-side by the relay's own suite. ATS: NSAllowsLocalNetworking for the simulator's localhost; production rides the TLS deployment story | §4.2 makes passkeys primary; §5.8's deep-link hand-off and the D-41 subject-owned sync both need a signed-in subject, which this delivers | `ios/Skipti/Relay/IdentityService.swift`, `ios/Skipti/App/SignInScreen.swift`, `ios/SkiptiTests/RelayClientTests.swift` |
 | D-56 | **SyncService — the transport between the vault and the relay.** Pushes and pulls OPAQUE sealed blobs (hex-encoded) to/from the subject-owned bucket. D-18's cursor semantics respected (exclusive, 409 = normal); D-41's namespace (bucket = subject_id); §10.3 offline = default (.offline returned, local ledger stays authoritative). The E2E tests prove the transport against a real relay: unauthenticated push rejected by the auth gate, unauthenticated pull returns empty, request well-formed enough to route. The full push→pull round trip with a valid session is NOT provable here (the relay never exposes the OTP code — it goes out-of-band); covered server-side by the relay's own suite and locally by the vault tests. **The mnemonic golden flake (§5.6 recurrence):** the ffi.rs mnemonic golden called ffi_mnemonic_generate for a RANDOM kit, tampered word 0, and asserted validation fails — BIP-39's 4-bit checksum survives that ~1/16 of draws. Fixed by pinning the negative to entropy [0x42; 16] (the same fix mnemonic.rs got in D-49); the generate path is tested POSITIVELY only. AGENTS.md §7 gains the rule so it lives where sessions read | §6.4: the relay parses nothing; §10.3: offline is the default; D-18/D-41 respected, not reimplemented | `ios/Skipti/App/SyncService.swift`, `core/src/ffi.rs` (mnemonic golden), `AGENTS.md` (§7), `ios/SkiptiTests/SyncE2ETests.swift` |
 | D-57 | **Passkeys on iOS — §4.2's primary path over the same transport as D-55's OTP leg.** `PasskeyAuthService` is transport-only: register/authenticate start parse `challenge_id` + `publicKeyOptions` through webauthn-rs 0.5's REAL serde shape — options sit one level down under `publicKey` (the browser CredentialCreationOptions shape), camelCase inside (`pubKeyCredParams`), base64url unpadded; finish bodies match `RegisterPublicKeyCredential`/`PublicKeyCredential` field renames exactly (`rawId`/`clientDataJSON`/`attestationObject`/`authenticatorData`/`userHandle`), verified against the vendored crate source and pinned by capture-the-request tests on fixed bytes. Assertion finish carries optional `device_label` (D-34 parity: labels optional on both sign-in paths). D-27 stays structural: every 401 maps to ONE `.rejected` case across all four routes — the app cannot decompose it. `PasskeyCeremony` builds `ASAuthorizationPlatformPublicKeyCredential` requests from parsed options (provider keyed by RP ID; challenge/userID decoded; `excludeCredentials` gated to iOS 17.4 where the platform API exists) and maps results back into wire shapes. **Honest limit:** the controller ceremony cannot run until the associated-domains entitlement (`webcredentials:skipti.vardrlabs.com`), an AASA file served from https://skipti.vardrlabs.com, and TLS exist (ADR-0027) — no test claims otherwise; recorded in §4.4. E2E drives all four routes against a REAL relay: register/start returns parseable options whose RP ID is the dev default `localhost`; fabricated attestation / unknown account / garbage assertion reject uniformly. ALSO fixed here, found while wiring: the Xcode project file had `A10026` defined twice — committed HEAD failed `make ios-app` outright (SyncE2ETests compiled into the app target, XCTest unresolvable there) and in no resolution did SyncE2ETests ever run; unique IDs plus the missing test-phase entry brought its three tests to life against the live relay (incident §5.9). Full suite: **27 passed / 0 failed / 0 skipped** with the relay up | §4.2 makes passkeys primary; D-55 landed OTP first deliberately — same transport, same rejection contract | `ios/Skipti/Relay/{PasskeyAuthService,PasskeyCeremony}.swift`, `ios/SkiptiTests/PasskeyServiceTests.swift`, `ios/Skipti.xcodeproj/project.pbxproj` |
@@ -23451,6 +23452,68 @@ back, M8 the non-lazy Expenses list and three items left for the founder's eye (
 leaving page's picture taken once): first pass 39 EXACT, 1 SURVIVED (A21: Android's card slide flipped to the leading
 edge in RTL), pinned in 5bff9b7 and re-run EXACT: 40 EXACT, 0 compile errors.
 
+### D-251: a store-shots seed, 2026-10-21
+
+The full gate on the tree committed with this record (branch `d251-store-shots`; `.drafts/d251/gate.log`):
+
+```
+GATE PASSED: 23 passed, 0 skipped
+
+Evidence (paste into docs/BUILD-LOG.md §3 when claiming progress):
+
+  gate: full  ·  2026-10-21T19:15:14Z  ·  branch d251-store-shots  ·  commit 6b7a83c
+  cargo fmt --all -- --check                                 exit 0
+  cargo clippy --workspace --all-targets -- -D warnings      exit 0
+  float audit (ADR-0002: no f32/f64 in core/src)             exit 0
+  buildlog structure (D-number contiguity, fences)           exit 0
+  swift interpolation (no literal backslash-paren in UI strings) exit 0
+  swift autolink (no email/URL in string-literal UI titles)  exit 0
+  swift list rows (no styled button as a clear list row)     exit 0
+  em dashes (D-228: no U+2014 or U+2013 on the public surface) exit 0
+  gate self-test (D-137 heavy-leg proof and hook routing)    exit 0
+  cargo test --workspace                                     418 passed, 0 failed
+  cargo build -p skipti-core --target wasm32-unknown-unknown exit 0
+  cargo test --workspace --release -- --ignored              exit 0 (~40s sweeps)
+  bindings freshness (regenerate == committed)               exit 0 (byte-identical)
+  kotlin bindings compile standalone (bytes != buildable)    KOTLIN BINDINGS COMPILE OK
+  cargo audit                                                exit 0
+  cargo deny check (ADR-0012 banned SDK scan)                exit 0
+  SBOM generation (cargo cyclonedx)                          exit 0
+  firebase rules (emulators: every refusal tested)           RULES TESTS PASSED
+  npm audit (Cloud Functions' dependencies)                  exit 0 (no high or critical)
+  make ios-app (build + simulator tests)                     TEST SUCCEEDED
+  make android-app (core .so + APK packaging)                BUILD SUCCESSFUL
+  make android-test (JVM goldens against real core)          per-class tally printed; exits non-zero on any failure
+  licence inventory (regenerate == committed)                exit 0 (current)
+```
+
+cargo test 418 passed, 0 failed; iOS Executed 1000 tests, with 0 failures (0 unexpected); JVM 1200 tests, 0 failed, one variant (play debug), **CARRIED FORWARD**: no Android input changed, so Gradle reused the JUnit XML written 2026-10-21T19:06:00Z instead of rerunning. On the way: the seed commit iOS 997, JVM 1195; fix wave iOS 1000, JVM
+1200.
+
+**Built.** iOS `StoreShots.swift` wholly in `#if DEBUG` (`--store-shots` in `verificationArg`'s DEBUG family: the launch
+skips the gate, Firebase, the lock, the curtain, the welcome and sync; `StoreShotsScreen` seeds off the main thread and
+shows Home); Android `StoreShots.kt` in `src/debug` with a release stub, reached through `ProofArgs.proof` only, its
+args used once (removed from the intent; a relaunch from Recents runs the ordinary app). Seed through the store paths
+(core's checks run); `nowMs` on ensureSelf, setYourName, createGroup and save (default now; only the seed passes a
+time; written in ascending order so the record clock never goes back); theme and mode through
+`SettingsSync.applyFromAccount` (local, no record). The set-aside guard (decision 217): `storeshots/seeded` written
+first; `check(store)` refuses an owner or an unmarked vault beside an aside, deletes only a marked seed, moves all or
+nothing; an unreadable vault is set aside, never deleted; the refusal words shown on the proof screen.
+
+**Pinned from core** (`.drafts/d251/expected.py`): Home totals INR +3,671,100 and EUR -3,300 minor; nets Goa +1,411,000,
+Flat 4B +2,260,100, Paris -3,300; Just me this month 12,689.00 over 5 categories; Goa's year milestone; Lately's three
+newest rows. Time goldens `.drafts/d251/times.py`.
+
+**Look.** iOS `d251-look` and AVD `d251-look`, Norse Home identical on both (Good afternoon, Sam; You'll get back
+36,711.00; You owe EUR 33.00; Goa 14,110, Flat 22,601, Paris -33).
+
+**Review** (Opus): release safe on both shells; the clock change sound; I1 a second run could delete a real vault, I2
+no documented way back, M3 the Android seed in the release APK, M4 theme and mode written for real, M5 flag position:
+fixed in 6b7a83c (the restore recipe in `.drafts/u32/plan.md`).
+
+**Sabotage.** Seed commit 6 rows (`.drafts/d251/sabotage/`), fix wave 8 rows (`.drafts/d251/fix/sabotage/`): each red on
+its tests (the iOS owner row reddens the refusal and the no-theme-when-refused case by design), 0 compile errors.
+
 ## 4. Gap register (open, honest)
 
 ### 4.1 Blocking store-policy compliance later
@@ -26759,6 +26822,12 @@ edge in RTL), pinned in 5bff9b7 and re-run EXACT: 40 EXACT, 0 compile errors.
   (c) Left for your eye: the roll's direction for a signed amount, a blur on the roll, dimming the page under a push.
   (d) Android 12+'s mode pill sliding across the activity restart is coded and tested but was not looked at on screen.
   (e) Error lines on screens outside the sweep, tab switches and the app lock curtain still cut.
+- **D-251's residue, stated not implied:**
+  (a) The seed writes the theme and mode for real and removes D-232's migrated mark; restoring the set-aside ledger
+  does not restore them (the recipe says so).
+  (b) On a debug Android install any app can start the exported activity with the seed's argument (as with the other
+  proofs); it refuses a phone with an account or an unmarked vault.
+  (c) In the first minutes of a month seeded rows can land just before now (still in order).
 - **No local profile name.** The no-account path has nothing a user can open
   and later attach an account to. When an account is added its name should
   seed the profile and stay editable.
@@ -29587,3 +29656,5 @@ t and import (D-119): GUARANTEES #4 is now true
 2026-10-21 (D-249): Just me: keep what you spend on your own, next to your groups. Add an expense to Just me from the +, and see this month's spending on Home under your ledgers, by category, or switch to All my spending to add your share of every group. It never changes who owes whom. Spending on Home can be switched off under Appearance. The export gains a category column, and a Wallet file can go into Just me.
 
 2026-10-21 (D-250): things move instead of jumping: amounts roll when they change, rows slide in and out, meters and the You ring fill, pills slide, the theme changes with a crossfade, and Android's pages now push and return the way iPhone's do. Reduce Motion and Less motion turn it all into plain cuts.
+
+2026-10-21 (D-251): for the store screenshots, debug builds can fill the app with a sample ledger (Sam, Meera, Kiran, Rahul and Ana; a trip, a flat, a weekend in Paris, and this month's own spending) so every store image shows real screens. It cannot run in a store build and never deletes a ledger it did not make.

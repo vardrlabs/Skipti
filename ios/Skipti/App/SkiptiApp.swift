@@ -114,7 +114,9 @@ struct SkiptiApp: App {
         #if DEBUG
         // D-194: `--emulators` runs the ordinary app (not a proof screen)
         // against the local Auth and Firestore emulators. Debug builds only.
-        if ProcessInfo.processInfo.arguments.contains("--emulators") {
+        // D-251 review: a store-shots launch is a proof with no account; `--emulators` (and its sign-in) rides along with
+        // it on neither shell.
+        if ProcessInfo.processInfo.arguments.contains("--emulators"), !StoreShots.active(ProcessInfo.processInfo.arguments) {
             // D-235 round 5: Auth is pointed at the emulator when the gate configures (never configured here).
             Cloud.emulator = true
             // D-210: `--emulator-as <sub>` signs in to the Auth emulator as
@@ -126,6 +128,9 @@ struct SkiptiApp: App {
                 Task { @MainActor in await EmulatorSignIn.signIn(as: sub) }
             }
         }
+        // D-251: `--store-shots --store-theme <theme> [--store-mode <mode>]` (a store page's seed, Debug builds only):
+        // the theme and mode before the first frame; the vault is set aside and seeded by StoreShotsScreen.
+        StoreShots.applyAppearance(ProcessInfo.processInfo.arguments)
         #endif
     }
 
@@ -390,7 +395,9 @@ struct SkiptiApp: App {
                 "--add", "--list-vault",
                 "--import-proof", "--export-proof", "--export", "--smoke",
                 "--expense-conflict", "--groups-proof", "--auth-emulator-proof",
-                "--sync-emulator-proof", "--two-account-proof", "--settings-emulator-proof"].contains { args.contains($0) }
+                "--sync-emulator-proof", "--two-account-proof", "--settings-emulator-proof",
+                // D-251: the store-shots seed is a proof launch: no gate, no lock, no welcome, no cloud.
+                StoreShots.flag].contains { args.contains($0) }
         #else
         return false
         #endif
@@ -421,6 +428,9 @@ struct SkiptiApp: App {
         } else if ProcessInfo.processInfo.arguments.contains("--settings-emulator-proof") {
             // D-244: settings follow one account across two phones.
             SettingsEmulatorProofScreen()
+        } else if StoreShots.active(ProcessInfo.processInfo.arguments) {
+            // D-251: the store pages' seed, then the ordinary tabs on Home.
+            StoreShotsScreen()
         } else if ProcessInfo.processInfo.arguments.contains("--groups-proof") {
             // D-179: three groups, then the ordinary tabs on Groups (not in
             // proofRoot's stack, for the reason below).

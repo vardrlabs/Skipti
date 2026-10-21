@@ -121,6 +121,15 @@ then ONE round of pop-ups for every call of his, then build in his order with de
 - **D-250 DONE:** fix wave 3370c17 (perf: decision 215, real-phone check owed), sabotage 40 rows + pin 5bff9b7, gate
   23/23 (6m17s), RECORDED. Merging. Founder (pop-up): themed pull-to-refresh = 0.5.2, Norse ᛃ Jera (decision 214, U36).
   NEXT: D-251 store-shots seed, then U32 composition and U33 film (`.drafts/u32/plan.md`), then release prep and stop.
+- **D-251 DONE** (seed ac0f419 + review fixes 6b7a83c; gate 23/23 5m12s; RECORDED, JVM carried forward; decisions
+  216, 217). Merging. **Group-delete bug: ROOT CAUSE FOUND** (`.drafts/groupdelete/rootcause.md`: deleteGroup skips the
+  caller's account, index.js:1479; production matches the repo); the founder chose server + apps (218) and the deploy
+  WITH 0.5.1 after Fable (219). NEXT: D-252 per `.drafts/d252/plan.md`, then U32 shots + U33 film, then release prep.
+- **FOUNDER BUG (0.5.0, 2026-10-21, high priority):** an owner deletes a group on one phone; the account's OTHER phone
+  still shows it and can add expenses to it; the same for other members. Expected: ended everywhere (archived /
+  read-only at most). Root-cause investigation dispatched (systematic debugging, no fixes yet; server-level emulator
+  repro in a worktree): `.drafts/groupdelete/rootcause.md`. If the rules let a deleted group's members still write: a
+  security flaw for the disclosure track (Fable drafts the advisory). D-251 fix wave runs in parallel (main checkout).
 - **RESUME (session 11, previous, 2026-10-21):** main = Merge D-249 (pushed). Branch d250-fluidity: stage 1 0e27ad9,
   stage 2 d581a67, review `.drafts/d250/review.md` (4 Important: Android push perf p90 32-34 vs 20 (decision 209), RTL
   digit roll, outgoing page touches, tab bar slide); FIX WAVE dispatched (report `.drafts/d250/fixwave-report.md`).
