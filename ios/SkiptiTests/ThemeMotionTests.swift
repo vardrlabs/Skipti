@@ -5,7 +5,7 @@ import XCTest
 
 /// D-214 (E2 motion, ADR-0041 "Theme art"): every animation is a pure function of time; goldens from
 /// .drafts/d214/motion.py, which ports the Look Book's own formulas. Android's twin is ThemeMotionTest.
-/// D-246: motion.py 5a's printout (.drafts/d246/motion-after.out, "D-246 glyph peaks"): each Futhark glyph's blurred mask's
+/// D-246: motion.py 5a's printout (.drafts/d246/motion-after2.out since the fix wave, "D-246 glyph peaks"): each Futhark glyph's blurred mask's
 /// largest coverage at blur 0.18 x the size, and each layer's largest (the floors take it under the full core).
 enum GlyphGlowGoldens {
     static let peaks: [(String, Double)] = [
@@ -18,6 +18,13 @@ enum GlyphGlowGoldens {
     static let page = 0.3430
     static let hero = 0.2657
     static let fehu = 0.2319
+    /// D-246 fix wave (I1): each layer's MEASURED ink reach (x size from the box's centre, motion.py 5a "ink reach"): the
+    /// receiving rune's ink wherever a glow lands on another rune (1d, 1e), where D-243's 0.30 disc stood.
+    static let inkPage = 0.4569
+    static let inkHero = 0.4463
+    /// motion.py 1d's lane bound (.drafts/d246/motion-after2.out): the most glow a hero row's measured ink takes from the
+    /// other rows at their lane distances, each at the top of its flare, summed (row 1, 328 wide).
+    static let heroLaneGlow = 0.011468
 }
 
 final class ThemeMotionTests: XCTestCase {
@@ -1168,16 +1175,31 @@ final class ThemeMotionTests: XCTestCase {
         XCTAssertLessThan(Double(a.size.height), 1.15 * 41 + 8 * sigma + 1 / Double(a.scale) + 1e-9)
         XCTAssertGreaterThanOrEqual(Double(a.size.width), 0.62 * 41 + 8 * sigma - 1e-9, "U+16DE's advance is 0.62 em")
         XCTAssertEqual(Double(a.scale), min(3, 6 / sigma), accuracy: 1e-9, "six pixels a sigma")
-        // motion.py 5a's peaks (blur 0.18), each glyph at a page rune's size.
+        // motion.py 5a's peaks (blur 0.18), each glyph at a page rune's size: motion.py's mask (within 0.01).
         for (glyph, peak) in GlyphGlowGoldens.peaks {
             let m = GlyphGlow.mask(glyph, size: 20, blur: RuneGlow.blur)
             XCTAssertEqual(m.peak, peak, accuracy: 0.01, "U+\(String(glyph.unicodeScalars.first!.value, radix: 16, uppercase: true))'s peak")
         }
-        let pagePeak = (0..<RuneDrift.count).map { GlyphGlow.mask(RuneDrift.still($0, in: .zero).glyph, size: 20, blur: RuneGlow.blur).peak }.max() ?? 1
-        let heroPeak = HeroRunes.specs.map { GlyphGlow.mask($0.glyph, size: 20, blur: RuneGlow.blur).peak }.max() ?? 1
-        XCTAssertEqual(pagePeak, GlyphGlowGoldens.page, accuracy: 0.01)
-        XCTAssertEqual(heroPeak, GlyphGlowGoldens.hero, accuracy: 0.01)
-        XCTAssertEqual(GlyphGlow.mask(Runes.balance, size: 118, blur: RuneGlow.blur).peak, GlyphGlowGoldens.fehu, accuracy: 0.01)
+        // D-246 fix wave (M1): the floors (AppearanceTests) take motion.py's layer peak, so the link to the masks the shell
+        // DRAWS is one-sided and tight: every mask a layer draws, at the size it draws it, peaks at most motion.py's layer
+        // peak + 0.002 (the 8-bit image rounds within 0.002 of it). A two-sided 0.01 let a page peak of 0.353 through.
+        var pagePeak = 0.0, heroPeak = 0.0
+        for i in 0..<RuneDrift.count {
+            let p = RuneDrift.still(i, in: .zero)
+            let peak = GlyphGlow.mask(p.glyph, size: p.size, blur: RuneGlow.blur).peak
+            XCTAssertLessThanOrEqual(peak, GlyphGlowGoldens.page + 0.002, "page rune \(i) at \(p.size)")
+            pagePeak = max(pagePeak, peak)
+        }
+        for (i, s) in HeroRunes.specs.enumerated() {
+            let peak = GlyphGlow.mask(s.glyph, size: s.size, blur: RuneGlow.blur).peak
+            XCTAssertLessThanOrEqual(peak, GlyphGlowGoldens.hero + 0.002, "hero row \(i) at \(s.size)")
+            heroPeak = max(heroPeak, peak)
+        }
+        let fehuPeak = GlyphGlow.mask(Runes.balance, size: ThemeArt.m("heroWatermark"), blur: RuneGlow.blur).peak
+        XCTAssertLessThanOrEqual(fehuPeak, GlyphGlowGoldens.fehu + 0.002, "the ᚠ at 118")
+        XCTAssertGreaterThan(pagePeak, GlyphGlowGoldens.page - 0.01, "the page's masks are motion.py's")
+        XCTAssertGreaterThan(heroPeak, GlyphGlowGoldens.hero - 0.01, "the hero's masks are motion.py's")
+        XCTAssertGreaterThan(fehuPeak, GlyphGlowGoldens.fehu - 0.01, "the ᚠ's mask is motion.py's")
     }
 
     /// D-246: the glow sits on the ink. The mask's centre of mass (the blur keeps it) lands on the centre of mass of the
@@ -1213,22 +1235,23 @@ final class ThemeMotionTests: XCTestCase {
     }
 
     /// D-243 (plan test 2): the glow's alphas. core = the rise's envelope (opacity over 0.18) x (rest + (top - rest) x
-    /// flare), rest = 0.18 x strength; D-246: the glow (the blurred glyph's alpha, motion.py 5a) is 0.145 on the page and
+    /// flare), rest = 0.18 x strength; D-246: the glow (the blurred glyph's alpha, motion.py 5a) is 0.120 on the page and
     /// 0.345 on the hero at the top of a flare, in proportion below it, blurred by 0.18 x the size. Over 16 runes and
-    /// 600 s the page's core never passes 0.19 nor its glow 0.145, the hero's never 0.20 nor 0.345. The still frame: the
+    /// 600 s the page's core never passes 0.19 nor its glow 0.120, the hero's never 0.20 nor 0.345. The still frame: the
     /// still pose's 0.10 x strength (page 0.079, hero 0.083), no glow; a still frame never carries a flare (the negative).
     func testTheGlowAlphasAreTheMeasuredOnes() {
         XCTAssertEqual(RuneGlow.pageFlare, 0.19)
         XCTAssertEqual(RuneGlow.heroFlare, 0.20)
         XCTAssertEqual(RuneGlow.blur, 0.18)
-        XCTAssertEqual(RuneGlow.pageGlow, 0.145)
+        // D-246 fix wave (I1, amended on purpose; 0.145 and 0.8043 before): 1e's cap with the receiver's measured ink.
+        XCTAssertEqual(RuneGlow.pageGlow, 0.120)
         XCTAssertEqual(RuneGlow.heroGlow, 0.345)
-        XCTAssertEqual(RuneGlow.pageReach, 0.8043)
+        XCTAssertEqual(RuneGlow.pageReach, 0.7899)
         XCTAssertEqual(RuneGlow.heroReach, 0.8567)
         let page = Strength.of("norsePageRunes"), hero = Strength.of("norseHeroRunes")
         let want: [(Double, Double, Double, Double, Double, Double, Double)] = [  // strength, top, glowTop, opacity, flare, core, glow
-            (0.79, 0.19, 0.145, 0.18, 0, 0.142200, 0.108521), (0.79, 0.19, 0.145, 0.18, 0.5, 0.166100, 0.126761),
-            (0.79, 0.19, 0.145, 0.18, 1, 0.19, 0.145), (0.79, 0.19, 0.145, 0.09, 0.5, 0.083050, 0.063380),
+            (0.79, 0.19, 0.120, 0.18, 0, 0.142200, 0.089811), (0.79, 0.19, 0.120, 0.18, 0.5, 0.166100, 0.104905),
+            (0.79, 0.19, 0.120, 0.18, 1, 0.19, 0.120), (0.79, 0.19, 0.120, 0.09, 0.5, 0.083050, 0.052453),
             (0.83, 0.20, 0.345, 0.18, 0, 0.149400, 0.257715), (0.83, 0.20, 0.345, 0.18, 0.5, 0.174700, 0.301357),
             (0.83, 0.20, 0.345, 0.18, 1, 0.20, 0.345), (0.83, 0.20, 0.345, 0.09, 0.5, 0.087350, 0.150679),
         ]
@@ -1258,7 +1281,7 @@ final class ThemeMotionTests: XCTestCase {
             }
         }
         XCTAssertLessThanOrEqual(pageCore, 0.19 + 1e-12)
-        XCTAssertLessThanOrEqual(pageGlow, 0.145 + 1e-12)
+        XCTAssertLessThanOrEqual(pageGlow, 0.120 + 1e-12)
         XCTAssertGreaterThan(pageCore, 0.185, "the page runes do flare")
         let heroSize = CGSize(width: 343, height: 260)
         var heroCore = 0.0
@@ -1278,8 +1301,11 @@ final class ThemeMotionTests: XCTestCase {
     /// D-243 (plan test 3): the hero's own rising runes, build.py's seven (j = 3...9) in the mock-up's order, each in an
     /// even lane LEFT of the ᚠ (x is the glyph centre, 0.050 + 0.085 x row). They rise as the page's do on the hero's
     /// height; the still frame holds them at the still layout. On the narrowest hero each rune's ink (0.30 x its size)
-    /// stays inside the inner frame's interior (heroFrameInset + 1) and its em box inside the hero, and no rune's glow
-    /// (D-246: seen to RuneGlow.heroReach, 0.8567 x size; D-243's halo 0.8) reaches another lane's ink (motion.py 1d). The mock's 0.050 lane cannot hold row 0's whole em box
+    /// stays inside the inner frame's interior (heroFrameInset + 1) and its em box inside the hero. D-246 fix wave (I1, M4;
+    /// amended on purpose: "no rune's glow reaches another lane's ink" took the receiving ink as D-243's 0.30 disc, which
+    /// undercounts the measured ink, 0.4463 x size): with the measured ink no two rows' inks meet at any height, and the
+    /// glow a row's ink takes from the others at their lanes, each at its flare's top, is motion.py 1d's lane bound
+    /// (0.011468), which the floors hold (AppearanceTests). The mock's 0.050 lane cannot hold row 0's whole em box
     /// inside the interior (3.90 from the edge on a 328 wide hero); the clip trims only empty em box there.
     func testTheHeroRunesTable() {
         XCTAssertEqual(HeroRunes.specs, [
@@ -1324,12 +1350,33 @@ final class ThemeMotionTests: XCTestCase {
                 XCTAssertGreaterThanOrEqual(x - 0.30 * s.size, inner, "row \(i)'s ink inside the interior at \(width)")
                 XCTAssertLessThanOrEqual(x + 0.30 * s.size, width - inner, "row \(i)'s ink inside the interior at \(width)")
                 XCTAssertGreaterThanOrEqual(x - s.size / 2, 0, "row \(i)'s em box inside the hero at \(width)")
-                for (j, o) in HeroRunes.specs.enumerated() where j != i {
-                    XCTAssertGreaterThanOrEqual(abs(s.x - o.x) * width, RuneGlow.heroReach * s.size + 0.30 * o.size,
-                                                "row \(i)'s glow stays off row \(j)'s ink at \(width)")
-                }
             }
         }
+        // The lanes with the measured ink (motion.py 1d, on 328, 343 and 402): row j's glow on row i's ink is
+        // heroGlow x min(peak, Phi(-(r - ink s_j) / (blur s_j))), r the lane distance less row i's ink.
+        func phi(_ x: Double) -> Double { erfc(-x / 2.0.squareRoot()) / 2 }
+        let ink = GlyphGlowGoldens.inkHero
+        var laneGlow = 0.0
+        for width in [328.0, 343.0, 402.0] {
+            for (i, s) in HeroRunes.specs.enumerated() {
+                var glow = 0.0
+                for (j, o) in HeroRunes.specs.enumerated() where j != i {
+                    let gap = abs(s.x - o.x) * width
+                    XCTAssertGreaterThanOrEqual(gap, ink * (s.size + o.size), "rows \(i) and \(j)'s measured inks never meet at \(width)")
+                    let r = max(0, gap - ink * s.size)
+                    glow += RuneGlow.heroGlow * min(GlyphGlowGoldens.hero, phi(-(r - ink * o.size) / (RuneGlow.blur * o.size)))
+                }
+                laneGlow = max(laneGlow, glow)
+            }
+        }
+        near(laneGlow, GlyphGlowGoldens.heroLaneGlow, 1e-5, "motion.py 1d's lane bound (its inks rounded to 4 places)")
+        // Why the rule changed (the negative of the old one): with the measured ink, "the glow stays off another lane's
+        // ink" (gap >= heroReach s_j + ink s_i) is false on the narrowest hero; D-243's 0.30 receiver hid it.
+        let crossing = HeroRunes.specs.indices.flatMap { i in HeroRunes.specs.indices.filter { $0 != i }.map { (i, $0) } }
+            .filter { i, j in
+                abs(HeroRunes.specs[i].x - HeroRunes.specs[j].x) * 328 < RuneGlow.heroReach * HeroRunes.specs[j].size + ink * HeroRunes.specs[i].size
+            }
+        XCTAssertFalse(crossing.isEmpty, "a glow reaches a neighbour's measured ink")
     }
 
     /// D-243 (plan test 4): the hero runes keep left of the ᚠ and its glow. The ᚠ is measured in the bundled Vardr Runes

@@ -224,12 +224,14 @@ enum RuneGlow {
     /// D-246: the glow's Gaussian sigma, a fraction of the rune's size (the ᚠ's and the ring's too).
     static let blur = 0.18
     /// D-246: the glow's alpha at the top of a flare: the lesser of the disc's light over the layer's mean ink and the
-    /// floors' cap with the blurred mask's peak under the full core (page: 1c, 1e and 1f's 6 pt; hero: 1c').
-    static let pageGlow = 0.145
+    /// floors' cap with the blurred mask's peak under the full core (page: 1c, 1e and 1f's 6 pt; hero: 1c'). D-246 fix
+    /// wave (I1): 1e takes a neighbour's glow on the receiving rune's MEASURED ink (0.4569 x size, motion.py 5a), not
+    /// D-243's 0.30 disc; at 0.145 that failed 36 frames on a 360 x 740 page (textDim 4.400), so 1e's cap is 0.120.
+    static let pageGlow = 0.120
     static let heroGlow = 0.345
     /// D-246: how far a glow is seen from its rune's centre, x its size (its ink's reach plus the Gaussian's tail to one
     /// 8-bit step): the stacking rules' reach where D-243's disc radius (0.8) stood.
-    static let pageReach = 0.8043
+    static let pageReach = 0.7899
     static let heroReach = 0.8567
     static let rise = 0.62
     static let top = 0.76

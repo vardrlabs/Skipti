@@ -380,13 +380,15 @@ object RuneGlow {
     const val BLUR = 0.18
 
     /** D-246: the glow's alpha at the top of a flare: the lesser of the disc's light over the layer's mean ink and the
-     *  floors' cap with the blurred mask's peak under the full core (page: 1c, 1e and 1f's 6 dp; hero: 1c'). */
-    const val PAGE_GLOW = 0.145
+     *  floors' cap with the blurred mask's peak under the full core (page: 1c, 1e and 1f's 6 dp; hero: 1c'). D-246 fix
+     *  wave (I1): 1e takes a neighbour's glow on the receiving rune's MEASURED ink (0.4569 x size, motion.py 5a), not
+     *  D-243's 0.30 disc; at 0.145 that failed 36 frames on a 360 x 740 page (textDim 4.400), so 1e's cap is 0.120. */
+    const val PAGE_GLOW = 0.120
     const val HERO_GLOW = 0.345
 
     /** D-246: how far a glow is seen from its rune's centre, x its size (its ink's reach plus the Gaussian's tail to one
      *  8-bit step): the stacking rules' reach where D-243's disc radius (0.8) stood. */
-    const val PAGE_REACH = 0.8043
+    const val PAGE_REACH = 0.7899
     const val HERO_REACH = 0.8567
     const val RISE = 0.62
     const val TOP = 0.76
@@ -535,8 +537,10 @@ object GlyphGlow {
     data class Key(val glyph: String, val size: Int, val blur: Double)
 
     /** A built mask: its [image] (white, alpha the blurred coverage; null where the raster makes none, the JVM tests),
-     *  its [width] x [height] pixels at [scale] pixels a dp, the glyph's origin at ([originX], [baseline]) pixels, its
-     *  blurred [alpha] (0..1, row-major) and [peak] (motion.py's peak: the floors take it under the full core). */
+     *  its [width] x [height] pixels at [scale] pixels a dp, the glyph's origin at ([originX], [baseline]) pixels, and its
+     *  [peak] (motion.py's peak: the floors take it under the full core). D-246 fix wave (M2): the blurred [alpha] (0..1,
+     *  row-major) is kept only where the raster asks for it ([Raster.keepsAlpha], the JVM tests' seam, off on the phone):
+     *  the phone keeps the image and the peak, never the doubles (about 45 KB a mask). */
     class Mask(
         val image: ImageBitmap?,
         val width: Int,
@@ -544,7 +548,7 @@ object GlyphGlow {
         val scale: Double,
         val originX: Double,
         val baseline: Double,
-        val alpha: DoubleArray,
+        val alpha: DoubleArray?,
         val peak: Double,
     )
 
@@ -558,6 +562,10 @@ object GlyphGlow {
 
         /** The blurred mask as a white image whose alpha is [alpha]; null where there is no image (tests). */
         fun image(alpha: DoubleArray, width: Int, height: Int): ImageBitmap?
+
+        /** A test-only seam (D-246 fix wave, M2): true keeps each mask's blurred alpha for the tests to measure. Off on the
+         *  phone ([AndroidRaster] never overrides it). */
+        val keepsAlpha: Boolean get() = false
     }
 
     private val lock = Any()
@@ -597,7 +605,8 @@ object GlyphGlow {
         val baseline = (height - ascent - descent) / 2 + ascent
         val coverage = raster.coverage(key.glyph, em, width, height, originX, baseline)
         val alpha = blur(coverage, width, height, s)
-        return Mask(raster.image(alpha, width, height), width, height, scale, originX, baseline, alpha, alpha.maxOrNull() ?: 0.0)
+        return Mask(raster.image(alpha, width, height), width, height, scale, originX, baseline,
+            if (raster.keepsAlpha) alpha else null, alpha.maxOrNull() ?: 0.0)
     }
 
     /** motion.py 5a's blur: a separable Gaussian of sigma [s] pixels, cut at 4 sigma, zero outside the mask, over

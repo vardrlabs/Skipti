@@ -669,38 +669,47 @@ class AppearanceTest {
         // rune at the top of its flare (RuneGlow.PAGE_FLARE) over its glow over each Norse ground, gold and silver; a hero
         // rune at HERO_FLARE over its glow over each hero stop; the ᚠ at its glow (WatermarkGlow.PEAK) over its own. D-246
         // (amended on purpose; D-243's was the disc halo's alpha): a glow's pixel is its alpha x the blurred mask's peak
-        // (motion.py 5a, the floors' model: the peak under the full core), page 0.145 x 0.3430, hero 0.345 x 0.2657, the ᚠ
-        // 0.305 x 0.2319. The worst of each pinned to motion.py's printout (8-bit); textDim's headroom is 0.034.
+        // (motion.py 5a, the floors' model: the peak under the full core), page 0.120 x 0.3430 (D-246 fix wave, I1: 0.145
+        // before; 1e's cap with the receiving rune's measured ink), hero 0.345 x 0.2657, the ᚠ 0.305 x 0.2319. The worst of
+        // each pinned to motion.py's printout (8-bit, .drafts/d246/motion-after2.out); textDim's headroom is 0.104 here,
+        // 0.023 in 1e (the_page_runes_keep_the_floors_under_their_neighbours_glow).
         val runeColours = listOf(ArtDraw.RUNE_GOLD, ArtDraw.RUNE_SILVER).map { rgb(it) }
         val pageGlowPixel = RuneGlow.PAGE_GLOW * GlyphGlowGoldens.PAGE
         val heroGlowPixel = RuneGlow.HERO_GLOW * GlyphGlowGoldens.HERO
-        assertEquals("motion.py 5a: the page glow's largest pixel", 0.0497, pageGlowPixel, 0.0001)
+        assertEquals("motion.py 5a: the page glow's largest pixel", 0.0412, pageGlowPixel, 0.0001)
         assertEquals("motion.py 5a: the hero glow's largest pixel", 0.0917, heroGlowPixel, 0.0001)
         fun flaring(core: Double, glow: Double, grounds: List<DoubleArray>) =
             grounds.flatMap { g -> runeColours.map { blend(it, core, blend(it, glow, g, normal), normal) } }
         val flarePage = flaring(RuneGlow.PAGE_FLARE, pageGlowPixel, norseGrounds)
-        for ((t, floor, want) in listOf(Triple(Tok.text, 7.0, 8.904), Triple(Tok.textDim, 4.5, 4.534), Triple(Tok.groundFaint, 4.5, 4.534),
-            Triple(Tok.accent, 4.5, 5.300), Triple(Tok.groundAccent, 4.5, 5.300))) {
+        for ((t, floor, want) in listOf(Triple(Tok.text, 7.0, 9.043), Triple(Tok.textDim, 4.5, 4.604), Triple(Tok.groundFaint, 4.5, 4.604),
+            Triple(Tok.accent, 4.5, 5.382), Triple(Tok.groundAccent, 4.5, 5.382))) {
             val worst = flarePage.minOf { ratio(rgb(t.of(ThemeSet.NORSE)), it) }
             assertTrue("norse ${t.name} over a flaring rune is $worst", worst >= floor)
             assertEquals("norse ${t.name} over a flaring rune: motion.py's value", want, worst, 0.002)
         }
-        // The negative: a flare a hundredth over the cap (0.20) leaves the labels under their floor (motion.py: 4.41).
-        val tooBright = flaring(RuneGlow.PAGE_FLARE + 0.01, pageGlowPixel, norseGrounds).minOf { ratio(rgb(Tok.textDim.of(ThemeSet.NORSE)), it) }
+        // The negative: the least flare over the cap that fails (D-246 fix wave: 0.205 over the 0.0412 glow pixel; 0.20 over
+        // 0.0497 before) leaves the labels under their floor (motion.py 1c: 4.459).
+        val tooBright = flaring(RuneGlow.PAGE_FLARE + 0.015, pageGlowPixel, norseGrounds).minOf { ratio(rgb(Tok.textDim.of(ThemeSet.NORSE)), it) }
         assertTrue("a flare over the cap fails textDim: $tooBright", tooBright < 4.5)
-        assertEquals(4.41, tooBright, 0.002)
+        assertEquals(4.459, tooBright, 0.002)
         // D-243 (T7, motion.py 1f, plan test 9): Norse's card-edge glow (accent at a band's alpha) over a flaring rune, page
-        // text beside a card, the twin of iOS's. Every band fails textDim (3.872 at the first, 4.469 at the last, 5.75 dp),
-        // so the CLEAR DISTANCE is the glow's whole reach, 6 dp (sigma 3.0, .drafts/d243/motion-t7.out): there no band is left and the pixel is the flaring rune
-        // alone (4.534, passing). Page-ground text keeps 6 dp from a Norse card (.drafts/d243/gap-audit.md).
+        // text beside a card, the twin of iOS's. D-246 fix wave (amended on purpose: with the page glow at 0.145 every band
+        // failed): over the 0.0412 glow pixel the bands to 3.75 dp fail textDim (3.934 at the first, 4.458 at 3.75) and those
+        // from 4.25 dp pass (4.523), so motion.py's CLEAR DISTANCE is 4.00 dp; the rule keeps 6 dp, the glow's whole reach
+        // (.drafts/d243/gap-audit.md), past which the pixel is the flaring rune alone (4.604).
         val gold = rgb(Tok.accent.of(ThemeSet.NORSE))
         fun banded(alpha: Double) = flarePage.minOf { ratio(rgb(Tok.textDim.of(ThemeSet.NORSE)), blend(gold, alpha, it, normal)) }
         val bands = ArtGeometry.glowBands()
-        for ((d, a) in bands) assertTrue("the band at $d dp fails textDim", banded(a) < 4.5)
-        assertEquals("the first band: motion.py's value", 3.872, banded(bands.first().second), 0.002)
-        assertEquals("the band before the clear distance", 4.469, banded(bands.last().second), 0.002)
-        assertTrue("at the clear distance", banded(0.0) >= 4.5)
-        assertEquals(4.534, banded(0.0), 0.002)
+        for ((d, a) in bands) {
+            if (d < 4.0) assertTrue("the band at $d dp fails textDim", banded(a) < 4.5)
+            else assertTrue("the band at $d dp, past the clear distance", banded(a) >= 4.5)
+        }
+        assertEquals("the first band: motion.py's value", 3.934, banded(bands.first().second), 0.002)
+        assertEquals(3.75, bands[7].first.toDouble(), 1e-9)
+        assertEquals("the band before the clear distance (3.75 dp)", 4.458, banded(bands[7].second), 0.002)
+        assertEquals("the first band past it (4.25 dp)", 4.523, banded(bands[8].second), 0.002)
+        assertTrue("past the glow's reach", banded(0.0) >= 4.5)
+        assertEquals(4.604, banded(0.0), 0.002)
         assertEquals(bands.size * ThemeArt.m("norseEdgeGlowBand"), ArtGeometry.glowReach(), 0f)
         assertEquals("motion.py's CLEAR DISTANCE", 6f, ArtGeometry.glowReach(), 0f)
         val heroStops = listOf(Tok.heroStart, Tok.heroMid, Tok.heroEnd).map { rgb(it.of(ThemeSet.NORSE)) }
@@ -714,8 +723,18 @@ class AppearanceTest {
         val heroTooBright = flaring(RuneGlow.HERO_FLARE, 0.52 * GlyphGlowGoldens.HERO, heroStops).minOf { ratio(norseOnHero, it) }
         assertTrue("over the hero's cap the floor breaks: $heroTooBright", heroTooBright < 7.0)
         assertEquals(6.955, heroTooBright, 0.002)
+        // D-246 fix wave (I1, M4): a hero rune at HERO_FLARE over its own glow over the most glow its MEASURED ink takes from
+        // the other rows at their lanes, each at its flare's top (motion.py 1d's lane bound, 0.011468; ThemeMotionTest's hero
+        // table proves the bound from the lanes), gold or silver: onHero 7.498, dim 5.222. The twin of iOS's.
+        val laneRunes = heroStops.flatMap { g ->
+            runeColours.flatMap { col ->
+                runeColours.map { other ->
+                    blend(col, RuneGlow.HERO_FLARE, blend(col, heroGlowPixel, blend(other, GlyphGlowGoldens.HERO_LANE_GLOW, g, normal), normal), normal)
+                }
+            }
+        }
         for ((name, pixels, wants) in listOf(Triple("a hero rune", flaring(RuneGlow.HERO_FLARE, heroGlowPixel, heroStops), 7.738 to 5.389),
-            Triple("the glowing ᚠ", fehu, 8.107 to 5.646))) {
+            Triple("the glowing ᚠ", fehu, 8.107 to 5.646), Triple("a hero rune over its neighbours' lane glow", laneRunes, 7.498 to 5.222))) {
             val on = pixels.minOf { ratio(norseOnHero, it) }
             val dim = pixels.minOf { ratio(norseDim, it) }
             assertTrue("norse hero text over $name is $on", on >= 7.0)
@@ -738,6 +757,96 @@ class AppearanceTest {
                 }
             }
         }
+    }
+
+    /** D-246 fix wave (I1): motion.py 1e's worst frames, recomputed by the shell from its own poses, alphas and page glow,
+     *  the twin of iOS's testThePageRunesKeepTheFloorsUnderTheirNeighboursGlow. Page runes 0 and 5 pass in neighbouring
+     *  lanes around t 1426.2 s, rune 0 at the top of its flare under rune 5's glow; motion.py's whole-hour scan finds every
+     *  page's worst there. Each rune's neighbours shed glow x min(peak, Phi(-(r - inkPage s_b) / (blur s_b))) on it, r the
+     *  distance less the RECEIVING rune's measured ink (0.4569 x size; D-243's 0.30 disc undercounted it); a neighbour's
+     *  core joins when two 0.30 inks meet; the rune keeps its own glow at the full peak under its core; the neighbours'
+     *  layers go under and over it (motion.py's page_scan). Over 1426.0 to 1426.5 s at 1/30 every pixel keeps the page
+     *  floors: textDim 4.523 on 360 x 740, 4.604 on 402 x 874. The negative is the page glow motion.py's derivation
+     *  refused: at 0.145 the same frames fail textDim (4.400). */
+    @Test
+    fun the_page_runes_keep_the_floors_under_their_neighbours_glow() {
+        fun rgb(c: Color) = doubleArrayOf(c.red.toDouble(), c.green.toDouble(), c.blue.toDouble())
+        fun lum(c: DoubleArray): Double {
+            fun ch(x: Double): Double {
+                val v = Math.round(x * 255) / 255.0
+                return if (v <= 0.03928) v / 12.92 else ((v + 0.055) / 1.055).pow(2.4)
+            }
+            return 0.2126 * ch(c[0]) + 0.7152 * ch(c[1]) + 0.0722 * ch(c[2])
+        }
+        fun ratio(a: DoubleArray, b: DoubleArray) = (max(lum(a), lum(b)) + 0.05) / (min(lum(a), lum(b)) + 0.05)
+        fun over(fg: DoubleArray, a: Double, g: DoubleArray) = DoubleArray(3) { g[it] + (fg[it] - g[it]) * a }
+        fun phi(x: Double) = ArtGeometry.erfc(-x / Math.sqrt(2.0)) / 2
+        val bg = rgb(Tok.bg.of(ThemeSet.NORSE))
+        val grounds = listOf(bg) + NorseGlow.SPECS.map { s ->
+            val px = s.centreX.coerceIn(0.0, 1.0)
+            val py = s.centreY.coerceIn(0.0, 1.0)
+            val d = Math.hypot((s.centreX - px) / s.radiusX, (s.centreY - py) / s.radiusY)
+            over(rgb(s.color), s.alpha * max(0.0, 1 - d / s.clearAt) * Strength.METRICS.getValue("norsePageGlow"), bg)
+        }
+        val texts = listOf("text" to Tok.text, "textDim" to Tok.textDim, "accent" to Tok.accent).map { (n, t) -> n to rgb(t.of(ThemeSet.NORSE)) }
+        val strength = Strength.METRICS.getValue("norsePageRunes")
+        val ink = GlyphGlowGoldens.INK_PAGE
+        val peak = GlyphGlowGoldens.PAGE
+        fun worst(w: Float, h: Float, glowTop: Double): Map<String, Double> {
+            val out = texts.associate { it.first to 99.0 }.toMutableMap()
+            var z = 0.0   // the reach: the least z (0.01 steps) with glowTop Phi(-z) under one 8-bit step
+            while (glowTop * phi(-z) >= 1.0 / 255) z = Math.round((z + 0.01) * 100) / 100.0
+            val tail = ink + z * RuneGlow.BLUR
+            for (n in 42780..42795) {   // 1426.0 .. 1426.5 s at 1/30
+                val t = n / 30.0
+                val poses = (0 until RuneDrift.COUNT).map { i ->
+                    val p = RuneDrift.pose(i, t, w, h)
+                    val a = RuneGlow.alphas(p.opacity, strength, RuneGlow.PAGE_FLARE, RuneGlow.flare(i, t), glowTop, false)
+                    Triple(p, a.core, a.glow)
+                }
+                for ((a, pose) in poses.withIndex()) {
+                    val (pa, ca, ha) = pose
+                    if (ca <= 0) continue
+                    val layers = mutableListOf<Pair<DoubleArray, Double>>()
+                    for ((b, other) in poses.withIndex()) {
+                        if (b == a) continue
+                        val (pb, cb, hb) = other
+                        val d = Math.hypot(pa.x - pb.x, pa.y - pb.y)
+                        val meet = d < 0.30 * (pa.size + pb.size)
+                        val near = max(0.0, d - ink * pa.size)
+                        if (near >= tail * pb.size && !meet) continue
+                        val colb = rgb(if (pb.silver) ArtDraw.RUNE_SILVER else ArtDraw.RUNE_GOLD)
+                        layers += colb to hb * min(peak, phi(-(near - ink * pb.size) / (RuneGlow.BLUR * pb.size)))
+                        if (meet) layers += colb to cb
+                    }
+                    if (layers.isEmpty()) continue
+                    val cola = rgb(if (pa.silver) ArtDraw.RUNE_SILVER else ArtDraw.RUNE_GOLD)
+                    for (g in grounds) {
+                        var under = g
+                        var top = over(cola, ca, over(cola, ha * peak, g))
+                        for ((col, al) in layers) {
+                            under = over(col, al, under)
+                            top = over(col, al, top)
+                        }
+                        for (px in listOf(over(cola, ca, over(cola, ha * peak, under)), top)) {
+                            for ((name, fg) in texts) out[name] = min(out.getValue(name), ratio(fg, px))
+                        }
+                    }
+                }
+            }
+            return out
+        }
+        for ((size, want) in listOf((360f to 740f) to mapOf("text" to 8.883, "textDim" to 4.523, "accent" to 5.288),
+            (402f to 874f) to mapOf("text" to 9.043, "textDim" to 4.604, "accent" to 5.382))) {
+            val got = worst(size.first, size.second, RuneGlow.PAGE_GLOW)
+            assertTrue("text at $size: ${got["text"]}", got.getValue("text") >= 7.0)
+            assertTrue("textDim at $size: ${got["textDim"]}", got.getValue("textDim") >= 4.5)
+            assertTrue("accent at $size: ${got["accent"]}", got.getValue("accent") >= 4.5)
+            for ((name, value) in want) assertEquals("$name at $size: motion.py 1e's worst", value, got.getValue(name), 0.002)
+        }
+        val refused = worst(360f, 740f, 0.145)
+        assertTrue("D-246's 0.145 fails these frames: ${refused["textDim"]}", refused.getValue("textDim") < 4.5)
+        assertEquals(4.400, refused.getValue("textDim"), 0.002)
     }
 
     /** D-214 (F2, the founder's 8-bit rule): the Aurora pages' floors with the three curtains STACKED as the renderer

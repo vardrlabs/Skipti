@@ -274,10 +274,34 @@ class WelcomeTest {
         assertTrue("val motion = rememberMotionState().moment()" in bar)
         assertTrue("MomentPlay(startedAtMs, still = !motion.tick)" in bar)
         assertFalse("no read of power saving", "lowPower" in source)
-        // The founder's look: the glow follows the glyph (the text's own blurred shadow), never a round halo.
+        // The founder's look: the glow follows the glyph, never a round halo. D-246 fix wave (M5, amended on purpose: it was
+        // the text's own blurred shadow, re-blurred every frame): GlyphGlow's cached masks, remembered, only drawn per frame.
         assertFalse("no halo disc", "radialGradient" in source)
         val road = source.substringAfter("private fun NorseRoad(").substringBefore("\n}\n")
-        assertTrue("shadow = if (lit) Shadow(ring.copy(alpha = pose.glow[i].toFloat()), Offset.Zero, blur) else null" in road)
+        assertTrue("the masks remembered", "val glows = remember(raster) { WelcomeProgress.glowMasks(raster) }" in road)
+        val frame = road.substringAfter("Canvas(Modifier.size(WelcomeProgress.NORSE_WIDTH.dp, WelcomeProgress.NORSE_HEIGHT.dp)) {")
+        assertTrue("drawn under the glyph, on its origin",
+            "if (lit) with(ArtDraw) { glyphGlow(glows[i], at.x, at.y + glyphs[i].firstBaseline, pose.glow[i].toFloat(), tint) }\n                drawText(glyphs[i]" in frame)
+        for (perFrame in listOf("GlyphGlow.mask(", "glowMasks(", "Shadow(", "BlurMaskFilter", "setShadowLayer")) {
+            assertFalse("a frame never makes a glow: $perFrame", perFrame in frame)
+        }
+        assertFalse("no text shadow left", "import androidx.compose.ui.graphics.Shadow" in source)
+    }
+
+    /** D-246 fix wave (M5): the welcome's runes glow from GlyphGlow's cache. Asked once the road's masks build at most
+     *  five (none if the welcome drew them this process); asked again, as every frame's remembered masks are, they build
+     *  none and are the same masks (the counter does not grow); a Gaussian of 3.2 dp at 26. The twin of iOS's
+     *  testTheWelcomeRunesGlowFromTheCacheAndBuildNothingPerFrame. */
+    @Test
+    fun the_welcome_runes_glow_from_the_cache_and_build_nothing_per_frame() {
+        val before = GlyphGlow.builds
+        val first = WelcomeProgress.glowMasks(AwtGlyphRaster)
+        val warm = GlyphGlow.builds
+        assertTrue("at most one mask a rune", warm - before <= WelcomeProgress.runes.size)
+        repeat(30) { assertTrue("the same masks", WelcomeProgress.glowMasks(AwtGlyphRaster).zip(first).all { (a, b) -> a === b }) }
+        assertEquals("no frame builds a mask", warm, GlyphGlow.builds)
+        assertEquals(3.2 / 26, WelcomeProgress.RUNE_GLOW, 1e-6)
+        for (m in first) assertEquals("sigma 3.2 dp", kotlin.math.min(3.0, 6 / 3.2), m.scale, 1e-6)
     }
 
     /** Decision 197: the road's geometry is the mock-up's: arches up and down in turn, each ending 14 dp short of the

@@ -269,6 +269,9 @@ enum WelcomeProgress {
     static let popScale = 1.18
     /// The glow's blur radius (a tight copy of the mark's own shape; the mock-up's stdDeviation 3.2).
     static let glowBlur: CGFloat = 3.2
+    /// D-246 fix wave (M5): a lit rune's glow is `GlyphGlow`'s cached mask (one glow language with the page, the hero, the
+    /// ᚠ and the ring): a Gaussian of `glowBlur` at `runeSize`, this fraction of the size.
+    static let runeGlow = Double(glowBlur / runeSize)
 
     // Aurora and Vardr Labs: a 240 pt line, four marks.
     static let width: CGFloat = 240
@@ -610,7 +613,8 @@ struct NorseRoad: View {
 }
 
 /// Decision 197: the five runes, each placed by its INK centre; a lit rune is luminous: the lighter gold over a blurred
-/// copy of the glyph itself (never a disc).
+/// copy of the glyph itself (never a disc). D-246 fix wave (M5): that copy is `GlyphGlow`'s cached mask (built once a
+/// process, only drawn per frame; it was the Text re-blurred every frame).
 struct NorseRunes: View {
     let pose: WelcomeProgress.Pose
 
@@ -628,8 +632,8 @@ struct NorseRunes: View {
                     .fixedSize()
                     .background {
                         if pose.lit[i] {
-                            glyph.foregroundStyle(Tokens.ring).fixedSize()
-                                .blur(radius: WelcomeProgress.glowBlur)
+                            GlyphGlow.view(rune, size: size, blur: WelcomeProgress.runeGlow)
+                                .foregroundStyle(Tokens.ring)
                                 .opacity(pose.glow[i])
                         }
                     }
