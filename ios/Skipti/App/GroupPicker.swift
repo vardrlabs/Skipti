@@ -214,7 +214,7 @@ struct PeopleScreen: View {
         return PeopleRoles.rows(
             members: named.members, selfId: named.selfId, viewerYou: people.viewerYou, claims: people.claims,
             roles: roles.roles[groupID], yourPlaces: roles.roles[groupID]?.places?.you, otherYouIds: people.otherYouIds,
-            readOnly: isCopy)
+            readOnly: isCopy, createdHere: people.createdHere)
     }
 
     /// D-227 fix wave (F4): the open sheet's row as the screen reads it now, so a role the cloud just confirmed shows

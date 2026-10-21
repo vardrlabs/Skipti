@@ -351,19 +351,79 @@ struct GroupsProofScreen: View {
 
     var body: some View {
         if ready {
-            HomeShell(startOn: .groups)
+            // D-247: `--settle-look <step>` (Debug only, a look's surface): You's page for the ring, Flat 4B's page for
+            // the count, else Settle up.
+            switch SettleLook.step {
+            case nil: HomeShell(startOn: .groups)
+            case "ring", "ring-nolock": NavigationStack { AccountHubScreen(vaultPath: LedgerStore.defaultStore().path) }
+            case "group":
+                NavigationStack { GroupPageScreen(groupID: (try? SettleLook.flat(LedgerStore.defaultStore()).group.id) ?? "") }
+            default: HomeShell(startOn: .settle)
+            }
         } else if let failure {
             Text(verbatim: failure).font(TypeRole.body()).padding()
         } else {
             ProgressView().task {
                 do {
                     try GroupsProof.seed(LedgerStore.defaultStore())
+                    try SettleLook.apply(LedgerStore.defaultStore())
                     ready = true
                 } catch {
                     failure = "\(error)"
                 }
             }
         }
+    }
+}
+
+/// D-247: the look's states on top of the groups proof (`--settle-look <step>`, Debug only): `you` records every one of
+/// your Goa trip and Flat 4B settles (Goa all settled; in Flat 4B you are square, Kiran still owes Meera); `partial` holds 1,200.00 of the 3,000.00 Sam owes you (the toast
+/// with Undo, the remainder); `undo` holds it and takes it back ("Not recorded."); `sheet` and `toomuch` open Paris's
+/// "Another amount" (the second typed over the debt).
+@MainActor
+enum SettleLook {
+    static var step: String? {
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: "--settle-look"), i + 1 < args.count else { return nil }
+        return args[i + 1]
+    }
+
+    static func flat(_ store: LedgerStore) throws -> NamedGroupWire {
+        guard let flat = try store.namedGroups().first(where: { $0.group.name == "Flat 4B" }) else { throw LedgerStore.LoadError.corrupt }
+        return flat
+    }
+
+    static func apply(_ store: LedgerStore) throws {
+        guard let step, try store.loadSettlements().isEmpty else { return }
+        let sections = try SettleAll.sections(store)
+        func card(_ group: String) -> (SettleSection, BalanceLineOut, ShareOut)? {
+            guard let s = sections.first(where: { $0.named.group.name == group }), let line = s.lines.first,
+                  let e = line.entries.first else { return nil }
+            return (s, line, e)
+        }
+        switch step {
+        case "you":
+            for s in sections where ["Goa trip", "Flat 4B"].contains(s.named.group.name) {
+                for line in s.lines { for e in line.entries { try SettleAll.record(store: store, entry: e, currency: line.currencyCode, named: s.named) } }
+            }
+        case "partial", "undo":
+            guard let (s, line, e) = card("Goa trip") else { return }
+            try SettleHold.shared.hold(SettleAll.settlement(for: e, currency: line.currencyCode, in: s.named, amount: 120_000),
+                                       other: LedgerStore.label(for: e.id, in: s.named), store: store)
+            if step == "undo", let id = SettleHold.shared.pending?.id { SettleHold.shared.undo(id) }
+        default: break
+        }
+    }
+
+    /// `sheet` / `toomuch`: the card whose sheet opens, once.
+    static var opened = false
+    static func draft(_ sections: [SettleSection]) -> OtherAmountDraft? {
+        guard step == "sheet" || step == "toomuch", !opened,
+              let s = sections.first(where: { $0.named.group.name == "Paris" }), let line = s.lines.first,
+              let e = line.entries.first else { return nil }
+        opened = true
+        return OtherAmountDraft(key: SettleAll.key(named: s.named, currency: line.currencyCode, entry: e), entry: e,
+                                currency: line.currencyCode, named: s.named, other: "Ana")
     }
 }
 

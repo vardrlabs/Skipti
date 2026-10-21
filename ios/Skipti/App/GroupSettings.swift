@@ -205,7 +205,8 @@ struct GroupSettingsScreen: View {
         guard let named else { return .member }
         return PeopleRoles.viewerRole(PeopleRoles.rows(
             members: named.members, selfId: named.selfId, viewerYou: people.viewerYou, claims: people.claims,
-            roles: roles.roles[groupID], yourPlaces: roles.roles[groupID]?.places?.you, otherYouIds: people.otherYouIds))
+            roles: roles.roles[groupID], yourPlaces: roles.roles[groupID]?.places?.you, otherYouIds: people.otherYouIds,
+            createdHere: people.createdHere))
     }
 
     /// Name, Picture and Delete group are absent on a copy, live: the screen

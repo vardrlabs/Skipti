@@ -68,28 +68,19 @@ final class SettledTests: XCTestCase {
         XCTAssertNil(GroupNext.pick(lines: [line("INR", [(a, 0)])]))
     }
 
-    /// S2 (WORKLOG decision 17): the muted line counts the group's open PAIRWISE debts, the model the pick and Settle up
-    /// read: every member's frame, each nonzero entry once per pair and currency (a debt shows in both people's frames,
-    /// with opposite signs); never the plan's transfers. "The last one" exactly at one.
-    func testTheRemainingPaymentsCountTheGroupsPairs() {
-        // a owes you 900 and c owes you 450 (your frame); c owes a 450 (a's frame); c's frame repeats all three.
-        let you = String(repeating: "d", count: 32)
-        let frames: [String: [BalanceLineOut]] = [
-            you: [line("INR", [(a, 90000), (c, 45000)], transfers: 1)],
-            a: [line("INR", [(you, -90000), (c, 45000)], transfers: 1)],
-            c: [line("INR", [(you, -45000), (a, -45000)], transfers: 1)],
-        ]
-        XCTAssertEqual(GroupNext.remaining(frames: frames), 3, "three open pairs, whatever the plan says (one transfer)")
-        XCTAssertEqual(GroupNext.remaining(frames: [you: frames[you]!]), 2, "your frame alone sees your two")
-        // Each currency is its own debt; a zero entry is not open.
-        XCTAssertEqual(GroupNext.remaining(frames: [you: [line("INR", [(a, 100)]), line("USD", [(a, -100)])], a: []]), 2)
-        XCTAssertEqual(GroupNext.remaining(frames: [you: [line("INR", [(a, 0)])]]), 0)
-        XCTAssertEqual(GroupNext.remaining(frames: [:]), 0)
-        // Read through core per person: one read per distinct member or removed person.
-        var reads: [String] = []
-        XCTAssertEqual(GroupNext.remaining(members: [you, a, a], removed: [c, a]) { v in reads.append(v); return frames[v] ?? [] }, 3)
-        XCTAssertEqual(reads.sorted(), [you, a, c].sorted())
-        XCTAssertEqual(GroupNext.remainingLine(1), "The last one")
+    /// D-247 (decision 168, D-221 b; overturns S2's pairwise count): the muted line counts the fewest-payments plan Settle
+    /// up shows (core's transfers, every currency's), never the pairs. "1 payment to go" at one.
+    func testTheRemainingPaymentsCountThePlan() {
+        // Your frame sees a owing you 900 and c owing you 450; the plan clears it in ONE transfer.
+        XCTAssertEqual(GroupNext.planCount(lines: [line("INR", [(a, 90000), (c, 45000)], transfers: 1)]), 1,
+                       "two open pairs, one payment in the plan")
+        // Each currency's plan counts.
+        XCTAssertEqual(GroupNext.planCount(lines: [line("INR", [(a, 100)], transfers: 2), line("USD", [(a, -100)], transfers: 1)]), 3)
+        // You are square, others are not: the plan still has their payment.
+        XCTAssertEqual(GroupNext.planCount(lines: [line("INR", [], transfers: 1)]), 1)
+        XCTAssertEqual(GroupNext.planCount(lines: [line("INR", [])]), 0)
+        XCTAssertEqual(GroupNext.planCount(lines: []), 0)
+        XCTAssertEqual(GroupNext.remainingLine(1), "1 payment to go")
         XCTAssertEqual(GroupNext.remainingLine(2), "2 payments to go")
         XCTAssertEqual(GroupNext.remainingLine(5), "5 payments to go")
     }
@@ -172,7 +163,7 @@ final class SettledTests: XCTestCase {
         XCTAssertEqual(SettledCopy.stillToSettle("\u{20B9}2,360.00"), "\u{20B9}2,360.00 still to settle")
         XCTAssertEqual(SettledCopy.nothingLeft, "Nothing left to settle")
         XCTAssertEqual(SettledCopy.since("2 Mar 2026"), "Since 2 Mar 2026. Rare, and only once.")
-        XCTAssertEqual(SettledCopy.lastOne, "The last one")
+        XCTAssertEqual(SettledCopy.paymentsToGo(1), "1 payment to go")
         XCTAssertEqual(SettledCopy.paymentsToGo(3), "3 payments to go")
         XCTAssertEqual(SettledCopy.settle, "Settle")
         XCTAssertEqual(SettledCopy.settling, "Settling")
@@ -318,7 +309,9 @@ final class SettledTests: XCTestCase {
     func testTheNextCardRecordsLikeSettleUp() throws {
         let settled = try appSource("Settled.swift")
         let next = try slice(settled, from: "struct GroupNextCard: View {", to: "\n}\n")
-        XCTAssertEqual(count(next, "SettleAll.record(store: store, entry: pick.entry, currency: pick.currencyCode, named: named)"), 1)
+        // D-247 (decision 182): the next card holds through Settle up's own hold (one write path, Undo for both).
+        XCTAssertEqual(count(next, "try SettleHold.shared.hold(SettleAll.settlement(for: pick.entry, currency: pick.currencyCode, in: named),"), 1)
+        XCTAssertFalse(next.contains("SettleAll.record("), "the next card writes nothing itself")
         XCTAssertFalse(settled.contains("appendSettlement("), "the card appends a settlement of its own")
         XCTAssertTrue(next.contains("guard latch.begin(pick) else { return }"), "a second tap records nothing")
         XCTAssertEqual(count(next, "latch.failed()"), 1, "a failure lets go")
@@ -329,31 +322,30 @@ final class SettledTests: XCTestCase {
         XCTAssertTrue(next.contains("PrimaryButtonStyle(compact: true)"))
         let all = try appSource("SettleAll.swift")
         let screen = try slice(all, from: "struct SettleAllScreen: View {", to: "\n}\n")
-        XCTAssertEqual(count(screen, "SettleAll.record(store: store, entry: entry, currency: currency, named: named)"), 1)
+        XCTAssertEqual(count(screen, "try SettleHold.shared.hold(SettleAll.settlement(for: entry, currency: currency, in: named, amount: amount),"), 1)
+        XCTAssertFalse(screen.contains("SettleAll.record("), "Settle up writes nothing itself: the hold does")
         XCTAssertFalse(screen.contains("appendSettlement("), "Settle up appends outside the shared function")
         // S1: Settle up holds the same latch: a second tap records nothing; the reload moving on lets go.
         XCTAssertEqual(count(screen, "guard latch.begin(key) else { return }"), 1, "Settle up's second tap")
         XCTAssertEqual(count(screen, "latch.moved(to: SettleAll.keys(sections))"), 1, "Settle up lets go once the reload moved on")
-        XCTAssertEqual(count(screen, ".disabled(latch.busy)"), 1, "one at a time: another card's Settle reads as disabled")
+        XCTAssertEqual(count(screen, ".disabled(latch.busy)"), 2, "one at a time: another card's Settle and Another amount read as disabled")
         XCTAssertFalse(screen.contains("settlingKey"), "the old flag, cleared before the reload")
         XCTAssertTrue(screen.contains("let key = SettleAll.key(named: named, currency: currency, entry: entry)"))
         let shared = try slice(all, from: "enum SettleAll {", to: "\n}\n")
         XCTAssertEqual(count(shared, "appendSettlement("), 1, "the one append")
         let body = try pageBody()
         XCTAssertEqual(count(body, "if !isCopy, let pick = GroupNext.pick(lines: lines) {"), 1, "never for a copy")
-        // S2: the count is the group's pairwise debts, read with the page (every member's and removed person's frame),
-        // never the plan.
+        // D-247 (decision 168): the count is the plan's length, from the page's own lines (core's plan).
         XCTAssertEqual(count(body, "remaining: remaining,"), 1)
         let page = try groupPage()
-        XCTAssertEqual(count(page, "remaining = try GroupNext.remaining(members: n.members.map(\\.id), removed: removed) { try line($0) }"), 1)
-        let model = try slice(settled, from: "enum GroupNext {", to: "\n}\n")
-        XCTAssertFalse(model.contains("transfers"), "the plan's transfers are another model")
+        XCTAssertEqual(count(page, "remaining = GroupNext.planCount(lines: lines)"), 1)
+        XCTAssertFalse(page.contains("GroupNext.remaining("), "the pairwise count is gone")
     }
 
-    /// D-221 follow-up (twin of Android's the_removed_people_who_still_owe_each_other_are_counted): the count reads every
-    /// member's AND every removed person's frame. Worked by hand: you paid 100.00 split with Ana (Ana owes you 50.00);
-    /// Xavi, since removed, paid 200.00 split with Yara, also removed (Yara owes Xavi 100.00, both nets nonzero, so
-    /// D-210 keeps them in the pairwise view); Zed was removed at zero and adds nothing. Open pairs: 2 (members alone: 1).
+    /// D-221 follow-up, D-247 (the plan count): removed people who still owe each other are in the plan. Worked by hand:
+    /// you paid 100.00 split with Ana (Ana owes you 50.00); Xavi, since removed, paid 200.00 split with Yara, also removed
+    /// (Yara owes Xavi 100.00, both nets nonzero, so D-210 keeps them); Zed was removed at zero and adds nothing. Nets:
+    /// you +50, Ana -50, Xavi +100, Yara -100: the fewest payments are 2 (Ana pays you, Yara pays Xavi).
     func testTheRemovedPeopleWhoStillOweEachOtherAreCounted() throws {
         let (me, ana, xavi, yara, zed, group) = (String(repeating: "1", count: 32), String(repeating: "2", count: 32),
                                                  String(repeating: "3", count: 32), String(repeating: "4", count: 32),
@@ -371,10 +363,10 @@ final class SettledTests: XCTestCase {
         XCTAssertEqual(try line(yara).first?.entries, [ShareOut(id: xavi, minorUnits: -10_000)], "core keeps the removed pair open")
         XCTAssertEqual(try line(me).first?.entries, [ShareOut(id: ana, minorUnits: 5_000)], "your frame sees Ana only")
         XCTAssertEqual(GroupNext.pick(lines: try line(me)), GroupNext.Pick(currencyCode: "INR", entry: ShareOut(id: ana, minorUnits: 5_000)))
-        let pairs = try GroupNext.remaining(members: [me, ana], removed: removed) { try line($0) }
-        XCTAssertEqual(pairs, 2, "Ana to you, and Yara to Xavi")
-        XCTAssertEqual(GroupNext.remainingLine(pairs), "2 payments to go")
-        XCTAssertEqual(try GroupNext.remaining(members: [me, ana], removed: []) { try line($0) }, 1, "members alone miss the removed pair")
+        let plan = GroupNext.planCount(lines: try line(me))
+        XCTAssertEqual(plan, 2, "Ana to you, and Yara to Xavi")
+        XCTAssertEqual(GroupNext.remainingLine(plan), "2 payments to go")
+        XCTAssertEqual(GroupNext.planCount(lines: try line(ana)), 2, "the plan is the group's, whoever reads it")
     }
 
     /// The Task 7 review's race: "Settling" holds from the tap until the reloaded page shows another pick; a second
@@ -411,9 +403,11 @@ final class SettledTests: XCTestCase {
 
     /// S2's golden on the groups proof's Flat 4B (you paid electricity 2,700.00 three ways, Meera groceries 1,350.00
     /// three ways; worked by hand): your frame is Kiran +900.00 and Meera +450.00, and Kiran also owes Meera 450.00. No
-    /// directed loop (Kiran -> you, Kiran -> Meera, Meera -> you), so D-218 cancels nothing. The plan is ONE transfer
-    /// (Kiran pays you 1,350.00), which is how the first build said "The last one"; the pairwise view has three.
-    func testFlat4BNextCardIsPairwise() throws {
+    /// directed loop (Kiran -> you, Kiran -> Meera, Meera -> you), so D-218 cancels nothing. Nets: you +1,350, Meera 0,
+    /// Kiran -1,350: the plan is ONE transfer. D-247 (decision 168): the count is the plan's, so "1 payment to go" at
+    /// every step (the pairwise view had 3, then 2, then 1). After both your settles you are square while Kiran still
+    /// owes Meera 450.00 (nets: Meera +450, Kiran -450): "You're settled in Flat 4B", never "all settled".
+    func testFlat4BNextCardCountsThePlan() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("flat4b-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -427,25 +421,35 @@ final class SettledTests: XCTestCase {
             try ffiBalanceLine(expenses: try store.loadExpenses().map(\.asInput), settlements: try store.loadSettlements().map(\.asInput),
                                redistributions: try store.loadRedistributions(), removed: removed, viewer: viewer, group: named.group.id)
         }
-        func remaining() throws -> Int {
-            try GroupNext.remaining(members: named.members.map(\.id), removed: removed) { try line($0) }
-        }
+        func remaining() throws -> Int { GroupNext.planCount(lines: try line(named.selfId)) }
+        func flat() throws -> SettleSection { try XCTUnwrap(try SettleAll.sections(store).first { $0.named.group.name == "Flat 4B" }) }
         XCTAssertEqual(try line(named.selfId).first?.transfers.count, 1, "the plan: one transfer")
 
         let first = try XCTUnwrap(GroupNext.pick(lines: try line(named.selfId)))
         XCTAssertEqual(first, GroupNext.Pick(currencyCode: "INR", entry: ShareOut(id: kiran, minorUnits: 90_000)))
-        XCTAssertEqual(try remaining(), 3)
-        XCTAssertEqual(GroupNext.remainingLine(try remaining()), "3 payments to go")
+        XCTAssertEqual(try remaining(), 1)
+        XCTAssertEqual(GroupNext.remainingLine(try remaining()), "1 payment to go")
+        XCTAssertEqual(try flat().state, .open)
         try SettleAll.record(store: store, entry: first.entry, currency: first.currencyCode, named: named)
 
         let second = try XCTUnwrap(GroupNext.pick(lines: try line(named.selfId)))
         XCTAssertEqual(second, GroupNext.Pick(currencyCode: "INR", entry: ShareOut(id: meera, minorUnits: 45_000)))
-        XCTAssertEqual(GroupNext.remainingLine(try remaining()), "2 payments to go")
+        XCTAssertEqual(GroupNext.remainingLine(try remaining()), "1 payment to go", "Kiran pays you 450.00")
         try SettleAll.record(store: store, entry: second.entry, currency: second.currencyCode, named: named)
 
         XCTAssertNil(GroupNext.pick(lines: try line(named.selfId)), "you are square: no card")
         XCTAssertEqual(try remaining(), 1, "Kiran still owes Meera")
         XCTAssertEqual(try line(kiran).first?.entries, [ShareOut(id: meera, minorUnits: -45_000)])
+        // D-221 a: you square, the group not: the you-only words, from core's progress (never "all settled").
+        let section = try flat()
+        XCTAssertTrue(section.settled, "your own lines are empty")
+        XCTAssertFalse(SettledSummary.allSettled(section.progress), "core: 450.00 still outstanding")
+        XCTAssertEqual(section.state, .youSettled)
+        // Kiran pays Meera: now the whole group is square.
+        try SettleAll.record(store: store, settlement: LedgerStore.SettlementDTO(
+            from: kiran, to: meera, amountMinor: 45_000, currencyCode: "INR", group: named.group.id))
+        XCTAssertEqual(try flat().state, .allSettled)
+        XCTAssertEqual(try remaining(), 0)
     }
 
     /// S1: Settle up's cards share the latch: two taps on one card record one settlement, a tap on another card while
@@ -513,10 +517,7 @@ final class SettledTests: XCTestCase {
         XCTAssertEqual(try progress(), [SettledProgressOut(currencyCode: "EUR", settledMinor: 0, outstandingMinor: 3_200, basisPoints: 0, settled: false)])
         let pick = try XCTUnwrap(GroupNext.pick(lines: try lines()))
         XCTAssertEqual(pick, GroupNext.Pick(currencyCode: "EUR", entry: ShareOut(id: ana, minorUnits: -3_200)))
-        XCTAssertEqual(GroupNext.remainingLine(try GroupNext.remaining(members: named.members.map(\.id), removed: []) { v in
-            try ffiBalanceLine(expenses: try store.loadExpenses().map(\.asInput), settlements: [], redistributions: [],
-                               removed: [], viewer: v, group: named.group.id)
-        }), "The last one")
+        XCTAssertEqual(GroupNext.remainingLine(GroupNext.planCount(lines: try lines())), "1 payment to go")
         var latch = SettleLatch<GroupNext.Pick>()
         for _ in 0..<2 where latch.begin(pick) {
             try SettleAll.record(store: store, entry: pick.entry, currency: pick.currencyCode, named: named)

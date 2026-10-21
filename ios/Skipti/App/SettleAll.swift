@@ -23,6 +23,18 @@ enum SettleAllCopy {
     }
     static func settled(_ group: String) -> String { "\(group) is all settled" }
     static let settledDetail = "Nobody owes anybody. Nice."
+    /// D-247 (decision 168, D-221 a): you owe nobody and nobody owes you, but others in the group still owe each other.
+    static func youSettled(_ group: String) -> String { "You're settled in \(group)" }
+    static let youSettledDetail = "You don't owe anything here."
+    /// D-247 (decision 167): a card's other amount, its sheet, and the cap (decision 183: never more than the debt).
+    static let anotherAmount = "Another amount"
+    static let howMuchPaid = "How much was paid?"
+    static let settle = "Settle"
+    static let cancel = "Cancel"
+    /// When they owe you: "That is more than Ana owes."; when you owe them: "That is more than you owe Ana."
+    static func moreThanDebt(youOwe: Bool, other: String) -> String {
+        youOwe ? "That is more than you owe \(other)." : "That is more than \(other) owes."
+    }
     static func recorded(_ other: String) -> String {
         "Settled with \(other). Recorded in your ledger. No money moved."
     }
@@ -32,44 +44,63 @@ enum SettleAllCopy {
 struct SettleSection {
     let named: NamedGroupWire
     let lines: [BalanceLineOut]
+    /// D-247 (decision 168): core's settled progress for the whole group (`ffiSettledProgress`), what says whether
+    /// everybody is square.
+    var progress: [SettledProgressOut] = []
     /// Nobody in the group owes you, and you owe nobody in it.
     var settled: Bool { lines.allSatisfy { $0.entries.isEmpty } }
+    var state: SettleState { SettleState.of(youSquare: settled, progress: progress) }
+}
+
+/// D-247 (decision 168, D-221 a): what a group's section says. "All settled" only when core says the whole group is;
+/// you square while others still owe each other is its own words. Android's twin is `SettleState` in SettleAll.kt.
+enum SettleState: Equatable {
+    /// You owe someone here, or someone owes you: the cards.
+    case open
+    /// Core's `allSettled` (every currency's block settled), or a group with nothing in it yet (no block: nobody owes).
+    case allSettled
+    /// You are square, others are not: "You're settled in {group}".
+    case youSettled
+
+    static func of(youSquare: Bool, progress: [SettledProgressOut]) -> SettleState {
+        guard youSquare else { return .open }
+        return progress.isEmpty || SettledSummary.allSettled(progress) ? .allSettled : .youSettled
+    }
 }
 
 enum SettleAll {
     /// Every group, each with core's lines for this device's self in it.
-    /// The same read the screen makes; Android's twin is `SettleAll.sections`.
-    static func sections(_ store: LedgerStore) throws -> [SettleSection] {
+    /// The same read the screen makes; Android's twin is `SettleAll.sections`. D-247: `held`, a settle waiting out its
+    /// Undo window (`SettleHold`), counts as recorded, so the screen shows what the write will leave (core's sums, never
+    /// the shell's).
+    static func sections(_ store: LedgerStore, held: [LedgerStore.SettlementDTO] = []) throws -> [SettleSection] {
         // D-210: a read-only copy has nothing to settle in (nothing can be recorded in it).
         let copies = Set(try store.readOnlyChecked().keys)
         let named = try store.namedGroups().filter { !copies.contains($0.group.id) }
         let expenses = try store.loadExpenses().map(\.asInput)
-        let settlements = try store.loadSettlements().map(\.asInput)
+        let settlements = try store.loadSettlements().map(\.asInput) + held.map(\.asInput)
         let redistributions = try store.loadRedistributions()
         let removed = try store.removedPeople()
         return try named.map { n in
             SettleSection(named: n, lines: try ffiBalanceLine(
                 expenses: expenses, settlements: settlements, redistributions: redistributions,
                 removed: removed[n.group.id]?.map(\.id) ?? [], viewer: n.selfId, group: n.group.id
-            ))
+            ), progress: try ffiSettledProgress(
+                expenses: expenses, settlements: settlements, redistributions: redistributions, group: n.group.id))
         }
     }
 
-    /// D-221 (Q17 a): records one payment: section 5.8's settlement record in the ledger (never a flag, never money),
-    /// then sync, fire and forget (section 10.3: saved locally first; the push starts on the main actor, where
-    /// CloudSync lives). Settle up's cards and the group page's next card both record through this one function, off
-    /// the main thread. Android's twin is `SettleAll.record`.
+    /// D-221 (Q17 a), D-247: records one payment: section 5.8's settlement record in the ledger (never a flag, never
+    /// money). The ONE append: `SettleHold` writes through it when a settle's Undo window ends (Settle up's cards, their
+    /// other amounts and the group page's next card). Core checks it first (`appendSettlement`, decision 103). Android's
+    /// twin is `SettleAll.record`.
+    static func record(store: LedgerStore, settlement: LedgerStore.SettlementDTO) throws {
+        _ = try store.appendSettlement(settlement)
+    }
+
+    /// A whole card's debt, written at once (no hold).
     static func record(store: LedgerStore, entry: ShareOut, currency: String, named: NamedGroupWire) throws {
-        _ = try store.appendSettlement(settlement(for: entry, currency: currency, in: named))
-        // D-224 (Design 7): one post here covers Settle up's cards and the group's next card. A removed person keeps
-        // their name (the history's), and the amount is core's.
-        let other = LedgerStore.label(for: entry.id, in: named,
-                                      history: (try? store.historyNames(group: named.group.id)) ?? [:])
-        let amount = DoneMoments.amount(abs(entry.minorUnits), currency)
-        Task { @MainActor in
-            CloudSync.shared.ledgerChanged()
-            DoneCenter.shared.post(DoneMoments.line(DoneCopy.settledWith(other), amount))
-        }
+        try record(store: store, settlement: settlement(for: entry, currency: currency, in: named))
     }
 
     /// D-221 (S1): one card's payment, for the latch: the group, the currency, the other person and the amount (a new
@@ -85,16 +116,182 @@ enum SettleAll {
 
     /// The settlement a card records: between this device's self and the
     /// other person, in the direction the viewer-framed entry says (negative
-    /// means you owe them). Android's twin is `SettleUi.settlementFor`.
-    static func settlement(for entry: ShareOut, currency: String, in named: NamedGroupWire) -> LedgerStore.SettlementDTO {
+    /// means you owe them). Android's twin is `SettleUi.settlementFor`. D-247:
+    /// `amount`, another amount (`OtherAmount.check` keeps it within the debt);
+    /// nil is the whole debt.
+    static func settlement(for entry: ShareOut, currency: String, in named: NamedGroupWire,
+                           amount: Int64? = nil) -> LedgerStore.SettlementDTO {
         let youOwe = entry.minorUnits < 0
         return LedgerStore.SettlementDTO(
             from: youOwe ? named.selfId : entry.id,
             to: youOwe ? entry.id : named.selfId,
-            amountMinor: abs(entry.minorUnits),
+            amountMinor: amount ?? abs(entry.minorUnits),
             currencyCode: currency,
             group: named.group.id
         )
+    }
+}
+
+/// D-247 (decisions 167, 183): a card's "Another amount": what the field starts with and what it may hold. Every amount
+/// is core's: the field is parsed by `ffiMoneyParseMinor` and checked by `ffiCheckSettlement`; the shell only compares
+/// two of core's minor-unit numbers (never adds or subtracts them). Android's twin is `OtherAmount` in SettleAll.kt.
+enum OtherAmount {
+    /// What the field says about itself.
+    enum Verdict: Equatable {
+        /// Settle stays disabled, with nothing said: empty, zero, or not an amount yet.
+        case incomplete
+        /// More than the debt: refused in words, Settle disabled (a partial never flips who owes whom).
+        case tooMuch(String)
+        /// Settle records this many minor units.
+        case settles(Int64)
+    }
+
+    /// The whole debt as the field takes it back (core's entry form: "450.00", no symbol, no grouping).
+    static func prefill(debt: Int64, currency: String) -> String {
+        (try? ffiMoneyInputDigits(minorUnits: debt, currencyCode: currency)) ?? ""
+    }
+
+    /// `text` against the debt (`debt`, the card's amount, always above 0). `check` is core's settlement check of the
+    /// amount (`SettleAll.settlement(..., amount:)`); a refusal reads as incomplete.
+    static func verdict(_ text: String, debt: Int64, currency: String, youOwe: Bool, other: String,
+                        check: (Int64) throws -> Void) -> Verdict {
+        guard let minor = try? ffiMoneyParseMinor(digits: text.trimmingCharacters(in: .whitespaces), currencyCode: currency),
+              minor > 0 else { return .incomplete }
+        if minor > debt { return .tooMuch(SettleAllCopy.moreThanDebt(youOwe: youOwe, other: other)) }
+        guard (try? check(minor)) != nil else { return .incomplete }
+        return .settles(minor)
+    }
+}
+
+/// D-247: the card a sheet's other amount is for (the sheet's item).
+struct OtherAmountDraft: Identifiable, Equatable {
+    let key: String
+    let entry: ShareOut
+    let currency: String
+    let named: NamedGroupWire
+    let other: String
+    var id: String { key }
+    var youOwe: Bool { entry.minorUnits < 0 }
+    var debt: Int64 { abs(entry.minorUnits) }
+
+    static func == (a: OtherAmountDraft, b: OtherAmountDraft) -> Bool { a.key == b.key }
+}
+
+/// D-247 (decision 182, calls.md U29.1 route 3): a settle is held for `seconds` before anything is written, so Undo can
+/// take it back with nothing to reverse. One at a time. It lands (`commit`) when its time is up, at the next Settle tap
+/// (any card, any screen), when Settle up or the group page goes away, or when SKIPTI leaves the front (SkiptiApp's
+/// scene phase). While held, the screens count it as recorded (`held`), so the card reads settled at once and a partial
+/// leaves its remainder. The write is on the main actor, in one turn with the hold's end, so no read ever counts it
+/// twice or not at all. Android's twin is `SettleHold` in SettleAll.kt.
+@Observable @MainActor
+final class SettleHold {
+    static let shared = SettleHold()
+
+    struct Pending: Equatable {
+        let id: Int
+        let settlement: LedgerStore.SettlementDTO
+        let other: String
+        let path: String
+    }
+
+    /// The settle waiting out its window, if any.
+    private(set) var pending: Pending?
+    /// Goes up whenever what the screens count changes (held, undone, written, failed): they read again.
+    private(set) var revision = 0
+    /// The last write that failed, in words (the screens show it).
+    private(set) var failure: String?
+
+    @ObservationIgnored private let center: DoneCenter
+    @ObservationIgnored private let seconds: Double
+    @ObservationIgnored private let write: (LedgerStore, LedgerStore.SettlementDTO) throws -> Void
+    @ObservationIgnored private let written: @MainActor () -> Void
+    @ObservationIgnored private var nextId = 0
+    @ObservationIgnored private var timer: Task<Void, Never>?
+    @ObservationIgnored private var toastSerial: Int?
+
+    init(center: DoneCenter? = nil, seconds: Double = DoneCenter.actionSeconds,
+         write: @escaping (LedgerStore, LedgerStore.SettlementDTO) throws -> Void = { try SettleAll.record(store: $0, settlement: $1) },
+         written: @escaping @MainActor () -> Void = SettleHold.liveWritten) {
+        self.center = center ?? .shared
+        self.seconds = seconds
+        self.write = write
+        self.written = written
+    }
+
+    /// Section 10.3: saved locally first, then the push (fire and forget), and every screen reads again.
+    static func liveWritten() {
+        CloudSync.shared.ledgerChanged()
+        SyncStatus.shared.changed()
+    }
+
+    /// What the screens add to the ledger's settlements while a settle is held.
+    var held: [LedgerStore.SettlementDTO] { pending.map { [$0.settlement] } ?? [] }
+
+    /// Holds `settlement` (to `other`, by name) for the window: core checks it first (CLAUDE.md 10: every write path;
+    /// a refusal throws and nothing is held), a settle already held lands first, then the toast offers Undo.
+    func hold(_ settlement: LedgerStore.SettlementDTO, other: String, store: LedgerStore) throws {
+        try ffiCheckSettlement(settlement: settlement.asInput)
+        commit()
+        nextId += 1
+        let id = nextId
+        pending = Pending(id: id, settlement: settlement, other: other, path: store.path)
+        failure = nil
+        revision += 1
+        center.post(DoneMoments.line(DoneCopy.settledWith(other), action: DoneCopy.undo),
+                    onAction: { [weak self] in self?.undo(id) })
+        toastSerial = center.serial
+        timer?.cancel()
+        let seconds = self.seconds
+        timer = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(seconds))
+            guard !Task.isCancelled else { return }
+            self?.commit(ifStill: id)
+        }
+    }
+
+    /// Undo: the held settle numbered `id` is dropped and nothing is written ("Not recorded."). A settle already written
+    /// (or a newer one) is left alone.
+    func undo(_ id: Int) {
+        guard pending?.id == id else { return }
+        timer?.cancel()
+        timer = nil
+        pending = nil
+        revision += 1
+        center.post(DoneMoments.line(DoneCopy.notRecorded))
+    }
+
+    /// The window ended for `id`: it lands, unless it was undone or already landed.
+    func commit(ifStill id: Int) {
+        guard pending?.id == id else { return }
+        commit()
+    }
+
+    /// The held settle lands now (written once), and its Undo goes with the toast. Nothing held: nothing happens.
+    func commit() {
+        guard let p = pending else { return }
+        timer?.cancel()
+        timer = nil
+        pending = nil
+        if let toastSerial { center.clear(ifStill: toastSerial) }
+        toastSerial = nil
+        do {
+            try write(LedgerStore(path: p.path), p.settlement)
+            failure = nil
+            revision += 1
+            written()
+        } catch {
+            failure = "Could not record the settlement. \(String(describing: error))"
+            revision += 1
+        }
+    }
+}
+
+extension View {
+    /// D-247: a screen that shows held settles (Settle up, a group's page) lands the held one when it goes away: popped
+    /// or pushed over (`onDisappear`), or its tab hidden (`artVisible`, tabs stay alive).
+    func landsHeldSettle(visible: Bool) -> some View {
+        onDisappear { SettleHold.shared.commit() }
+            .onChange(of: visible) { _, shown in if !shown { SettleHold.shared.commit() } }
     }
 }
 
@@ -108,12 +305,14 @@ struct SettleAllScreen: View {
     /// D-221 (S1): the next card's latch on Settle up's cards: a second tap, on this card or another, records nothing
     /// while one records; the reload that drops the card lets go (iOS reloads in the same main-thread turn).
     @State private var latch = SettleLatch<String>()
-    @State private var confirmation: String?
     @State private var error: String?
     @State private var loaded = false
     /// D-234 (L7): every group, read-only copies too (Settle up lists only the ones that can be recorded in).
     @State private var groupCount = 0
+    /// D-247: the card whose "Another amount" sheet is open (owned here, on the always-present ScrollView).
+    @State private var otherAmount: OtherAmountDraft?
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.artVisible) private var artVisible
 
     private var store: LedgerStore { LedgerStore.defaultStore() }
 
@@ -128,10 +327,8 @@ struct SettleAllScreen: View {
                 }
                 .font(TypeRole.body(TypeScale.settleIntro))
                 .foregroundStyle(Tokens.textDim)
-                if let confirmation {
-                    Text(verbatim: confirmation).font(TypeRole.body()).foregroundStyle(Tokens.owing)
-                }
-                if let error {
+                // D-247: the toast says a settle is done (with its Undo); a write that failed says so here.
+                if let error = error ?? SettleHold.shared.failure {
                     Text(verbatim: error).font(TypeRole.body()).foregroundStyle(Tokens.owed)
                 }
                 if loaded && sections.isEmpty && error == nil {
@@ -148,6 +345,15 @@ struct SettleAllScreen: View {
         .navigationTitle("Settle up")
         .navigationBarTitleDisplayMode(.large)
         .task(id: SyncStatus.shared.revision) { load() }
+        // D-247: a settle held, undone, written or failed changes what the cards count.
+        .onChange(of: SettleHold.shared.revision) { load() }
+        .landsHeldSettle(visible: artVisible)
+        .sheet(item: $otherAmount) { draft in
+            OtherAmountSheet(draft: draft, onSettle: { minor in
+                otherAmount = nil
+                settle(draft.entry, currency: draft.currency, named: draft.named, key: draft.key, amount: minor)
+            }, onCancel: { otherAmount = nil })
+        }
     }
 
     @ViewBuilder
@@ -160,13 +366,16 @@ struct SettleAllScreen: View {
         .padding(.top, 6)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isHeader)
-        if section.settled {
+        if section.state != .open {
+            // D-247 (decision 168): "all settled" only when core says the whole group is.
+            let all = section.state == .allSettled
             HStack(spacing: 12) {
                 LucideIcon(glyph: .circleCheck, size: 26).foregroundStyle(Tokens.owing)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(verbatim: SettleAllCopy.settled(named.group.name))
+                    Text(verbatim: all ? SettleAllCopy.settled(named.group.name) : SettleAllCopy.youSettled(named.group.name))
                         .font(TypeRole.label(15)).foregroundStyle(Tokens.owing)
-                    Text(verbatim: SettleAllCopy.settledDetail).font(TypeRole.body(13)).foregroundStyle(Tokens.textDim)
+                    Text(verbatim: all ? SettleAllCopy.settledDetail : SettleAllCopy.youSettledDetail)
+                        .font(TypeRole.body(13)).foregroundStyle(Tokens.textDim)
                 }
             }
             .padding(14)
@@ -212,7 +421,7 @@ struct SettleAllScreen: View {
                 Text(verbatim: SettleAllCopy.recording).font(TypeRole.body()).foregroundStyle(Tokens.textDim)
             } else {
                 Button {
-                    record(entry, currency: currency, named: named, key: key)
+                    settle(entry, currency: currency, named: named, key: key)
                 } label: {
                     Text(verbatim: SettleAllCopy.action(youOwe: youOwe, other: other))
                 }
@@ -220,6 +429,18 @@ struct SettleAllScreen: View {
                 // D-221: one payment at a time; another card's Settle reads as disabled while one records.
                 .disabled(latch.busy)
                 .accessibilityHint(Text(verbatim: SettleAllCopy.explainer))
+                // D-247 (decision 167): the quiet link under the button, the in-card link's look.
+                Button {
+                    otherAmount = OtherAmountDraft(key: key, entry: entry, currency: currency, named: named, other: other)
+                } label: {
+                    Text(verbatim: SettleAllCopy.anotherAmount)
+                        .font(TypeRole.body(TypeScale.detail))
+                        .foregroundStyle(Tokens.accent)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(latch.busy)
             }
         }
         .glassCard()
@@ -246,34 +467,33 @@ struct SettleAllScreen: View {
         }
     }
 
-    private func record(_ entry: ShareOut, currency: String, named: NamedGroupWire, key: String) {
+    /// D-247 (decision 182): the card's settle, the whole debt or another amount, held for Undo (`SettleHold`, the
+    /// one write path; the group page's next card holds through it too). The reload in the same turn counts it.
+    private func settle(_ entry: ShareOut, currency: String, named: NamedGroupWire, key: String, amount: Int64? = nil) {
         guard latch.begin(key) else { return }
-        let other = LedgerStore.label(for: entry.id, in: named)
-        let store = self.store
-        DispatchQueue.global(qos: .userInitiated).async {
-            do {
-                // D-221: the one record function (the group page's next card records through it too).
-                try SettleAll.record(store: store, entry: entry, currency: currency, named: named)
-                DispatchQueue.main.async {
-                    confirmation = SettleAllCopy.recorded(other)
-                    load()
-                    SyncStatus.shared.changed()
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    latch.failed()
-                    self.error = "Could not record the settlement. \(String(describing: error))"
-                }
-            }
+        // A removed person keeps their name (the history's).
+        let other = LedgerStore.label(for: entry.id, in: named,
+                                      history: (try? store.historyNames(group: named.group.id)) ?? [:])
+        do {
+            try SettleHold.shared.hold(SettleAll.settlement(for: entry, currency: currency, in: named, amount: amount),
+                                       other: other, store: store)
+            error = nil
+            load()
+        } catch {
+            latch.failed()
+            self.error = "Could not record the settlement. \(String(describing: error))"
         }
     }
 
     private func load() {
         do {
-            sections = try SettleAll.sections(store)
+            sections = try SettleAll.sections(store, held: SettleHold.shared.held)
             groupCount = try store.namedGroups().count
             // The record landed and the reload no longer shows its card: the latch lets go.
             latch.moved(to: SettleAll.keys(sections))
+            #if DEBUG
+            if let draft = SettleLook.draft(sections) { otherAmount = draft } // D-247: the look's surface only
+            #endif
             error = nil
         } catch LedgerStore.GroupStoreError.needsYourName {
             error = String(localized: "Add your name on Balance first.")
@@ -281,5 +501,94 @@ struct SettleAllScreen: View {
             self.error = "Could not load the ledger. \(String(describing: error))"
         }
         loaded = true
+    }
+}
+
+/// D-247 (decision 167): "How much was paid?": the amount field (focused, the whole debt in core's entry form), section
+/// 11.6's sentence, Settle (disabled until the field holds an amount within the debt) and Cancel. Writes nothing itself:
+/// Settle hands the amount back to the card, which holds it like any settle. Android's twin is `OtherAmountSheet`.
+struct OtherAmountSheet: View {
+    let draft: OtherAmountDraft
+    let onSettle: (Int64) -> Void
+    let onCancel: () -> Void
+    @State private var text: String
+    @FocusState private var focused: Bool
+
+    init(draft: OtherAmountDraft, onSettle: @escaping (Int64) -> Void, onCancel: @escaping () -> Void) {
+        self.draft = draft
+        self.onSettle = onSettle
+        self.onCancel = onCancel
+        _text = State(initialValue: OtherAmount.prefill(debt: draft.debt, currency: draft.currency))
+        #if DEBUG
+        if SettleLook.step == "toomuch" { _text = State(initialValue: "40.00") } // D-247: the look's surface only
+        #endif
+    }
+
+    private var verdict: OtherAmount.Verdict {
+        OtherAmount.verdict(text, debt: draft.debt, currency: draft.currency, youOwe: draft.youOwe, other: draft.other) { minor in
+            try ffiCheckSettlement(settlement: SettleAll.settlement(
+                for: draft.entry, currency: draft.currency, in: draft.named, amount: minor).asInput)
+        }
+    }
+
+    var body: some View {
+        let verdict = self.verdict
+        NavigationStack {
+            VStack(spacing: 20) {
+                VStack(spacing: 10) {
+                    Text(verbatim: SettleAllCopy.sentence(youOwe: draft.youOwe, other: draft.other))
+                        .font(TypeRole.body(TypeScale.detail))
+                        .foregroundStyle(Tokens.textDim)
+                    TextField(text: $text, prompt: Text(verbatim: "0").foregroundStyle(Tokens.textFaint)) {
+                        Text(verbatim: SettleAllCopy.howMuchPaid)
+                    }
+                    .keyboardType(.decimalPad)
+                    .multilineTextAlignment(.center)
+                    .font(TypeRole.numeric(40, weight: 700))
+                    .foregroundStyle(Tokens.text)
+                    .tint(Tokens.accent)
+                    .minimumScaleFactor(0.5)
+                    .focused($focused)
+                    .accessibilityLabel(Text(verbatim: SettleAllCopy.howMuchPaid))
+                    Text(verbatim: draft.currency)
+                        .font(TypeRole.label(13))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 4)
+                        .themePill(.accent, onPage: false)
+                    if case .tooMuch(let words) = verdict {
+                        Text(verbatim: words).font(TypeRole.body(TypeScale.detail)).foregroundStyle(Tokens.owed)
+                    }
+                    // Section 11.6, verbatim.
+                    Text(verbatim: SettleAllCopy.explainer)
+                        .font(TypeRole.body(TypeScale.detail))
+                        .foregroundStyle(Tokens.textDim)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity)
+                .glassCard()
+                VStack(spacing: 10) {
+                    Button {
+                        if case .settles(let minor) = verdict { onSettle(minor) }
+                    } label: { Text(verbatim: SettleAllCopy.settle) }
+                        .buttonStyle(PrimaryButtonStyle())
+                        .disabled(!OtherAmountSheet.settles(verdict))
+                    Button(action: onCancel) { Text(verbatim: SettleAllCopy.cancel) }
+                        .buttonStyle(SecondaryButtonStyle())
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(20)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .auroraBackground()
+            .navigationTitle(SettleAllCopy.howMuchPaid)
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        .onAppear { focused = true }
+    }
+
+    static func settles(_ verdict: OtherAmount.Verdict) -> Bool {
+        if case .settles = verdict { return true }
+        return false
     }
 }

@@ -547,7 +547,8 @@ struct GroupPageScreen: View {
         guard let named else { return [] }
         return PeopleRoles.rows(
             members: named.members, selfId: named.selfId, viewerYou: people.viewerYou, claims: people.claims,
-            roles: roles.roles[groupID], yourPlaces: roles.roles[groupID]?.places?.you, otherYouIds: people.otherYouIds)
+            roles: roles.roles[groupID], yourPlaces: roles.roles[groupID]?.places?.you, otherYouIds: people.otherYouIds,
+            createdHere: people.createdHere)
     }
 
     private var cards: [RequestCardItem] {
@@ -660,6 +661,9 @@ struct GroupPageScreen: View {
         // D-180: the canvas keeps the bar under a group's page.
         .keepsShellBar()
         .task(id: SyncStatus.shared.revision) { load() }
+        // D-247: a settle held, undone or written from the next card; leaving the page lands a held one.
+        .onChange(of: SettleHold.shared.revision) { load() }
+        .landsHeldSettle(visible: artVisible)
         // D-221 (Design 12): a play waits until the page is seen, then runs for CelebrationTiming.total; leaving the
         // page (pushed over, its tab hidden) ends it.
         .onAppear { appeared = true; playIfSeen() }
@@ -746,7 +750,8 @@ struct GroupPageScreen: View {
             if loaded.readOnly == nil { try store.selectGroup(id: groupID) }
             guard let n = try store.namedGroups().first(where: { $0.group.id == groupID }) else { return }
             let all = try store.loadExpenses().filter { $0.group == groupID }
-            let settlements = try store.loadSettlements().map(\.asInput)
+            // D-247: a settle held for Undo counts as recorded (the next card moves on, the meter moves).
+            let settlements = try store.loadSettlements().map(\.asInput) + SettleHold.shared.held.map(\.asInput)
             let redistributions = try store.loadRedistributions()
             let tree = CategoryLevels.tree
             stats = try ffiGroupStats(
@@ -763,9 +768,9 @@ struct GroupPageScreen: View {
             }
             lines = try line(n.selfId)
                 .sorted { ($0.viewerNetMinor.magnitude, $0.currencyCode) > ($1.viewerNetMinor.magnitude, $1.currencyCode) }
-            // D-221 (S2): the pick reads your frame; the count reads the group's (every member's and every removed
-            // person's frame, core's pairs).
-            remaining = try GroupNext.remaining(members: n.members.map(\.id), removed: removed) { try line($0) }
+            // D-221 (S2): the pick reads your frame. D-247 (decision 168): the count is the plan's length (core's
+            // fewest payments, the plan Settle up shows).
+            remaining = GroupNext.planCount(lines: lines)
             // D-180: core's projection (edits applied, deletions out), so a
             // row opens the expense itself, to read, edit or delete.
             let live = try store.projectedExpenses().expenses.filter { !$0.deleted && $0.expense.group == groupID }

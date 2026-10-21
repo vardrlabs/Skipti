@@ -990,6 +990,23 @@ extension LedgerStore {
             }
         }
 
+        /// D-247 (decision 170): the groups this phone created: a `.create` record authored by this device (its id, never
+        /// another phone's of the same account). Read only: a vault with no device id yet authored nothing. A record core
+        /// cannot decode is passed over. The creator fall-back's input (`CreatorFallBack`), display only.
+        static func createdHere(_ store: LedgerStore) throws -> Set<String> {
+            let device: String? = try {
+                let vault = try vaultOf(store)
+                defer { try? vault.closeVault() }
+                return try vault.kvGet(key: deviceKey).map { $0.map { String(format: "%02x", $0) }.joined() }
+            }()
+            guard let device else { return [] }
+            var made = Set<String>()
+            for record in try allRecordsOf(store) where record.recordType == groupOpType && record.authorDeviceId == device {
+                if case .create(let groupId, _, _, _) = try? ffiDecodeGroupOp(blob: record.blob) { made.insert(groupId) }
+            }
+            return made
+        }
+
         static func projectGroups(_ store: LedgerStore) throws -> GroupsProjectionOut {
             try ffiProjectGroups(records: try allRecordsOf(store)
                 .filter { $0.recordType == groupOpType }
