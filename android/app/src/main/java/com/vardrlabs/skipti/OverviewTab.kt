@@ -646,16 +646,24 @@ fun GroupPage(
     /** D-250 fix wave (M3): the shell's last read of this group's page (memory only), so the page slides in drawn. */
     keep: GroupPageKeep = remember { GroupPageKeep() },
 ) {
-    var named by remember { mutableStateOf<NamedGroupWire?>(null) }
+    // D-250 fix wave (M3): a page opened before draws its last read at once (the read below refreshes it), so it slides
+    // in drawn, as iOS's does; a first visit was read before the slide when that took under GroupPageKeep.HOLD_MS.
+    // D-252 fix wave (I1): the kept read SEEDS each state below and is never written into them while the page draws. A
+    // write during composition into state made in that same composition is not seen by what already read it: the
+    // banner and `isCopy` kept the default GroupPeople() while the name and stats came from the kept read, and the
+    // fresh read's equal write then changed nothing, so a read-only copy opened a second time looked writable.
+    val kept = remember(groupId) { keep.last }
+    val keptAtOpen = kept != null
+    var named by remember(groupId) { mutableStateOf<NamedGroupWire?>(kept?.quad?.a) }
     // D-210: the cloud, roles and requests of this group, and whether it is a
     // read-only copy (removed from, or deleted): nothing can be added to it.
-    var people by remember { mutableStateOf(GroupPeople()) }
+    var people by remember(groupId) { mutableStateOf(kept?.people ?: GroupPeople()) }
     var cardBusy by remember { mutableStateOf(false) }
-    var cardBalances by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var cardBalances by remember(groupId) { mutableStateOf(kept?.cardBalances ?: emptyMap()) }
     // Every name the group's history needs (`historyNames`): removed people too.
-    var historyNames by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var historyNames by remember(groupId) { mutableStateOf(kept?.historyNames ?: emptyMap()) }
     // Decision 122: a record of this group the cloud refused is parked on this phone (`CloudRecords.hasParked`).
-    var parkedHere by remember { mutableStateOf(false) }
+    var parkedHere by remember(groupId) { mutableStateOf(kept?.parked ?: false) }
     // A read of the group failed (the screen says so): whether it is a copy is
     // not known, so nothing that changes it is offered (fail closed). The
     // banner and the copy's own actions need the mark itself.
@@ -663,13 +671,13 @@ fun GroupPage(
     val readOnly = people.readOnly
     val isCopy = readOnly != null || loadFailed
     val requestIds = Notices.requests(groupId).map { it.id }
-    var stats by remember { mutableStateOf<GroupStatsOut?>(null) }
-    var lines by remember { mutableStateOf<List<BalanceLineOut>>(emptyList()) }
-    var remaining by remember { mutableIntStateOf(0) }
-    var recent by remember { mutableStateOf<List<uniffi.skipti_core.ProjectedExpenseOut>>(emptyList()) }
+    var stats by remember(groupId) { mutableStateOf<GroupStatsOut?>(kept?.quad?.b) }
+    var lines by remember(groupId) { mutableStateOf(kept?.quad?.c ?: emptyList()) }
+    var remaining by remember(groupId) { mutableIntStateOf(kept?.remaining ?: 0) }
+    var recent by remember(groupId) { mutableStateOf(kept?.quad?.d ?: emptyList()) }
     // D-221 (Design 1, 6, 11): core's settled progress per currency, and the milestone showing now.
-    var progress by remember { mutableStateOf<List<SettledProgressOut>>(emptyList()) }
-    var milestone by remember { mutableStateOf<Milestones.Shown?>(null) }
+    var progress by remember(groupId) { mutableStateOf(kept?.progress ?: emptyList()) }
+    var milestone by remember(groupId) { mutableStateOf<Milestones.Shown?>(kept?.milestone) }
     var error by remember { mutableStateOf<String?>(null) }
     // D-187: the group's picture, chosen from its tile.
     val pictureScope = rememberCoroutineScope()
@@ -698,7 +706,7 @@ fun GroupPage(
         onError = { pictureError = it },
     )
 
-    /** Draws [it], a read of the page (the shell's kept one at once, then each fresh read). */
+    /** Draws [it], a fresh read of the page (the kept one seeded the states above). Never called while drawing. */
     fun show(it: GroupPageKeep.Loaded) {
         val q = it.quad
         named = q.a; stats = q.b; lines = q.c; recent = q.d
@@ -710,9 +718,6 @@ fun GroupPage(
         milestone = it.milestone
         parkedHere = it.parked
     }
-    // D-250 fix wave (M3): a page opened before draws its last read at once (the read below refreshes it), so it slides
-    // in drawn, as iOS's does; a first visit was read before the slide when that took under GroupPageKeep.HOLD_MS.
-    val keptAtOpen = remember(groupId) { keep.last?.also { show(it) } != null }
     // D-247: a settle held, undone or written from the next card reads the page again.
     LaunchedEffect(vaultPath, groupId, SyncStatus.revision, requestIds, SettleHold.shared.revision) {
         withContext(Dispatchers.IO) {

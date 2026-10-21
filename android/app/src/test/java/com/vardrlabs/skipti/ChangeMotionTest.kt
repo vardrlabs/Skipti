@@ -345,9 +345,57 @@ class ChangeMotionTest {
         assertEquals(2, root.split("onOpenGroup = ::openGroupPage,").size - 1)
         assertTrue("keep = groupPages.getOrPut(id) { GroupPageKeep() }," in root)
         val page = src("OverviewTab.kt")
-        assertTrue("val keptAtOpen = remember(groupId) { keep.last?.also { show(it) } != null }" in page)
+        assertTrue("val kept = remember(groupId) { keep.last }\n    val keptAtOpen = kept != null" in page)
         assertTrue("runCatching { GroupPageKeep.read(vaultPath, groupId) }" in page)
         assertTrue("if (GroupPageKeep.drawn(keptAtOpen, named != null, error != null || loadFailed)) 1f else 0f," in page)
+    }
+
+    /** D-252 fix wave (I1): a kept read seeds the page's state; it is never written into it while the page draws. A
+     *  write during composition into state made in that composition is not seen by what already read it: a read-only
+     *  copy opened a second time drew without its banner, with Add people and Settle (stage 3's finding). */
+    @Test
+    fun a_group_page_never_writes_its_state_while_drawing() {
+        val page = src("OverviewTab.kt").substringAfter("fun GroupPage(").substringBefore("\n}\n")
+        // Every remember block in the page: none calls show() (or assigns the page's state) while composing.
+        var at = page.indexOf("remember")
+        var blocks = 0
+        while (at >= 0) {
+            val open = page.indexOf('{', at)
+            // `remember(keys) {` or `remember {`, never a call that merely names remember (rememberScrollState()).
+            val word = page.substring(at, minOf(page.length, at + 9))
+            if (word == "remember " || word == "remember(" || word == "remember{") {
+                var depth = 0
+                var i = open
+                while (true) {
+                    if (page[i] == '{') depth++
+                    if (page[i] == '}') { depth--; if (depth == 0) break }
+                    i++
+                }
+                val block = page.substring(open, i + 1)
+                assertFalse("a remember block draws a read: $block", "show(" in block)
+                assertFalse("a remember block writes the page's state: $block", Regex("""\b(people|named|stats) = """).containsMatchIn(block))
+                blocks++
+            }
+            at = page.indexOf("remember", at + 1)
+        }
+        assertTrue("the page's remember blocks were read ($blocks)", blocks >= 15)
+        // Each state the read draws is seeded from the kept read, so the first frame of a reopened page is the copy.
+        for (seed in listOf(
+            "var named by remember(groupId) { mutableStateOf<NamedGroupWire?>(kept?.quad?.a) }",
+            "var people by remember(groupId) { mutableStateOf(kept?.people ?: GroupPeople()) }",
+            "var cardBalances by remember(groupId) { mutableStateOf(kept?.cardBalances ?: emptyMap()) }",
+            "var historyNames by remember(groupId) { mutableStateOf(kept?.historyNames ?: emptyMap()) }",
+            "var parkedHere by remember(groupId) { mutableStateOf(kept?.parked ?: false) }",
+            "var stats by remember(groupId) { mutableStateOf<GroupStatsOut?>(kept?.quad?.b) }",
+            "var lines by remember(groupId) { mutableStateOf(kept?.quad?.c ?: emptyList()) }",
+            "var remaining by remember(groupId) { mutableIntStateOf(kept?.remaining ?: 0) }",
+            "var recent by remember(groupId) { mutableStateOf(kept?.quad?.d ?: emptyList()) }",
+            "var progress by remember(groupId) { mutableStateOf(kept?.progress ?: emptyList()) }",
+            "var milestone by remember(groupId) { mutableStateOf<Milestones.Shown?>(kept?.milestone) }",
+        )) assertTrue(seed, seed in page)
+        // The copy's words and actions read the seeded state (declared after it), and show() runs only from the read.
+        assertTrue(page.indexOf("val readOnly = people.readOnly") > page.indexOf("var people by remember(groupId)"))
+        assertEquals("show() runs once: in the read's success", 1, Regex("""\n\s+show\(it\)\n""").findAll(page).count())
     }
 
     @Test

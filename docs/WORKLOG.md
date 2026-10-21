@@ -125,6 +125,19 @@ then ONE round of pop-ups for every call of his, then build in his order with de
   216, 217). Merging. **Group-delete bug: ROOT CAUSE FOUND** (`.drafts/groupdelete/rootcause.md`: deleteGroup skips the
   caller's account, index.js:1479; production matches the repo); the founder chose server + apps (218) and the deploy
   WITH 0.5.1 after Fable (219). NEXT: D-252 per `.drafts/d252/plan.md`, then U32 shots + U33 film, then release prep.
+- U32 first capture DONE (`.drafts/u32/out/`: 10 App Store 1320x2868, 8 Play 1080x1920, feature graphic, contact
+  sheet; scripts in `.drafts/u32/`). Calls 224-226 (plan file): clean shot 9, shot 6 = You ring, and D-253 app polish
+  (Shake Shack preview copy, Exact split labels vanish, Aurora tile colours twin) BEFORE re-capturing 4, 7, 9.
+- D-252 stage 1 DONE 83311dc (Functions; 271 emulator tests) + 11a4252 (iOS; 1009/0); stage 2 Android running;
+  decisions 220-223 drafted `.drafts/d252/record/decisions.md`.
+- D-252 stage 2 722b2bf (Android, JVM 1210), stage 3 0e55b5e (iOS name-change fix; two-phone proof on the local
+  emulators: all 3 scenarios pass: other phone "You deleted" in 0.5-1.6 s, member 0.6-1.3 s, Adds refused with words,
+  0.5.0 victims caught at next launch). Review (`.drafts/d252/review.md`): I1 Android reopen bug (state written during
+  composition, from D-250); M2 former members; M3 iOS off-main. FIX WAVE + sabotage dispatched. Then gate, records,
+  merge, then D-253, re-capture shots, U33, release prep. Machine: CLAUDE.md 4 item 6 (memory rule) added today.
+- **D-252 DONE** (fix wave 9211143; sabotage 26 rows clean; gate 23/23 4m58s; RECORDED, JVM carried forward;
+  decisions 220-223). Merging. The Functions change is NOT deployed (ships with 0.5.1 after Fable). NEXT: D-253 app
+  polish for the store shots (`.drafts/u32/plan.md` "After the first capture"), re-capture 4/7/9, U33, release prep.
 - **FOUNDER BUG (0.5.0, 2026-10-21, high priority):** an owner deletes a group on one phone; the account's OTHER phone
   still shows it and can add expenses to it; the same for other members. Expected: ended everywhere (archived /
   read-only at most). Root-cause investigation dispatched (systematic debugging, no fixes yet; server-level emulator

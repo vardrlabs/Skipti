@@ -1109,7 +1109,7 @@ async function tell(fn, uids, fields, { id = null, toPerson = false, quiet = [] 
     const c = db.collection('users').doc(u).collection('notices');
     return id ? c.doc(id).set(notice) : c.add(notice);
   }));
-  const loud = to.filter((u) => !quiet.includes(u));
+  const loud = push.loud(to, quiet);
   try {
     const phones = (await Promise.all(loud.map(async (u) => {
       const list = await db.collection('users').doc(u).collection('devices').get();
@@ -1475,8 +1475,12 @@ export const deleteGroup = onCall(CALLABLE, async (request) => {
   await store.deleteGroupPicture(groupId);
   // The group is gone: nothing below may fail the call. Each step is its own.
   await afterCommit('deleteGroup', 'ending invitations', () => endInvites(groupId, everyone));
+  // D-252 (decision 218): every member is told, the deleting account too, so its OTHER phones end the group as well
+  // (before, the caller was left out and its second phone kept a writable group the server refused). `byUid` says
+  // whose delete it was: those phones read "You deleted". The caller's account is quiet: stored, never pushed.
+  const audience = groups.deletionAudience(members, uid);
   await afterCommit('deleteGroup', 'telling the members', () =>
-    tell('deleteGroup', members.filter((u) => u !== uid), { kind: 'deleted', groupId, groupName, byName }, { quiet: [uid] }));
+    tell('deleteGroup', audience.told, { kind: 'deleted', groupId, groupName, byName, byUid: uid }, { quiet: audience.quiet }));
   await afterCommit('deleteGroup', 'clearing the requests', () =>
     Promise.all(open.map((member) => forgetRequest(groupId, member, everyone))));
   return { deleted: true };

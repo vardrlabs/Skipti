@@ -191,12 +191,15 @@ fun LedgerStore.renameGroup(groupId: String, name: String) {
 
 /** Why the group is a copy, and what that means. */
 object ReadOnlyBanner {
-    /** The banner's first line. */
-    fun title(mark: ReadOnlyDTO, date: String): String {
+    /** The banner's first line. D-252 (decision 218): a group that left the account's listing says it neutrally (a
+     *  removal and a deletion read the same from outside), and a group this account deleted reads "You deleted
+     *  {group}." on every one of its phones (the deleting one and those its notice reached). */
+    fun title(mark: ReadOnlyDTO, date: String, group: String): String {
         // D-229 decision 45: its own one line, and no second.
         if (mark.kind == ReadOnlyDTO.PLACE_LOST) return RolesCopy.PLACE_LOST_BANNER
+        if (mark.kind == ReadOnlyDTO.VANISHED) return GroupEndCopy.NO_LONGER_SHARED
         if (mark.kind == "removed") return RolesCopy.removedBanner(mark.by, date)
-        return if (mark.byYou == true) RolesCopy.deletedByYou(date) else RolesCopy.deletedBanner(mark.by, date)
+        return if (mark.byYou == true) GroupEndCopy.youDeleted(group) else RolesCopy.deletedBanner(mark.by, date)
     }
 
     /** The banner's second line; none for a group whose place is lost (D-229). */
@@ -525,7 +528,7 @@ fun ReadOnlyBannerCard(group: String, mark: ReadOnlyDTO, dark: Boolean) {
             .semantics(mergeDescendants = true) {},
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Text(ReadOnlyBanner.title(mark, date), style = Type.label(dark, 15).copy(color = GroupTone.AMBER.letter(dark)))
+        Text(ReadOnlyBanner.title(mark, date, group), style = Type.label(dark, 15).copy(color = GroupTone.AMBER.letter(dark)))
         ReadOnlyBanner.body(mark, group)?.let {
             Text(it, style = Type.bodyDim(dark).copy(color = Tok.text(dark), fontSize = 14.sp))
         }

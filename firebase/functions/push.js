@@ -28,6 +28,14 @@ export function recipients(group, authorUid) {
   return [...new Set(members.filter((u) => u !== authorUid))];
 }
 
+/** D-252: whose phones a notice is pushed to: everyone told, once each, less
+ *  the `quiet` accounts (the caller's own: its phones already know). A quiet
+ *  account still gets the notice stored; only the push is left out. */
+export function loud(uids, quiet = []) {
+  const still = new Set((Array.isArray(quiet) ? quiet : []).filter((u) => typeof u === 'string'));
+  return [...new Set((uids ?? []).filter((u) => typeof u === 'string' && u && !still.has(u)))];
+}
+
 /** The push addresses of a member's phones: each phone that has one and is
  *  not signed out, once each, at most MAX_TOKENS in all. `devices` is a list
  *  of {uid, id, data}. Returns [{token, uid, id}]. */

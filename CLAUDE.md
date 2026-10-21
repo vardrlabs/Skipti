@@ -204,7 +204,14 @@ Measured on D-215 (413 sabotage rows, 2 h 14 min) and D-217:
 5. **Check the machine first:** no emulator left running (`pgrep -f qemu-system`), no booted simulator you did not
    mean, Activity Monitor's top CPU (`ps -Ao pcpu,comm -r | head`), load average, swap. A simulator that reboots per
    test, a software-GPU emulator or a leftover process costs more than any code change.
-6. Not worth it: running several sabotages in one build (the reds cannot be attributed), GPU (compiles and tests are CPU
+6. **Memory is the limit, not the CPU (measured 2026-10-21, session 11):** this M4 has 10 cores and 16 GB. One booted
+   iOS 27 simulator holds about 9 GB resident (its UnityPoster wallpaper extension alone burns about 95% of a core); two
+   of them plus an AVD, the Firebase emulators and a build pushed load to 170-270 with 5.7 GB of swap, and agents
+   stalled. So: at most ONE iOS 27 simulator and ONE AVD booted at a time (a third device in a multi-phone proof is an
+   AVD, or a device reused between scenarios); build before booting devices, never during a multi-device run; never
+   run two heavy agents at once (a build, a sabotage lane, a capture, a look) beside a multi-device run; shut devices
+   down the moment a scenario stops needing them.
+7. Not worth it: running several sabotages in one build (the reds cannot be attributed), GPU (compiles and tests are CPU
    work), new mutation-testing tools (new dependencies).
 
 **Clean up build products after every merge (founder, 2026-10-17: the run had filled the disk to 5.7 GB free with

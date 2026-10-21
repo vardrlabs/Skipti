@@ -461,11 +461,14 @@ struct ReadOnlyBanner: View {
 
     /// The banner's first line. D-229 decision 45: a group where this
     /// account lost its place says why in this one line (no date: it was
-    /// never marked, it is read from the records).
-    static func title(mark: LedgerStore.ReadOnly, date: String) -> String {
+    /// never marked, it is read from the records). D-252 (decision 218): a group that left the account's listing
+    /// says it neutrally (a removal and a deletion read the same from outside), and a group this account deleted
+    /// reads "You deleted {group}." on every one of its phones (the deleting one and those its notice reached).
+    static func title(mark: LedgerStore.ReadOnly, date: String, group: String) -> String {
         if mark.kind == LedgerStore.ReadOnly.placeLostKind { return RolesCopy.placeLostBanner }
+        if mark.kind == LedgerStore.ReadOnly.vanishedKind { return GroupEndCopy.noLongerShared }
         if mark.kind == "removed" { return RolesCopy.removedBanner(by: mark.by, date: date) }
-        return mark.byYou == true ? RolesCopy.deletedByYou(date: date) : RolesCopy.deletedBanner(by: mark.by, date: date)
+        return mark.byYou == true ? GroupEndCopy.youDeleted(group) : RolesCopy.deletedBanner(by: mark.by, date: date)
     }
 
     /// The banner's second line; none for a lost place (its one line says it all).
@@ -477,7 +480,7 @@ struct ReadOnlyBanner: View {
     var body: some View {
         let date = Phones.day(mark.at)
         VStack(alignment: .leading, spacing: 4) {
-            Text(verbatim: Self.title(mark: mark, date: date))
+            Text(verbatim: Self.title(mark: mark, date: date, group: group))
                 .font(TypeRole.label(15)).foregroundStyle(GroupTone.amber.letter)
             if let line = Self.body(mark: mark, group: group) {
                 Text(verbatim: line)

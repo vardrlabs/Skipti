@@ -831,7 +831,7 @@ final class GroupRecordsTests: XCTestCase {
         XCTAssertEqual(RolesCopy.placeLostBanner,
                        "You can't add to this group from this phone: someone else holds your place in it. "
                            + "Ask the group's owner to check People.")
-        XCTAssertEqual(ReadOnlyBanner.title(mark: .placeLost, date: "1 Jan"), RolesCopy.placeLostBanner)
+        XCTAssertEqual(ReadOnlyBanner.title(mark: .placeLost, date: "1 Jan", group: "Old"), RolesCopy.placeLostBanner)
         XCTAssertNil(ReadOnlyBanner.body(mark: .placeLost, group: "Old"), "one line")
 
         let placing = try LedgerStore.Placing.load(p)

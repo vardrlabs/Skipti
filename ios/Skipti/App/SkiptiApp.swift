@@ -125,7 +125,11 @@ struct SkiptiApp: App {
             let args = ProcessInfo.processInfo.arguments
             if let i = args.firstIndex(of: "--emulator-as"), args.indices.contains(i + 1) {
                 let sub = args[i + 1]
-                Task { @MainActor in await EmulatorSignIn.signIn(as: sub) }
+                Task { @MainActor in
+                    await EmulatorSignIn.signIn(as: sub)
+                    // D-252: `--group-end <step> [arg]` then runs one step of the two-phone proof (GroupEndProof).
+                    await GroupEndProof.run(args)
+                }
             }
         }
         // D-251: `--store-shots --store-theme <theme> [--store-mode <mode>]` (a store page's seed, Debug builds only):
@@ -652,6 +656,137 @@ enum EmulatorSignIn {
               let token = String(data: data, encoding: .utf8) else { print("emulator-as: could not build the token"); return }
         let outcome = await Account.shared.signIn(GoogleAuthProvider.credential(withIDToken: token, accessToken: ""), method: .google)
         print("emulator-as: signed in as \(sub): \(outcome)")
+    }
+}
+
+/// `--emulators --emulator-as <sub> --group-end <step> [arg] [--group-end-me <name>]` (D-252, Debug builds only, the
+/// two-phone proof's tool, not a user flow): the ORDINARY app against the local emulators, signed in as `sub`, runs one
+/// step by script, then watches every group it holds. Steps: `create <group>` (with a member "Yan", a Dinner, and an
+/// invite for Yan, its link printed), `join <link>`, `delete <group>` (the call and the mark Delete group makes), and
+/// `watch` (nothing but the watch). The watch prints each group's read-only state whenever it changes (the banner's
+/// own line), and at a group's first mark tries an Add into it (it must be refused with words before anything is
+/// written, and park nothing), then opens that group's page. Every line goes to the log as `GROUP-END <epoch ms> ...`
+/// and to `Documents/group-end.txt`. Android's twin is GroupEndProof in AppRoot.kt.
+@MainActor
+enum GroupEndProof {
+    private static func say(_ line: String) {
+        let stamped = "\(Int64(Date().timeIntervalSince1970 * 1000)) \(line)"
+        NSLog("GROUP-END %@", stamped)
+        guard let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        let file = docs.appendingPathComponent("group-end.txt")
+        let data = Data((stamped + "\n").utf8)
+        if let handle = try? FileHandle(forWritingTo: file) {
+            handle.seekToEndOfFile()
+            handle.write(data)
+            try? handle.close()
+        } else {
+            try? data.write(to: file)
+        }
+    }
+
+    private static func value(after flag: String, in args: [String]) -> String? {
+        guard let i = args.firstIndex(of: flag), args.indices.contains(i + 1) else { return nil }
+        return args[i + 1]
+    }
+
+    static func run(_ args: [String]) async {
+        guard let step = value(after: "--group-end", in: args) else { return }
+        let arg = args.firstIndex(of: "--group-end").flatMap { args.indices.contains($0 + 2) ? args[$0 + 2] : nil } ?? ""
+        let me = value(after: "--group-end-me", in: args) ?? "Xan"
+        let store = LedgerStore.defaultStore()
+        try? WelcomeGate.clear(store)
+        let started = Date()
+        while Account.shared.uid == nil, Date().timeIntervalSince(started) < 60 {
+            try? await Task.sleep(nanoseconds: 250_000_000)
+        }
+        say("step \(step) \(arg): uid \(Account.shared.uid ?? "none")")
+        do {
+            switch step {
+            case "create":
+                if (try store.loadSelf())?.name == nil { _ = try store.setYourName(me) }
+                let group = try store.createGroup(name: arg, settlementCurrency: "USD", people: ["Yan"])
+                guard let yan = group.members.first(where: { $0.id != group.selfId }) else { return say("no Yan") }
+                _ = try store.appendExpense(LedgerStore.ExpenseDTO(
+                    payer: group.selfId, paidMinor: 4_000, currencyCode: "USD", group: group.group.id, conversion: nil,
+                    shares: [.init(id: group.selfId, amountMinor: 2_000), .init(id: yan.id, amountMinor: 2_000)],
+                    note: "Dinner", timestampMs: UInt64(Date().timeIntervalSince1970 * 1000), category: nil,
+                    addedBy: group.selfId))
+                CloudSync.shared.ledgerChanged()
+                let link = try await Invites.create(store: store, group: group, member: yan)
+                say("created \(arg) \(group.group.id) INVITE \(link)")
+            case "join":
+                if (try store.loadSelf())?.name == nil { _ = try store.setYourName(me) }
+                let offer = try await Invites.peek(link: arg)
+                let group = try await Invites.accept(link: arg, offer: offer, store: store)
+                CloudSync.shared.ledgerChanged()
+                say("joined \(offer.groupName) \(group)")
+            case "delete":
+                var found: LedgerStore.GroupDTO?
+                while found == nil, Date().timeIntervalSince(started) < 120 {
+                    found = (try? store.loadGroups())?.first { $0.name == arg }
+                    if found == nil { try? await Task.sleep(nanoseconds: 500_000_000) }
+                }
+                guard let group = found else { return say("no group \(arg) here") }
+                let named = try store.namedGroups().first { $0.group.id == group.id }
+                let viewerName = named?.members.first { $0.id == named?.selfId }?.name ?? ""
+                say("deleting \(arg) \(group.id)")
+                try await GroupDelete.run(
+                    call: {
+                        _ = try await CloudFunctions.call("deleteGroup", [
+                            "groupId": group.id, "groupName": RoleRules.wireName(group.name),
+                            "byName": RoleRules.wireName(viewerName),
+                        ])
+                    },
+                    mark: {
+                        try store.markReadOnly(group.id, LedgerStore.ReadOnly(kind: "deleted", by: viewerName, at: Date(), byYou: true))
+                    })
+                say("deleted \(arg): the call returned and this phone marked it")
+            default:
+                break
+            }
+        } catch {
+            say("FAILED \(step): \(error)")
+        }
+        await watch(store)
+    }
+
+    /// Prints each group's state whenever it changes; at a group's first mark, tries an Add and opens its page.
+    private static func watch(_ store: LedgerStore) async {
+        var seen: [String: String] = [:]
+        var tried = Set<String>()
+        let started = Date()
+        while Date().timeIntervalSince(started) < 1_200 {
+            let marks = (try? store.readOnlyChecked()) ?? [:]
+            for group in (try? store.loadGroups()) ?? [] {
+                let mark = marks[group.id]
+                let state = mark.map {
+                    "read-only \($0.kind)\($0.byYou == true ? " byYou" : ""): \"\(ReadOnlyBanner.title(mark: $0, date: Phones.day($0.at), group: group.name))\""
+                } ?? "writable"
+                if seen[group.id] != state {
+                    seen[group.id] = state
+                    say("group \(group.name) \(group.id.prefix(8)): \(state)")
+                }
+                guard mark != nil, !tried.contains(group.id), group.members.count >= 2 else { continue }
+                tried.insert(group.id)
+                let records = (try? store.allRecords().count) ?? -1
+                let add = LedgerStore.ExpenseDTO(
+                    payer: group.members[0], paidMinor: 1_000, currencyCode: "USD", group: group.id, conversion: nil,
+                    shares: [.init(id: group.members[0], amountMinor: 500), .init(id: group.members[1], amountMinor: 500)],
+                    note: "Taxi after the end", timestampMs: UInt64(Date().timeIntervalSince1970 * 1000), category: nil,
+                    addedBy: group.members[0])
+                do {
+                    _ = try store.appendExpense(add)
+                    say("ADD in \(group.name) was WRITTEN (wrong)")
+                } catch {
+                    say("add in \(group.name) refused: \"\(error)\"")
+                }
+                let after = (try? store.allRecords().count) ?? -1
+                let parked = (try? CloudRecords.hasParked(store, group: group.id)).map { $0 ? "yes" : "no" } ?? "unknown"
+                say("records before \(records), after \(after); parked here: \(parked)")
+                Push.shared.openedGroup = group.id
+            }
+            try? await Task.sleep(nanoseconds: 250_000_000)
+        }
     }
 }
 #endif

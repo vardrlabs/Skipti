@@ -230,7 +230,6 @@ enum RolesCopy {
     static func reviewBanner(_ name: String, plan: [String: Int64]) -> (title: String, sub: String)? {
         balanceHere(name, plan: plan).map { ($0, reviewChooseNext) }
     }
-    static func deletedByYou(date: String) -> String { "You deleted this group on \(date)" }
     static let removeConfirm = "Remove"
     static let removeUnjoinedBody = "They are in no expense or payment here. You can add them again later."
 
@@ -360,6 +359,32 @@ enum RolesCopy {
         case "FAILED_PRECONDITION": return changed
         case "NOT_FOUND": return person ? personGone : gone
         default: return InviteCopy.offline
+        }
+    }
+}
+
+/// D-252 (decision 218): the words of a group that ended on this phone: one that left the account's listing and the
+/// server no longer gives (`vanished`: a removal and a deletion read the same from outside), a deletion this account
+/// made (on this phone or another of its phones), and a write refused in any read-only copy. ONE table: Android's
+/// twin `GroupEndCopy` (Roles.kt) is checked against these lines, so each stays one literal on one line.
+enum GroupEndCopy {
+    /// The banner's one line for a vanished group (its second is `RolesCopy.deletedBannerBody`).
+    static let noLongerShared = "This group is no longer shared with you."
+    /// The banner's line for a group this account deleted, on every one of its phones.
+    static func youDeleted(_ group: String) -> String { "You deleted \(group)." }
+    /// A write into a read-only copy, refused before anything is written (`LedgerStore.Placing.ReadOnlyCopy`).
+    static let refusedVanished = "This group is no longer shared with you. Nothing new can be added."
+    static let refusedYouDeleted = "You deleted this group. Nothing new can be added."
+    static let refusedDeleted = "This group was deleted. Nothing new can be added."
+    static let refusedRemoved = "You were removed from this group. Nothing new can be added."
+
+    /// The refusal's words for a copy's mark (a lost place has its own, `RolesCopy.placeLostBanner`).
+    static func refused(_ mark: LedgerStore.ReadOnly) -> String {
+        switch mark.kind {
+        case LedgerStore.ReadOnly.vanishedKind: return refusedVanished
+        case "removed": return refusedRemoved
+        case LedgerStore.ReadOnly.placeLostKind: return RolesCopy.placeLostBanner
+        default: return mark.byYou == true ? refusedYouDeleted : refusedDeleted
         }
     }
 }
@@ -644,6 +669,112 @@ final class GroupRoles: ObservableObject {
     }
 }
 
+// MARK: - D-252: a group that left the account's listing
+
+/// D-252 (decision 218): a group this phone holds that the account's listing no longer has, and no removal or
+/// deletion notice explained: the phone asks the server once (a read of `groups/{g}`). Pure, so every case is
+/// tested alone; `CloudSync.checkVanished` does the reading. Android's twin is `GroupGone` in Roles.kt.
+enum GroupGone {
+    /// What the one read said.
+    enum Read: Equatable {
+        /// The document is there and this account is in its `memberUids`: still shared (a listing that missed it).
+        case exists
+        /// D-252 fix wave (M2): the document is there and this account is in its `former` (the rules let a removed
+        /// account read it), not in `memberUids`: removed, and the removal's notice is lost or still on its way.
+        case former
+        /// The document is there and this account is in neither list (no reading the rules allow; refused in kind).
+        case notMember
+        /// The rules refused it: the account is no longer in it, or it is gone (a deleted group refuses every read).
+        case refused
+        case notFound
+        /// No answer from the server (offline, a timeout, auth trouble): it says nothing about the group.
+        case networkError
+    }
+
+    enum Outcome: Equatable {
+        /// Nothing changes (it is still there).
+        case keep
+        /// The local copy becomes read-only ("This group is no longer shared with you.").
+        case readOnly
+        /// Nothing changes now; asked again at the next listing change or launch.
+        case retry
+    }
+
+    static func decide(_ read: Read) -> Outcome {
+        switch read {
+        case .refused, .notFound, .former, .notMember: return .readOnly
+        case .networkError: return .retry
+        case .exists: return .keep
+        }
+    }
+
+    /// The read as `CloudSync.groupRead` gives it (the D-210 removal read: permission-denied and not-found are
+    /// `.refused`, nil is no answer), for the account `uid`. D-252 fix wave (M2): a document that is there says
+    /// `exists` only when the account is a member; a removed account still reads it (`former`, firestore.rules), so a
+    /// removal whose notice never came ends the copy too, in the neutral words (the remover's name is not in the
+    /// document; the removal's notice, when it comes, says more).
+    static func read(_ answer: Notices.GroupRead?, uid: String) -> Read {
+        switch answer {
+        case .found(let data)?:
+            let members = (data["memberUids"] as? [Any])?.compactMap { $0 as? String } ?? []
+            if !uid.isEmpty, members.contains(uid) { return .exists }
+            return (data["former"] as? [String: Any])?[uid] != nil && !uid.isEmpty ? .former : .notMember
+        case .missing?: return .notFound
+        case .refused?: return .refused
+        case nil: return .networkError
+        }
+    }
+
+    /// The groups to ask about, sorted: held on this phone AND in the cloud from here (`sync/groups-up`: a group that
+    /// never left this phone is not in any listing, and asking about it would end it wrongly), not listed now, not
+    /// already a copy, no removal or deletion notice waiting for it (that notice says why), and not already asked
+    /// this session (`asked`: a read that said `keep`, or one still in flight). The first listing of a session sweeps
+    /// every such group (0.5.0's groups deleted on another phone of the account, decision 218 point 4).
+    static func toCheck(held: Set<String>, groupsUp: Set<String>, listed: Set<String>, copies: Set<String>,
+                        noticed: Set<String>, asked: Set<String>) -> [String] {
+        held.intersection(groupsUp).subtracting(listed).subtracting(copies).subtracting(noticed).subtracting(asked).sorted()
+    }
+
+    /// Whether the vanished mark may be written over what the copy already says: only an unmarked group or a lost
+    /// place (derived, never stored). A removal or a deletion already says more, and is never made vaguer.
+    static func marks(over existing: LedgerStore.ReadOnly?) -> Bool {
+        existing == nil || existing?.kind == LedgerStore.ReadOnly.placeLostKind
+    }
+
+    /// The mark itself.
+    static func mark(at: Date) -> LedgerStore.ReadOnly {
+        LedgerStore.ReadOnly(kind: LedgerStore.ReadOnly.vanishedKind, by: "", at: at)
+    }
+
+    /// A vanished group listed again (the account is in it once more: a false alarm, or a new invite) is shared
+    /// again: its vanished mark lifts. Only that mark: a removal or a deletion lifts only through an accepted invite.
+    static func lifts(_ mark: LedgerStore.ReadOnly?, listedConfirmed: Bool) -> Bool {
+        listedConfirmed && mark?.kind == LedgerStore.ReadOnly.vanishedKind
+    }
+
+    /// D-252 fix wave (M3): whether a listing from the server can be passed by: the same groups, each as confirmed as
+    /// in the listing the last check read (a confirmation can lift a vanished mark, so it is a change). Nil `last`:
+    /// the session's first listing, or a check that must run again (a vault read that failed, a read with no answer).
+    static func unchanged(_ listing: [String: Bool], last: [String: Bool]?) -> Bool {
+        guard let last else { return false }
+        return last == listing
+    }
+
+    /// What a check reads from the vault, off the main thread (D-252 fix wave, M3): the marks, the groups held here
+    /// and the groups in the cloud from here. Nil when the vault would not give them all (nothing is decided on a guess).
+    struct Seen {
+        let marks: [String: LedgerStore.ReadOnly]
+        let held: Set<String>
+        let up: Set<String>
+    }
+
+    static func see(_ store: LedgerStore) -> Seen? {
+        guard let marks = try? store.readOnlyChecked(), let groups = try? store.loadGroups(),
+              let up = try? CloudRecords.groupsUp(store) else { return nil }
+        return Seen(marks: marks, held: Set(groups.map(\.id)), up: up)
+    }
+}
+
 // MARK: - Notices
 
 /// What happened in this account's groups (users/{uid}/notices): a removal
@@ -673,6 +804,9 @@ final class Notices: ObservableObject {
         let groupId: String
         let groupName: String
         let byName: String
+        /// D-252: the account that did it (a deletion's notice names its deleter): the same account as this phone's
+        /// reads "You deleted". Absent on notices written before D-252 and on every other kind.
+        var byUid: String? = nil
         var memberId: String? = nil
         var memberName: String? = nil
         var role: String? = nil
@@ -767,6 +901,16 @@ final class Notices: ObservableObject {
         return .upTo(formerAt)
     }
 
+    /// D-252: the mark a deletion's notice leaves, or nil when the copy already says it. A copy already marked deleted
+    /// keeps its mark (the deleting phone's own, or an earlier notice's: a second phone of the deleting account handles
+    /// the same notice once, and the deleting phone ignores its own); a vanished, removed, lost-place or unmarked group
+    /// becomes a deleted copy. The notice's `byUid` against this account's uid says whose delete it was: "You deleted".
+    nonisolated static func deletedMark(_ item: Item, uid: String?, existing: LedgerStore.ReadOnly?) -> LedgerStore.ReadOnly? {
+        if existing?.kind == "deleted" { return nil }
+        let yours = uid.map { !$0.isEmpty && item.byUid == $0 } ?? false
+        return LedgerStore.ReadOnly(kind: "deleted", by: item.byName, at: item.at, byYou: yours ? true : nil)
+    }
+
     @Published private(set) var items: [Item] = []
     private var listener: ListenerRegistration?
     private var uid: String?
@@ -794,13 +938,18 @@ final class Notices: ObservableObject {
             guard let value = raw as? String else { return nil }
             memberName = value
         }
+        var byUid: String?
+        if let raw = data["byUid"] {
+            guard let value = raw as? String, !value.isEmpty else { return nil }
+            byUid = value
+        }
         var role: String?
         if let raw = data["role"] {
             guard let value = raw as? String, value == "admin" || value == "owner" else { return nil }
             role = value
         }
         return Item(
-            id: id, kind: kind, groupId: groupId, groupName: groupName, byName: byName,
+            id: id, kind: kind, groupId: groupId, groupName: groupName, byName: byName, byUid: byUid,
             memberId: memberId, memberName: memberName, role: role,
             at: date(data["at"]) ?? Date(timeIntervalSince1970: 0),
             removedAt: date(data["removedAt"]),

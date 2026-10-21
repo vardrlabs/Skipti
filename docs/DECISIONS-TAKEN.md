@@ -1500,6 +1500,45 @@ https://claude.ai/artifact/FwwzuzRkyyxiuGvJKNMPCG (v1); briefs `.drafts/u9/brief
 - **Why:** the review found a second run could delete a real ledger (CLAUDE.md 10: never auto-delete user data).
 - **Status:** in D-251.
 
+### The D-252 chain, 220 to 223: a deleted group ends on every phone (your 218, 219)
+
+#### 220: the deleting account's own phones say "You deleted {group}."
+
+- **What:** the `deleted` notice carries who deleted it; every phone of that account shows "You deleted {group}." (the
+  date dropped from D-210's line); others keep "{by} deleted this group on {date}".
+- **Status:** in D-252.
+
+#### 221: a vanished group is checked with the server, every session
+
+- **What:** at each session's first server listing, every group this phone holds that the account's listing no longer
+  has (and that has no notice waiting) is read once from the server through the existing group read; refused or not
+  found makes the copy read-only ("This group is no longer shared with you."); a network failure changes nothing; a
+  phone-only group is never asked about; nothing local is deleted.
+- **Corrected (fix wave, review M2):** "refused or not found" rested on a wrong premise, that only a member can read a
+  group. The rules let a removed account `get` it (`uid in former`, firestore.rules:171-172), so a removal whose notice
+  was lost read as "found" and the copy stayed writable. Now a read that finds the document makes the copy read-only
+  unless this account is in its `memberUids` (`GroupGone.Read.former` / `notMember`), in the same neutral words (the
+  remover's name is not in the document; the removal's notice, if it comes, rewrites the mark with it and catches up).
+- **Fix wave (review M3):** the check runs only for a listing unlike the last one checked (`GroupGone.unchanged`: the
+  same groups, each as confirmed), and on iOS reads the vault off the main thread (`GroupGone.see` in a detached
+  task); Android already read on its serial thread and takes the same skip. A failed read, a failed lift or a read
+  with no answer clears the remembered listing, so the next snapshot checks again.
+- **Why:** it catches the groups 0.5.0 left writable and any that end while a phone is off.
+- **Status:** in D-252.
+
+#### 222: a vanished mark lifts if the server lists the group again
+
+- **What:** the neutral mark is undone when the group is listed again (a false alarm guard); removed and deleted marks
+  still lift only through an accepted invite.
+- **Status:** in D-252.
+
+#### 223: a write to a read-only copy is refused before it is kept
+
+- **What:** every write path (expense, import, settlement and the settle hold, edit, group op, redistribution) refuses
+  a copy with words before writing, the stored mark's words first; nothing is parked to fail later.
+- **Why:** 0.5.0 saved such an expense, the cloud refused it, and it sat as "One change could not sync".
+- **Status:** in D-252.
+
 ### Siri and Gemini, 210 to 213: your answers (pop-up, 2026-10-21)
 
 - **210 (U15, U16):** Siri and Gemini come in **0.5.2**, not 0.5.1.

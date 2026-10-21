@@ -139,7 +139,11 @@ class MainActivity : ComponentActivity() {
             // subject first (a look with several accounts); Debug builds only.
             ProofArgs.emulatorAs(launchArgs, debuggable())?.takeIf { EmulatorSignIn.firstThisProcess() }?.let { sub ->
                 val vault = File(applicationContext.filesDir, "ledger-vault.db").absolutePath
-                kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch { EmulatorSignIn.signIn(sub, vault) }
+                kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+                    EmulatorSignIn.signIn(sub, vault)
+                    // D-252: `--group-end <step> [arg]` then runs one step of the two-phone proof (GroupEndProof).
+                    GroupEndProof.run(launchArgs?.trim()?.split(Regex("\\s+")).orEmpty(), vault, filesDir) { id -> runOnUiThread { openedGroup.value = id } }
+                }
             }
         }
         // D-191: app-wide Compose state lives in Kotlin objects, created on
@@ -1763,5 +1767,129 @@ object EmulatorSignIn {
             com.google.firebase.auth.GoogleAuthProvider.getCredential(token, null), SignInMethod.Google, LedgerStore(vaultPath),
         )
         android.util.Log.i("emulator-as", "signed in as $sub: $outcome")
+    }
+}
+
+/**
+ * `--emulators --emulator-as <sub> --group-end <step> [arg] [--group-end-me <name>]` (D-252, debug builds only, the
+ * two-phone proof's tool, not a user flow): the ORDINARY app against the local emulators, signed in as `sub`, runs one
+ * step by script, then watches every group it holds. Steps: `create <group>` (with a member "Yan", a Dinner, and an
+ * invite for Yan, its link printed), `join <link>`, `delete <group>` (the call and the mark Delete group makes), and
+ * `watch`. The watch prints each group's read-only state whenever it changes (the banner's own line), and at a group's
+ * first mark tries an Add into it (refused with words before anything is written, nothing parked), then opens that
+ * group's page. Lines go to logcat as `GROUP-END <epoch ms> ...` and to `files/group-end.txt`. iOS's twin is
+ * GroupEndProof in SkiptiApp.swift.
+ */
+object GroupEndProof {
+    private fun say(files: File, line: String) {
+        val stamped = "${System.currentTimeMillis()} $line"
+        android.util.Log.i("GROUP-END", stamped)
+        runCatching { File(files, "group-end.txt").appendText(stamped + "\n") }
+    }
+
+    suspend fun run(args: List<String>, vaultPath: String, files: File, open: (String) -> Unit) {
+        val i = args.indexOf("--group-end")
+        if (i < 0) return
+        val step = args.getOrNull(i + 1) ?: return
+        val arg = args.getOrNull(i + 2)?.takeIf { !it.startsWith("--") } ?: ""
+        val me = args.indexOf("--group-end-me").takeIf { it >= 0 }?.let { args.getOrNull(it + 1) } ?: "Xan"
+        val store = LedgerStore(vaultPath)
+        runCatching { WelcomeGate.clear(store) }
+        val started = System.currentTimeMillis()
+        while (Account.uid() == null && System.currentTimeMillis() - started < 60_000) delay(250)
+        say(files, "step $step $arg: uid ${Account.uid() ?: "none"}")
+        try {
+            when (step) {
+                "create" -> {
+                    if (store.loadSelf()?.name == null) store.setYourName(me)
+                    val group = store.createGroup(arg, "USD", listOf("Yan"))
+                    val yan = group.members.first { it.id != group.selfId }
+                    store.appendExpense(
+                        ExpenseDTO(
+                            payer = group.selfId, paidMinor = 4_000, currencyCode = "USD", group = group.group.id,
+                            shares = listOf(ExpenseDTO.ShareDTO(group.selfId, 2_000), ExpenseDTO.ShareDTO(yan.id, 2_000)),
+                            note = "Dinner", timestampMs = System.currentTimeMillis(), addedBy = group.selfId,
+                        ),
+                    )
+                    CloudSync.ledgerChanged(vaultPath)
+                    val link = Invites.create(store, group, yan)
+                    say(files, "created $arg ${group.group.id} INVITE $link")
+                }
+                "join" -> {
+                    if (store.loadSelf()?.name == null) store.setYourName(me)
+                    val offer = Invites.peek(arg)
+                    val group = Invites.accept(arg, offer, store)
+                    CloudSync.ledgerChanged(vaultPath)
+                    say(files, "joined ${offer.groupName} $group")
+                }
+                "delete" -> {
+                    var found: GroupDTO? = null
+                    while (found == null && System.currentTimeMillis() - started < 120_000) {
+                        found = runCatching { store.loadGroups() }.getOrNull()?.firstOrNull { it.name == arg }
+                        if (found == null) delay(500)
+                    }
+                    val group = found ?: return say(files, "no group $arg here")
+                    val named = store.namedGroups().firstOrNull { it.group.id == group.id }
+                    val viewerName = named?.members?.firstOrNull { it.id == named.selfId }?.name ?: ""
+                    say(files, "deleting $arg ${group.id}")
+                    GroupDelete.run(
+                        call = {
+                            CloudFunctions.callJson("deleteGroup", kotlinx.serialization.json.buildJsonObject {
+                                put("groupId", kotlinx.serialization.json.JsonPrimitive(group.id))
+                                put("groupName", kotlinx.serialization.json.JsonPrimitive(RoleRules.wireName(group.name)))
+                                put("byName", kotlinx.serialization.json.JsonPrimitive(RoleRules.wireName(viewerName)))
+                            })
+                        },
+                        mark = {
+                            store.markReadOnly(group.id, ReadOnlyDTO("deleted", viewerName, System.currentTimeMillis(), byYou = true))
+                        },
+                    )
+                    say(files, "deleted $arg: the call returned and this phone marked it")
+                }
+                else -> Unit
+            }
+        } catch (e: Exception) {
+            say(files, "FAILED $step: $e")
+        }
+        watch(store, files, open)
+    }
+
+    /** Prints each group's state whenever it changes; at a group's first mark, tries an Add and opens its page. */
+    private suspend fun watch(store: LedgerStore, files: File, open: (String) -> Unit) {
+        val seen = mutableMapOf<String, String>()
+        val tried = mutableSetOf<String>()
+        val started = System.currentTimeMillis()
+        while (System.currentTimeMillis() - started < 1_200_000) {
+            val marks = runCatching { store.readOnlyChecked() }.getOrDefault(emptyMap())
+            for (group in runCatching { store.loadGroups() }.getOrDefault(emptyList())) {
+                val mark = marks[group.id]
+                val state = mark?.let {
+                    "read-only ${it.kind}${if (it.byYou == true) " byYou" else ""}: \"${ReadOnlyBanner.title(it, Phones.day(it.atMs), group.name)}\""
+                } ?: "writable"
+                if (seen[group.id] != state) {
+                    seen[group.id] = state
+                    say(files, "group ${group.name} ${group.id.take(8)}: $state")
+                }
+                if (mark == null || group.id in tried || group.members.size < 2) continue
+                tried += group.id
+                val records = runCatching { store.allRecords().size }.getOrDefault(-1)
+                val add = ExpenseDTO(
+                    payer = group.members[0], paidMinor = 1_000, currencyCode = "USD", group = group.id,
+                    shares = listOf(ExpenseDTO.ShareDTO(group.members[0], 500), ExpenseDTO.ShareDTO(group.members[1], 500)),
+                    note = "Taxi after the end", timestampMs = System.currentTimeMillis(), addedBy = group.members[0],
+                )
+                try {
+                    store.appendExpense(add)
+                    say(files, "ADD in ${group.name} was WRITTEN (wrong)")
+                } catch (e: Exception) {
+                    say(files, "add in ${group.name} refused: \"${e.message}\"")
+                }
+                val after = runCatching { store.allRecords().size }.getOrDefault(-1)
+                val parked = runCatching { if (CloudRecords.hasParked(store, group.id)) "yes" else "no" }.getOrDefault("unknown")
+                say(files, "records before $records, after $after; parked here: $parked")
+                open(group.id)
+            }
+            delay(250)
+        }
     }
 }
