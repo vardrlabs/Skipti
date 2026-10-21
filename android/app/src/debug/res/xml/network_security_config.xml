@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DEBUG BUILDS ONLY (D-235, the Android audit's L6; the twin of iOS keeping
+     NSAllowsLocalNetworking to Debug): cleartext is permitted to the LOOPBACK
+     ONLY, for the local Firebase emulators a debug build reaches with
+     the emulators launch argument, through `adb reverse`. This file overrides the release one in
+     src/main/res/xml, which permits no cleartext at all. Every other host keeps
+     the platform's https-only default. No permission is involved. -->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+    </domain-config>
+</network-security-config>

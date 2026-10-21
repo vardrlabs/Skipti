@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- D-216: Aurora's (also the application icon system Settings shows) adaptive launcher icon, the cut S. The layers are density PNGs that
+     brand/make_icon_resources.sh writes from brand/skipti-icon-assets/ (regenerate there, never hand-edit); the
+     mark sits inside the 66 dp safe circle. The monochrome layer is shared by the three icons (Android 13+ themed
+     icons). -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@mipmap/ic_launcher_background"/>
+    <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
+    <monochrome android:drawable="@mipmap/ic_launcher_monochrome"/>
+</adaptive-icon>

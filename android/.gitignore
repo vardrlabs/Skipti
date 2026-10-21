@@ -1,0 +1,6 @@
+# The Gradle project consumes skipti_core's artifacts in place; none of its
+# outputs are committed. scripts/build-android-core.sh regenerates all of this:
+.gradle/
+build/
+local.properties
+app/src/main/jniLibs/

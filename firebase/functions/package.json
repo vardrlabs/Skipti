@@ -1,0 +1,14 @@
+{
+  "name": "skipti-functions",
+  "private": true,
+  "description": "SKIPTI's Cloud Functions (ADR-0040): invites now; pushes, lookups and deletion in later units. Plain JavaScript (no build step). Dependencies pinned exactly; the founder's yes under CLAUDE.md §13 for the Functions' npm dependencies, 2026-10-01.",
+  "type": "module",
+  "main": "index.js",
+  "engines": {
+    "node": "22"
+  },
+  "dependencies": {
+    "firebase-admin": "14.4.0",
+    "firebase-functions": "7.4.0"
+  }
+}

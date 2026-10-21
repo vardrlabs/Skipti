@@ -1,0 +1,202 @@
+rules_version = '2';
+
+// SKIPTI's Firestore access rules (ADR-0040; the Firebase plan's unit 3).
+// These rules ARE the access control: the cloud is not end-to-end encrypted
+// (GUARANTEES #7). Everything not allowed below is refused. Every allow has a
+// refusal test in firebase/tests/rules.test.mjs, run against the emulator by
+// the full gate. Cloud Functions use the Admin SDK and bypass these rules:
+// they alone change group membership and roles, write invites and notices
+// and set `signedOut`.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+    function isUser(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+    function hasOnly(keys) {
+      return request.resource.data.keys().hasOnly(keys);
+    }
+    function changesOnly(keys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
+    }
+    function hex32(v) {
+      return v is string && v.matches('^[0-9a-f]{32}$');
+    }
+    function shortText(v, max) {
+      return v is string && v.size() > 0 && v.size() <= max;
+    }
+    function isMember(groupId) {
+      return signedIn()
+        && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.memberUids;
+    }
+    // D-210: a removed person (groups/{g}.former) keeps reading what was
+    // written up to their removal, nothing after; their phone's copy stays
+    // whole. Only Functions write `former`.
+    function formerAt(groupId) {
+      return get(/databases/$(database)/documents/groups/$(groupId)).data.get('former', {}).get(request.auth.uid, null);
+    }
+    // D-196: the push line a group expense record carries, written on its
+    // author's phone ("Rahul added Dinner · ₹1,200"), and the expense a tap
+    // opens (core's id, millis:counter:device). onGroupRecord sends it to the
+    // group's other members.
+    function validNotice(n) {
+      return n is map
+        && n.keys().hasOnly(['text', 'expense'])
+        && n.keys().hasAll(['text', 'expense'])
+        && shortText(n.text, 200)
+        && n.expense is string
+        && n.expense.matches('^[0-9]{1,20}:[0-9]{1,10}:[0-9a-f]{32}$');
+    }
+    // D-196: a phone's push address (FCM registration token), absent while
+    // the phone is signed out or has sync off.
+    function validToken() {
+      return !('fcmToken' in request.resource.data)
+        || shortText(request.resource.data.fcmToken, 4096);
+    }
+    function intIn(v, lo, hi) {
+      return v is int && v >= lo && v <= hi;
+    }
+    // D-235 (decision 105): a record's stamp, as core's Hlc writes it: millis,
+    // a u32 counter and the writing device. A stamp more than 24 hours past
+    // the server's time is refused (core's receive ignores one too, decision
+    // 104), so no record can claim to be the latest edit for days ahead.
+    function validHlc(h) {
+      return h is map
+        && h.keys().hasOnly(['millis', 'counter', 'device'])
+        && h.keys().hasAll(['millis', 'counter', 'device'])
+        && intIn(h.millis, 0, request.time.toMillis() + 86400000)
+        && intIn(h.counter, 0, 4294967295)
+        && hex32(h.device);
+    }
+    // D-235 (M1): a record's payload, as both shells' CloudRecords.document
+    // write it: the header's three integers, the nonce and the blob as bytes.
+    // The version is 1, core's RECORD_HEADER_VERSION: a phone's vault refuses
+    // any other, so one record of another version would stall its sync.
+    // The blob's cap is 196,608 bytes (192 KiB): the largest record a phone
+    // writes today is a picture op (a group picture or your own, a JPEG of at
+    // most 64,000 bytes as 128,000 hex characters, about 128.1 KB of JSON);
+    // the cap is half again that. Without it a member could fill the group's
+    // log with near 1 MiB records that every Function reading the log loads.
+    function validPayload(p) {
+      return p is map
+        && p.keys().hasOnly(['version', 'epoch', 'flags', 'nonce', 'blob'])
+        && p.keys().hasAll(['version', 'epoch', 'flags', 'nonce', 'blob'])
+        && p.version is int && p.version == 1
+        && intIn(p.epoch, 0, 4294967295)
+        && intIn(p.flags, 0, 255)
+        && p.nonce is bytes && p.nonce.size() <= 64
+        && p.blob is bytes && p.blob.size() <= 196608;
+    }
+    // A record is immutable once written (edits and deletes are new records),
+    // its author is the caller, and its time is the server's.
+    function validRecord() {
+      return hasOnly(['type', 'hlc', 'authorUid', 'deviceId', 'createdAt', 'payload', 'notice'])
+        && request.resource.data.authorUid == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.type is string
+        && request.resource.data.type.matches('^[0-9]{1,3}$')
+        && validHlc(request.resource.data.hlc)
+        && hex32(request.resource.data.deviceId)
+        && validPayload(request.resource.data.payload)
+        && (!('notice' in request.resource.data) || validNotice(request.resource.data.notice));
+    }
+
+    // The account's own profile: only the account reads or writes it. Other
+    // people find you only through the find-people Function (unit 7, D-197),
+    // which alone writes `username`, `findable` and `emailHash`; the phone
+    // writes the name others see in search results.
+    function validName() {
+      return !('name' in request.resource.data) || shortText(request.resource.data.name, 60);
+    }
+    match /users/{uid} {
+      allow get: if isUser(uid);
+      allow create: if isUser(uid)
+        && hasOnly(['participantId', 'createdAt', 'updatedAt', 'name'])
+        && hex32(request.resource.data.participantId)
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && validName();
+      allow update: if isUser(uid)
+        && changesOnly(['updatedAt', 'name'])
+        && request.resource.data.updatedAt == request.time
+        && validName();
+
+      // The account's phones. `signedOut` is set only by a Function; a phone
+      // can neither set nor clear it.
+      match /devices/{deviceId} {
+        allow get, list: if isUser(uid);
+        allow create: if isUser(uid)
+          && hex32(deviceId)
+          && hasOnly(['name', 'platform', 'appVersion', 'lastSeen', 'fcmToken'])
+          && shortText(request.resource.data.name, 60)
+          && request.resource.data.platform in ['ios', 'android']
+          && shortText(request.resource.data.appVersion, 20)
+          && request.resource.data.lastSeen == request.time
+          && validToken();
+        allow update: if isUser(uid)
+          && changesOnly(['name', 'appVersion', 'lastSeen', 'fcmToken'])
+          && shortText(request.resource.data.name, 60)
+          && shortText(request.resource.data.appVersion, 20)
+          && request.resource.data.lastSeen == request.time
+          && validToken();
+        allow delete: if isUser(uid);
+      }
+
+      // The personal ledger (unit 4). No push line: nobody else is told.
+      match /records/{recordId} {
+        allow get, list: if isUser(uid);
+        allow create: if isUser(uid) && validRecord() && !('notice' in request.resource.data);
+      }
+
+      // Invitations sent to this account (unit 7): written by a Function,
+      // dismissed by the account.
+      match /invites/{inviteId} {
+        allow get, list, delete: if isUser(uid);
+      }
+
+      // D-210: what happened in your groups (a request, a removal, a role, a deletion): written by a Function, dismissed by the account.
+      match /notices/{noticeId} {
+        allow get, list, delete: if isUser(uid);
+      }
+    }
+
+    // A group: its members read it; anyone signed in may start one with
+    // themselves as its only member; membership changes only in Functions.
+    // D-210: so do `owner`, `admins` and `former` (create's hasOnly and
+    // update's changesOnly refuse them); a removed person still reads the
+    // group's document, but never finds it by listing.
+    match /groups/{groupId} {
+      allow get: if signedIn()
+        && (request.auth.uid in resource.data.memberUids || request.auth.uid in resource.data.get('former', {}));
+      allow list: if signedIn() && request.auth.uid in resource.data.memberUids;
+      allow create: if signedIn()
+        && hasOnly(['name', 'memberUids', 'createdBy', 'createdAt', 'emoji'])
+        && request.resource.data.memberUids == [request.auth.uid]
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && shortText(request.resource.data.name, 80)
+        && (!('emoji' in request.resource.data) || shortText(request.resource.data.emoji, 16));
+      allow update: if signedIn()
+        && request.auth.uid in resource.data.memberUids
+        && changesOnly(['name', 'emoji'])
+        && shortText(request.resource.data.name, 80)
+        && (!('emoji' in request.resource.data) || shortText(request.resource.data.emoji, 16));
+
+      // D-210: `removal: true` is written only by removeMember (validRecord's
+      // hasOnly refuses it from a phone). A former member lists only with a
+      // bound at or before their removal (createdAt <= former[uid].at).
+      match /records/{recordId} {
+        allow get, list: if isMember(groupId)
+          || (signedIn() && formerAt(groupId) != null && resource.data.createdAt <= formerAt(groupId).at);
+        allow create: if isMember(groupId) && validRecord();
+      }
+    }
+
+    // usernames/{handle}, invites/{hash}, limits/{uid} (D-197's daily
+    // counters) and groups/{g}/requests (D-210's removal requests) have no
+    // rule: Functions only.
+  }
+}

@@ -1,0 +1,52 @@
+#!/usr/bin/env python3
+"""Refuses a commit message that carries tool attribution (D-228).
+
+The founder's standing rule (CLAUDE.md section 12): commits carry no
+Co-Authored-By trailer and no "Generated with" line. FENRIR's six commits of
+2026-09-11 picked the trailer up after a context compaction dropped the
+instruction; this hook makes the rule hold whatever an agent remembers.
+
+Installed like the pre-commit hook: core.hooksPath is .githooks (make hooks).
+Everything below a `git commit -v` scissors line is the diff, not the message,
+and is not read. Self-test: CommitMsgHookTests in scripts/test_gate_inputs.py.
+Genuine emergency escape hatch: git commit --no-verify
+"""
+import re
+import sys
+
+SCISSORS = re.compile(r"^# -+ >8 -+$")
+TRAILER = re.compile(r"^\s*co-authored-by\s*:", re.IGNORECASE)
+GENERATED = re.compile(r"^\W*Generated with\b")
+
+
+def problems(message):
+    out = []
+    for n, line in enumerate(message.split("\n"), 1):
+        if SCISSORS.match(line):
+            break
+        if TRAILER.match(line):
+            out.append(f"line {n}: a Co-Authored-By trailer")
+        if GENERATED.match(line):
+            out.append(f"line {n}: a \"Generated with\" line")
+    return out
+
+
+def main(argv):
+    if len(argv) != 1:
+        print("commit-msg: usage: commit-msg <message file>", file=sys.stderr)
+        return 2
+    with open(argv[0], encoding="utf-8", errors="replace") as f:
+        found = problems(f.read())
+    if not found:
+        return 0
+    print("commit-msg: REFUSED: commits carry no attribution of any kind (CLAUDE.md section 12).",
+          file=sys.stderr)
+    for p in found:
+        print(f"            {p}", file=sys.stderr)
+    print("            The message is kept in .git/COMMIT_EDITMSG; remove those lines and commit again.",
+          file=sys.stderr)
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

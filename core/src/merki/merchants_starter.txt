@@ -1,0 +1,131 @@
+MERCHANTS1
+version=1
+uber*	Travel	Taxis
+uber eats*	Food & Drink	Delivery
+lyft*	Travel	Taxis
+ola*	Travel	Taxis
+bolt*	Travel	Taxis
+grab*	Travel	Taxis
+didier*	Travel	Taxis
+irctc*	Travel	Trains
+indian railways*	Travel	Trains
+redbus*	Travel	Buses
+flixbus*	Travel	Buses
+vistara*	Travel	Flights
+indigo*	Travel	Flights
+air india*	Travel	Flights
+emirates*	Travel	Flights
+lufthansa*	Travel	Flights
+british airways*	Travel	Flights
+delta*	Travel	Flights
+united*	Travel	Flights
+easyjet*	Travel	Flights
+ryanair*	Travel	Flights
+shell*	Travel	Fuel
+bp*	Travel	Fuel
+esso*	Travel	Fuel
+hp petrol pump*	Travel	Fuel
+indian oil*	Travel	Fuel
+bpcl*	Travel	Fuel
+iocl*	Travel	Fuel
+national toll*	Travel	Tolls
+swiggy*	Food & Drink	Delivery
+zomato*	Food & Drink	Delivery
+doordash*	Food & Drink	Delivery
+deliveroo*	Food & Drink	Delivery
+just eat*	Food & Drink	Delivery
+grubhub*	Food & Drink	Delivery
+dominos*	Food & Drink	Delivery
+pizza hut*	Food & Drink	Delivery
+mcdonalds*	Food & Drink	Restaurants
+kfc*	Food & Drink	Restaurants
+burger king*	Food & Drink	Restaurants
+starbucks*	Food & Drink	Cafés
+cafe coffee day*	Food & Drink	Cafés
+costa coffee*	Food & Drink	Cafés
+dunkin*	Food & Drink	Cafés
+barista*	Food & Drink	Cafés
+big bazaar*	Food & Drink	Groceries
+more supermarket*	Food & Drink	Groceries
+nature's basket*	Food & Drink	Groceries
+whole foods*	Food & Drink	Groceries
+tesco*	Food & Drink	Groceries
+sainsburys*	Food & Drink	Groceries
+aldl*	Food & Drink	Groceries
+aldi*	Food & Drink	Groceries
+lidl*	Food & Drink	Groceries
+kroger*	Food & Drink	Groceries
+airbnb*	Stay	Rentals
+booking.com*	Stay	Hotels
+makemytrip*	Stay	Hotels
+goibibo*	Stay	Hotels
+oyo*	Stay	Hotels
+taj hotels*	Stay	Hotels
+marriott*	Stay	Hotels
+hilton*	Stay	Hotels
+hostelworld*	Stay	Hostels
+amazon*	Shopping	Electronics
+flipkart*	Shopping	Electronics
+ebay*	Shopping	Electronics
+best buy*	Shopping	Electronics
+apple store*	Shopping	Electronics
+zalando*	Shopping	Clothing
+myntra*	Shopping	Clothing
+ajio*	Shopping	Clothing
+h&m*	Shopping	Clothing
+zara*	Shopping	Clothing
+uniqlo*	Shopping	Clothing
+ikea*	Shopping	Home
+pepperfry*	Shopping	Home
+urban ladder*	Shopping	Home
+sephora*	Shopping	Beauty
+nykaa*	Shopping	Beauty
+ulta*	Shopping	Beauty
+netflix*	Entertainment	Streaming
+spotify*	Entertainment	Streaming
+disney+*	Entertainment	Streaming
+prime video*	Entertainment	Streaming
+youtube premium*	Entertainment	Streaming
+hotstar*	Entertainment	Streaming
+bookmyshow*	Entertainment	Events
+ticketmaster*	Entertainment	Events
+steam*	Entertainment	Games
+epic games*	Entertainment	Games
+kindle*	Entertainment	Books
+audible*	Entertainment	Books
+jio*	Shopping	Electronics
+jio recharge*	Bills & Utilities	Mobile
+airtel*	Bills & Utilities	Mobile
+vodafone*	Bills & Utilities	Mobile
+verizon*	Bills & Utilities	Mobile
+t mobile*	Bills & Utilities	Mobile
+comcast*	Bills & Utilities	Internet
+xfinity*	Bills & Utilities	Internet
+airtel xstream*	Bills & Utilities	Internet
+electricity bill*	Bills & Utilities	Electricity
+water bill*	Bills & Utilities	Water
+gas bill*	Bills & Utilities	Gas
+subscriptions*	Bills & Utilities	Subscriptions
+apollo pharmacy*	Health	Pharmacy
+walgreens*	Health	Pharmacy
+cvs*	Health	Pharmacy
+practo*	Health	Doctor
+gold's gym*	Health	Fitness
+anytime fitness*	Health	Fitness
+cult.fit*	Health	Fitness
+fee*	Financial	Fees
+atm fee*	Financial	Fees
+bank charge*	Financial	Fees
+interest*	Financial	Interest
+income tax*	Financial	Taxes
+charity*	Financial	Charity
+udemy*	Education	Courses
+coursera*	Education	Courses
+khan academy*	Education	Courses
+salary*	Income	Salary
+payroll*	Income	Salary
+refund*	Income	Refunds
+atm withdrawal*	Other	Cash withdrawal
+cash withdrawal*	Other	Cash withdrawal
+uncategorised*	Other	Uncategorised
+laundromat*	Personal	Laundry

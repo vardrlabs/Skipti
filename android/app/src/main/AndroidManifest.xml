@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The bundle id is com.vardrlabs.skipti (D-58): publication-frozen, the
+     family scheme recorded there, matching iOS and the AASA file. The
+     namespace in app/build.gradle.kts is the manifest's modern replacement
+     for the package attribute; no `package=` may appear here again.
+     No sensitive permissions: ADR-0016 confines those to updates, and this
+     smoke surface requests nothing at all. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- D-191: Firebase Auth's reCAPTCHA library declares this; reCAPTCHA
+         serves only email and phone sign-in, which SKIPTI does not offer, so
+         the permission is removed rather than taken. -->
+    <uses-permission
+        android:name="com.google.android.providers.gsf.permission.READ_GSERVICES"
+        tools:node="remove" />
+
+    <!-- D-117: the app speaks to its relay (sign-in §4.2/§4.3, sync
+         §10.3) and Android refuses every socket without this. NORMAL
+         install-time level (not sensitive in ADR-0016's sense) and the
+         first permission the app has ever declared; D-116's manifest
+         allowlist was extended deliberately, in the open, for exactly
+         this. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- D-147: re-viewing the Recovery Kit asks for a fingerprint or face
+         (the platform BiometricPrompt). NORMAL install-time level, and
+         already merged in from androidx.credentials (D-118); declared here
+         because the app itself now uses it. -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <!-- Notifications. A runtime permission on Android 13+, asked at a
+         meaningful moment, never at launch. D-190's background check is gone
+         (D-192); push notifications use it from the Firebase plan's unit 6. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- D-197: Find friends in contacts (the founder, 2026-10-02: match all
+         contacts). Asked only when that button is tapped; emails become
+         fingerprints on the phone and the cloud keeps none (People.kt). -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+
+    <application
+        android:label="Skipti"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:theme="@style/Theme.Skipti">
+
+        <!-- Pipeline smoke surface (D-91): not a product screen. It exists so
+             a launch proves the .so loads, UniFFI's checksums agree with the
+             Rust side, and one real call crosses the boundary: the same
+             three checks D-45 proved on iOS. -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:windowSoftInputMode="adjustResize"
+            android:screenOrientation="portrait">
+            <!-- D-234 (L14, decision 88): phones run portrait, as the iPhone does (iOS's Info.plist allows portrait
+                 only). Android 16 and later let large screens (smallest width 600 dp) rotate whatever this says. -->
+            <!-- D-184: the keyboard resizes the app, which pads its root for
+                 it (MainActivity). The default was pan: Android slid the whole
+                 window to keep the cursor in view while the form scrolled the
+                 field into view, and the two re-settled on every keystroke. -->
+            <!-- D-216: no launcher filter here. The three icon aliases below are
+                 the launcher entries and each opens this activity; it cannot
+                 itself be one, because it cannot be disabled. -->
+            <!-- D-159 (ADR-0037): an invite link opens the app. Verified once
+                 the domain's assetlinks.json names this app for
+                 handle_all_urls (a founder deploy); until then Android opens
+                 the link in the browser and "Join a group" takes a pasted link. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="skipti.vardrlabs.com" android:path="/join" />
+            </intent-filter>
+        </activity>
+
+        <!-- D-216: the app icon, one launcher entry per theme's icon. Exactly
+             one is enabled at a time: Aurora's here; when the person leaves
+             Appearance and the launcher shows another icon (or none),
+             AppIconSwitcher (Appearance.kt) enables the one wanted, then
+             disables the other two, every write DONT_KILL_APP. The names
+             are PERMANENT (a launcher
+             stores the component name; CLAUDE.md section 10), and the play
+             manifest check holds the contract. -->
+        <activity-alias
+            android:name=".IconAurora"
+            android:targetActivity=".MainActivity"
+            android:enabled="true"
+            android:exported="true"
+            android:label="Skipti"
+            android:icon="@mipmap/ic_launcher"
+            android:roundIcon="@mipmap/ic_launcher">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".IconNorse"
+            android:targetActivity=".MainActivity"
+            android:enabled="false"
+            android:exported="true"
+            android:label="Skipti"
+            android:icon="@mipmap/ic_launcher_norse"
+            android:roundIcon="@mipmap/ic_launcher_norse">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".IconVardr"
+            android:targetActivity=".MainActivity"
+            android:enabled="false"
+            android:exported="true"
+            android:label="Skipti"
+            android:icon="@mipmap/ic_launcher_vardr"
+            android:roundIcon="@mipmap/ic_launcher_vardr">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <!-- D-196: push notifications through Firebase Cloud Messaging. NO
+             automatic start: FCM makes no token, and so contacts no Google
+             server, until the phone is signed in with sync on (GUARANTEES #5;
+             Push.kt turns it on then and off at sign-out). No delivery
+             metrics to BigQuery. Background pushes are drawn on the "Group
+             activity" channel with the cut S (D-216, drawable/ic_stat_skipti). -->
+        <meta-data
+            android:name="firebase_messaging_auto_init_enabled"
+            android:value="false" />
+        <meta-data
+            android:name="delivery_metrics_exported_to_big_query_enabled"
+            android:value="false" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="group-activity" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_stat_skipti" />
+        <service
+            android:name=".SkiptiMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+        <!-- D-235 wave E (decision 109, GUARANTEES #6): no EmojiCompat at startup. Compose's emoji2 dependency
+             starts it through androidx.startup, and its default config asks Google Play services for the
+             "Noto Color Emoji Compat" font at every launch; Play services then fetches it from
+             fonts.gstatic.com for this app, with no account (measured on a Play services emulator with a dead
+             resolver: one attempt per launch). Without it, Compose draws the phone's own emoji font. The
+             other startup initializers stay. scripts/check-play-manifest.sh refuses it coming back. -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.emoji2.text.EmojiCompatInitializer"
+                tools:node="remove" />
+        </provider>
+    </application>
+
+</manifest>

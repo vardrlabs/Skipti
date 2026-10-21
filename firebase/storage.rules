@@ -1,0 +1,20 @@
+rules_version = '2';
+
+// SKIPTI's Cloud Storage access rules (ADR-0040). Only a group's picture is
+// stored: its members read and replace it; nothing else is readable or
+// writable. Membership is read from Firestore. Refusal tests:
+// firebase/tests/rules.test.mjs.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /groups/{groupId}/picture.jpg {
+      function isMember() {
+        return request.auth != null
+          && request.auth.uid in firestore.get(/databases/(default)/documents/groups/$(groupId)).data.memberUids;
+      }
+      allow read, delete: if isMember();
+      allow write: if isMember()
+        && request.resource.contentType == 'image/jpeg'
+        && request.resource.size <= 64000;
+    }
+  }
+}

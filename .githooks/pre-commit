@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+#
+# Refuses a commit that fails the gate. Install with: make hooks
+#
+# This exists because a tree once sat with 87 passing tests, a failing clippy,
+# a failing rustfmt, and a BUILD-LOG describing a third state. The clippy error
+# was not cosmetic: it was a verified identity being silently discarded in the
+# auth path. Gates only work if something runs them.
+#
+# Genuine emergency escape hatch: git commit --no-verify
+
+set -uo pipefail
+
+# What runs (D-137):
+#
+# - The CHEAP legs run on EVERY commit: rustfmt, the float audit, the
+#   BUILD-LOG structure check, the Swift checks and the gate's own
+#   self-test. They take seconds. Before D-137 a commit with no Rust in it
+#   skipped the gate entirely, so a change to a check script, a BUILD-LOG-only
+#   commit or a Swift-only commit reached history with none of its checks run.
+#
+# - The HEAVY legs (cargo clippy, cargo test, the wasm build) run when a staged
+#   change touches a heavy input: any file cargo could read, deletions
+#   included; scripts/gate_inputs.py holds the list. They are skipped only when
+#   a gate that passed cleanly (nothing failed, nothing skipped) checked exactly
+#   the staged heavy inputs with this toolchain. That is the usual unit commit:
+#   the full gate passes, then BUILD-LOG and screenshots are recorded, then the
+#   commit. Anything the proof cannot establish runs the fast gate, as before.
+#
+# The gate's OWN machinery counts as a heavy input (§5.22's commit exposed
+# why): a change to scripts/gate.sh or to the proof itself must run the legs
+# it defines. Kotlin and Swift are not heavy inputs: the fast gate is Rust-only
+# and would not check them either way. `gate.sh --full` is what reaches the
+# shells, and it is too slow for a pre-commit hook.
+MODE=""
+python3 scripts/gate_inputs.py staged-heavy
+case $? in
+  1)
+    echo "pre-commit: no heavy input staged: running the cheap legs only."
+    MODE="--cheap"
+    ;;
+  0)
+    if PROOF=$(python3 scripts/gate_inputs.py check-index); then
+      echo "pre-commit: heavy legs skipped: ${PROOF}."
+      MODE="--cheap"
+    else
+      echo "pre-commit: heavy inputs staged, and ${PROOF:-the proof could not be checked}."
+    fi
+    ;;
+  *)
+    echo "pre-commit: could not tell what is staged: running the fast gate."
+    ;;
+esac
+
+# The gate checks the working tree, not the index. If they differ, what passes
+# here is not exactly what gets committed. Say so rather than stashing:
+# auto-stashing in a hook is how people lose work. (The heavy-leg proof above
+# is taken over the index, so a skip is never affected by this.)
+if ! git diff --quiet; then
+  echo "pre-commit: WARNING: unstaged changes present."
+  echo "            The gate is checking your working tree, not the staged snapshot."
+fi
+
+if [ -z "$MODE" ]; then
+  echo "pre-commit: running fast gate (skip with --no-verify)"
+else
+  echo "pre-commit: running cheap gate (skip with --no-verify)"
+fi
+if ! ./scripts/gate.sh $MODE; then
+  echo
+  echo "pre-commit: REFUSED: the gate is red, so this commit would not be honest."
+  echo "            Fix it, or use 'git commit --no-verify' if you are deliberately"
+  echo "            recording a known-red state (say so in the commit message)."
+  exit 1
+fi

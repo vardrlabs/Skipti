@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleName</key>
+	<string>Skipti</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>UILaunchScreen</key>
+	<dict/>
+	<!-- D-196: push notifications through Firebase Cloud Messaging, with no
+	     method swizzling (Push.swift hands FCM the APNs token itself) and NO
+	     automatic start: FCM makes no token, and so contacts no Google server,
+	     until the phone is signed in with sync on (GUARANTEES #5). -->
+	<key>FirebaseAppDelegateProxyEnabled</key>
+	<false/>
+	<key>FirebaseMessagingAutoInitEnabled</key>
+	<false/>
+	<!-- D-197: Find friends in contacts (the founder, 2026-10-02: match all
+	     contacts). Asked only when that button is tapped; emails are turned
+	     into fingerprints on the phone and the cloud keeps none. -->
+	<key>NSContactsUsageDescription</key>
+	<string>SKIPTI looks for your friends who use SKIPTI. Each email in your contacts is turned into a fingerprint on this phone; SKIPTI's cloud compares the fingerprints and keeps none of them.</string>
+	<!-- D-169: required for Face ID. Without it a real iPhone may refuse
+	     biometric requests (the simulator does not check), so the app lock
+	     could not use Face ID. D-200: the Recovery Kit it also guarded is gone. -->
+	<key>NSFaceIDUsageDescription</key>
+	<string>SKIPTI uses Face ID to unlock the app.</string>
+	<!-- D-235 (iOS L1, decision 108): plain HTTP to the local Firebase
+	     emulators (the emulators launch argument and the proofs), in Debug
+	     builds only: only the Debug configuration defines the macro the
+	     block below tests (the file is preprocessed), so a Release build
+	     keeps App Transport Security whole. -->
+#if SKIPTI_LOCAL_NETWORKING
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+#endif
+	<key>UIAppFonts</key>
+	<array>
+		<!-- Bundled from native/fonts/ via the project's resources phase (TypeRole). -->
+		<string>SpaceGrotesk.ttf</string>
+		<string>IBMPlexMono-Regular.ttf</string>
+		<string>IBMPlexMono-Medium.ttf</string>
+		<string>CormorantSC-SemiBold.ttf</string>
+		<string>CormorantSC-Bold.ttf</string>
+		<string>IBMPlexSans-Regular.ttf</string>
+		<string>IBMPlexSans-Medium.ttf</string>
+		<string>IBMPlexSans-SemiBold.ttf</string>
+		<string>IBMPlexSans-Bold.ttf</string>
+		<string>VardrRunes-CarvedRegular.ttf</string>
+	</array>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+</dict>
+</plist>

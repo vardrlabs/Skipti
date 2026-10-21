@@ -1,0 +1,140 @@
+# CI: ONE definition of green (D-99).
+#
+# This workflow used to reimplement the gate's Rust legs as twelve
+# hand-maintained steps, so every push LOOKED more verified than the gate
+# command a developer runs, while iOS/Android/Kotlin-binding buildability was
+# checked by nobody. Now CI invokes the same script everything else trusts:
+#
+#     ./scripts/gate.sh --full
+#
+# and reads its verdict from its own summary line, which already speaks the
+# house vocabulary:
+#   "GATE PASSED: ..."             checked, all green
+#   "GATE PASSED WITH SKIPS: ..."  checked, visibly NOT full green
+#                                  (a Linux runner has no Xcode/simulator/
+#                                   Android SDK: those legs SKIP BY NAME,
+#                                   they do not silently vanish)
+#   "GATE FAILED: ...", exit 1     job fails with it
+#
+# Tooling pinned before the run so supply-chain legs PASS rather than SKIP:
+# cargo-audit, cargo-deny, cargo-cyclonedx, plus a pinned Kotlin compiler for
+# the generated-bindings compile leg (same compiler family Studio bundles).
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# D-235 wave E: the token reads the repo and nothing else. No step pushes,
+# comments, releases or writes packages; upload-artifact uses the run's own
+# artifact service, which needs no repo permission.
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: gate.sh --full
+    runs-on: ubuntu-latest
+    env:
+      # Kotlin-compiler home for scripts/check-kotlin-bindings.sh's STUDIO_KOTLINC
+      # contract. Pinned release from JetBrains; bin/kotlinc + lib layout identical.
+      STUDIO_KOTLINC: ${{ github.workspace }}/.kotlinc-distro
+    # Every third-party action is pinned by full commit SHA (D-235 wave E): a tag
+    # or branch can be moved to new code; a SHA cannot. Each comment names the tag
+    # the SHA was read from (gh api repos/<repo>/commits/<tag>, 2026-10-19).
+    # rust-toolchain is pinned to a commit of its `stable` branch, so it must be
+    # told the toolchain by input rather than by ref.
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+          targets: wasm32-unknown-unknown
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Accept Android SDK licences (gradle auto-installs platform 37)
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - name: Install gate tooling (audit/deny/cyclonedx)
+        # Pinned to the versions the local gate runs (D-235 wave E); an unpinned
+        # install ran whatever was newest on crates.io in the supply-chain legs.
+        run: |
+          cargo install --locked cargo-audit --version 0.22.2
+          cargo install --locked cargo-deny --version 0.20.2
+          cargo install --locked cargo-cyclonedx --version 0.5.9
+      # 86 MB from a third party on every run is both slow and a flake
+      # surface. Keyed on version AND digest, so changing either is a cache
+      # miss rather than a stale hit.
+      - name: Cache the pinned Kotlin compiler
+        id: kotlinc-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ env.STUDIO_KOTLINC }}
+          key: kotlinc-2.1.21-1ba08a8b45da9933
+
+      # "Pinned" meant the VERSION only: the archive was downloaded, unpacked
+      # and EXECUTED with nothing checking the bytes. On a public repo this
+      # workflow also runs for pull requests, so a swapped release asset
+      # would execute in CI. The digest below is verified before anything is
+      # unpacked, and a mismatch fails the job loudly rather than building.
+      # Verification limit, stated: ONE source. This is the sha256 of the
+      # asset as fetched on 2026-08-27 (86,162,444 bytes, matching the size
+      # GitHub's API records); JetBrains publishes no digest beside this
+      # asset and the API returns none, so there is no second source to
+      # agree with it. It pins the bytes CI has always used. It does not
+      # attest that those bytes are what JetBrains built.
+      #
+      # LAYOUT, which is what broke every run before D-106: the JetBrains zip
+      # has a top-level `kotlinc/` directory, so `unzip -d "$STUDIO_KOTLINC"`
+      # lands the compiler at $STUDIO_KOTLINC/kotlinc/bin/kotlinc. Android
+      # Studio's bundled path IS the kotlinc home, with bin/ directly inside,
+      # and check-kotlin-bindings.sh is written against that shape. The inner
+      # directory is therefore hoisted so both sources present one layout.
+      - name: Install pinned Kotlin compiler (bindings compile leg)
+        if: steps.kotlinc-cache.outputs.cache-hit != 'true'
+        env:
+          KOTLINC_SHA256: 1ba08a8b45da99339a0601134cc037b54cf85e9bc0edbe76dcbd27c2d684a977
+        run: |
+          set -euxo pipefail
+          curl -fL --retry 5 --retry-all-errors --retry-delay 5 \
+            --connect-timeout 20 --max-time 900 \
+            -w 'http=%{http_code} bytes=%{size_download}\n' \
+            -o /tmp/kotlinc.zip \
+            https://github.com/JetBrains/kotlin/releases/download/v2.1.21/kotlin-compiler-2.1.21.zip
+          echo "$KOTLINC_SHA256  /tmp/kotlinc.zip" | sha256sum -c -
+          rm -rf "$STUDIO_KOTLINC" /tmp/kotlinc-unpack
+          unzip -q /tmp/kotlinc.zip -d /tmp/kotlinc-unpack
+          mv /tmp/kotlinc-unpack/kotlinc "$STUDIO_KOTLINC"
+
+      # Separate step, and it RUNS the compiler rather than stat-ing a path.
+      # The old check was `test -x "$STUDIO_KOTLINC/bin/kotlinc"` as the tail
+      # of the install step: silent, and false for the layout above, so every
+      # run died here, before gate.sh was ever reached, and said nothing about
+      # why. A verification whose failure output is empty is the hardest kind
+      # to diagnose from a run log you cannot read interactively.
+      - name: Verify the Kotlin compiler actually runs
+        run: |
+          set -eux
+          test -x "$STUDIO_KOTLINC/bin/kotlinc"
+          "$STUDIO_KOTLINC/bin/kotlinc" -version
+      - name: gate.sh --full
+        run: ./scripts/gate.sh --full
+      - name: Upload SBOM artifacts
+        if: success() || failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sbom
+          path: |
+            **/skipti-*.cdx.json
+            !target/**
+          if-no-files-found: ignore
+      - name: Upload failing-leg output on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: gate-artifacts
+          path: scripts/gate-artifacts/

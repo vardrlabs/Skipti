@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>SKIPTI privacy policy</title>
+<!-- D-203: the store-required privacy policy (SPEC §12.3: hosted, plain
+     language, versioned, one page). Every sentence is true of the build it
+     names (THREAT_MODEL.md, docs/CLOUD-SECURITY.md). No script, nothing
+     loaded from elsewhere (GUARANTEES #6). -->
+<style>
+  :root { --bg: #f3f6f9; --text: #182430; --dim: #52606d; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0b0e13; --text: #e9eef3; --dim: #9aa7b3; } }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 17px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 40rem; margin: 0 auto; padding: 40px 20px 64px; }
+  h1 { font-size: 28px; font-weight: 600; margin: 0 0 4px; }
+  h2 { font-size: 19px; font-weight: 600; margin: 28px 0 8px; }
+  p, li { margin: 0 0 10px; }
+  ul { padding-left: 1.2em; margin: 0 0 10px; }
+  .dim { color: var(--dim); }
+</style>
+</head>
+<body>
+<main>
+  <h1>SKIPTI privacy policy</h1>
+  <p class="dim">Version 2, 20 October 2026. SKIPTI is made by Vardr Labs LLC.</p>
+
+  <h2>The short version</h2>
+  <p>SKIPTI has no ads, no trackers and no analytics, and we do not sell or share your data. Without an account,
+  your ledger never leaves your phone. With an account, it is kept in SKIPTI's cloud on Google Firebase so your
+  phones and your groups can share it. That cloud is protected by access rules, not end-to-end encryption.</p>
+
+  <h2>Without an account</h2>
+  <p>Your expenses, groups and settings are kept only on your phone, in an encrypted database. Nothing is sent
+  anywhere. They leave the phone only if you export them.</p>
+
+  <h2>With an account</h2>
+  <p>You sign in with Apple or Google; they tell us an account id and the email address of that account (Apple may
+  give a private relay address). We then keep, in SKIPTI's cloud:</p>
+  <ul>
+    <li>Your ledger: the expenses, settlements and groups you record, with the names you give people and a group's
+    picture if you add one.</li>
+    <li>Your profile: the name you show others, a username if you choose one, and a picture if you add one, shown small to your groups.</li>
+    <li>Your phones: each phone's name, type, app version, when it was last seen, and an address for notifications.</li>
+    <li>Your app settings: theme, light or dark, text size, Less motion, haptics, app icon and default currency, so your other phones match.</li>
+    <li>If you can be found (on unless you switch it off): a fingerprint (SHA-256) of your sign-in email, so people
+    who know your email can find you.</li>
+  </ul>
+  <p>Only you can read your own ledger and profile; only a group's members can read that group. The data is
+  encrypted in transit and at rest, but not end to end: Google, as the host, and Vardr Labs, as the operator, could
+  technically access it. It is stored in the United States (Google's nam5 region).</p>
+
+  <h2>Contacts</h2>
+  <p>Only if you tap "Find friends in contacts", SKIPTI reads your contacts' email addresses on your phone, turns
+  each into a fingerprint there, and sends only the fingerprints to look for people on SKIPTI. The cloud keeps none
+  of them, and no names, numbers or other contact details leave your phone.</p>
+
+  <h2>Notifications</h2>
+  <p>With notifications on, a message says who added, changed or deleted which expense, with the amount. Apple or
+  Google delivers it to your phone.</p>
+
+  <h2>Who else is involved</h2>
+  <ul>
+    <li>Google, which hosts SKIPTI's cloud (Firebase) and, like any web host, logs requests to it, including IP
+    addresses, for 30 days.</li>
+    <li>Apple or Google, whichever you sign in with, and the one that delivers your notifications.</li>
+  </ul>
+  <p>No one else. No advertising, analytics or crash-reporting company receives anything.</p>
+
+  <h2>Your choices</h2>
+  <ul>
+    <li><strong>Export</strong> everything, in an open format, from Settings, at any time.</li>
+    <li><strong>Sync</strong> can be switched off in Settings; your phone then stops sending.</li>
+    <li><strong>Being found</strong> can be switched off in Settings.</li>
+    <li><strong>Your phones</strong>: see them and sign any of them out in Settings.</li>
+  </ul>
+
+  <h2 id="delete">Deleting your account</h2>
+  <p>In the app: Settings, Delete account. Your account is deleted 7 days later unless you sign in and tap Keep my
+  account. Deleted: your profile, username, phones, personal records, invitations and sign-in account; groups where
+  you were the only member. What you added to a group with other members stays for them. The ledger on your phone
+  stays until you erase it (Settings, Erase this phone).</p>
+  <p>Without the app: email skipti@vardrlabs.com from your sign-in address, or tell us which account it is, and we will delete
+  it the same way.</p>
+
+  <h2>Children</h2>
+  <p>SKIPTI is not directed at children under 13.</p>
+
+  <h2>Changes and contact</h2>
+  <p>When this policy changes, its version and date change on this page. Questions: skipti@vardrlabs.com.</p>
+</main>
+</body>
+</html>

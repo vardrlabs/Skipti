@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The play flavour's manifest extension point (ADR-0010). DELIBERATELY
+     EMPTY at v1: ADR-0010's ship order is NO sensitive permission in
+     either flavour, and this file is where a permission WOULD arrive from
+     if someone added one later, which is exactly what
+     scripts/check-play-manifest.sh greps the MERGED manifest for. An
+     empty file plus that check is the structural contract: SMS absent
+     entirely, never requested, never declared, never placeholder text. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" />

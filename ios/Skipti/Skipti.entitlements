@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Sign in with Apple (SPEC §4.2/§12.2; ADR-0035; D-132). The App ID
+	     must carry the same capability in the developer portal. -->
+	<key>com.apple.developer.applesignin</key>
+	<array>
+		<string>Default</string>
+	</array>
+	<!-- D-196: push notifications (FCM over APNs). "development" is the
+	     sandbox; Xcode writes "production" into a distribution export. The App
+	     ID needs the Push Notifications capability in the developer portal. -->
+	<key>aps-environment</key>
+	<string>development</string>
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<!-- D-159 (ADR-0037): invite links (/join) open the app once the AASA
+		     file on the domain lists this app under applinks. -->
+		<string>applinks:skipti.vardrlabs.com</string>
+	</array>
+</dict>
+</plist>

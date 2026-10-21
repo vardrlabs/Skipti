@@ -1,0 +1,133 @@
+# cargo-deny configuration.
+# ADR-0012: analytics, ads, attribution, and session-replay crates are banned.
+
+[graph]
+all-features = true
+
+[advisories]
+# Each exception names ONE advisory, why it cannot reach a user, and when it is looked at again. A vulnerability
+# advisory is never listed here: it is fixed (D-131's rustls update) before anything is committed.
+ignore = [
+  # Decision 140 (D-239, 2026-10-20): basic-toml is UNMAINTAINED, not vulnerable (cargo audit reports it as a warning).
+  # It reaches skipti-core only through askama_macros, a proc-macro of uniffi_bindgen 0.32: it runs on the Mac while
+  # the bindings are generated and is never linked into the iPhone or Android library. No release replaces it
+  # ("No safe upgrade is available"). Looked at again with the next uniffi upgrade, which is a dependency change.
+  { id = "RUSTSEC-2026-0374", reason = "unmaintained; build-time proc-macro dependency of uniffi_bindgen 0.32; not shipped; no upgrade exists" },
+]
+
+[licenses]
+version = 2
+allow = [
+  "MIT",
+  "Apache-2.0",
+  # ADR-0028: file-level weak copyleft; unmodified crates.io sources satisfy
+  # the source-availability obligation. Forking/patching one of these crates
+  # in-tree changes that obligation. See the ADR's tripwire before vendoring.
+  "MPL-2.0",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Unicode-DFS-2016",
+  "Unicode-3.0",
+  "Zlib",
+  "CC0-1.0",
+  # D-235 wave E: "CDLA-Permissive-2.0" (ADR-0029, webpki-roots) and the
+  # `ring` licence clarification (MIT AND ISC AND OpenSSL) were removed: both
+  # crates left the graph with the relay (D-192) and its crypto (D-200). A crate
+  # that brings either back must justify its licence again.
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+# Banned: anything that phones home about users. This list is a feature (ADR-0012).
+# cargo-deny matches a crate NAME EXACTLY: a `*` is not a wildcard (no crate name
+# can contain one), so "firebase-*" and "google-analytics-*" matched nothing and
+# "sentry" alone missed sentry-core and its siblings (D-235 wave E, measured:
+# a ban on "thiserror-*" passed with thiserror-impl in the graph). List every
+# crate of a family by its exact name. The shells' own guard against these SDKs
+# is the Play manifest allowlist and the pinned SwiftPM graph; this list guards
+# the Rust core.
+
+# crash reporters that transmit off-device by default (ADR-0012)
+[[bans.deny]]
+name = "sentry"
+
+[[bans.deny]]
+name = "sentry-core"
+
+[[bans.deny]]
+name = "sentry-types"
+
+[[bans.deny]]
+name = "sentry-backtrace"
+
+[[bans.deny]]
+name = "sentry-contexts"
+
+[[bans.deny]]
+name = "sentry-panic"
+
+[[bans.deny]]
+name = "sentry-tracing"
+
+[[bans.deny]]
+name = "sentry-log"
+
+[[bans.deny]]
+name = "sentry-anyhow"
+
+[[bans.deny]]
+name = "sentry-debug-images"
+
+[[bans.deny]]
+name = "sentry-tower"
+
+[[bans.deny]]
+name = "sentry-actix"
+
+[[bans.deny]]
+name = "bugsnag"
+
+[[bans.deny]]
+name = "rollbar"
+
+
+# analytics SDKs (ADR-0012: Firebase Analytics, Amplitude, Mixpanel, Segment)
+[[bans.deny]]
+name = "posthog-rs"
+
+[[bans.deny]]
+name = "amplitude"
+
+[[bans.deny]]
+name = "mixpanel"
+
+[[bans.deny]]
+name = "segment"
+
+[[bans.deny]]
+name = "google-analytics3"
+
+[[bans.deny]]
+name = "google-analyticsreporting4"
+
+[[bans.deny]]
+name = "google-analyticsdata1_beta"
+
+[[bans.deny]]
+name = "google-analyticsadmin1_alpha"
+
+[[bans.deny]]
+name = "google-firebase1_beta1"
+
+[[bans.deny]]
+name = "google-firebaseremoteconfig1"
+
+[[bans.deny]]
+name = "google-firebasedynamiclinks1"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- D-232 (decision 77): the launch frame on a phone set to dark; the light
+     twin is values/themes.xml. -->
+<resources>
+    <style name="Theme.Skipti" parent="@android:style/Theme.Material.NoActionBar" />
+</resources>

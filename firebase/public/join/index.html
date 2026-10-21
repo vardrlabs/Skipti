@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>SKIPTI invite</title>
+<!-- D-159 (ADR-0037): the page an invite link lands on when SKIPTI does not
+     open it (no app installed, or app links not yet verified). The invite's
+     secret is in the #fragment, which the browser never sends to this server;
+     this page reads it only to copy the whole link, locally. No external
+     resource, no analytics, no storage (GUARANTEES #6). -->
+<style>
+  :root { --bg: #f3f6f9; --text: #182430; --dim: #52606d; --accent: #4a6275; --on: #f3f6f9; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0b0e13; --text: #e9eef3; --dim: #9aa7b3; --accent: #9fb3c3; --on: #0b0e13; }
+  }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 17px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 34rem; margin: 0 auto; padding: 48px 20px; }
+  h1 { font-size: 28px; font-weight: 500; margin: 0 0 16px; }
+  p { margin: 0 0 16px; color: var(--dim); }
+  ol { color: var(--dim); padding-left: 1.2em; margin: 0 0 24px; }
+  button { width: 100%; min-height: 48px; border: 0; border-radius: 12px;
+           background: var(--accent); color: var(--on); font: inherit; cursor: pointer; }
+</style>
+</head>
+<body>
+<main>
+  <h1>You have a SKIPTI invite</h1>
+  <p>Someone invited you to split expenses in a group. The invite opens in the SKIPTI app.</p>
+  <ol>
+    <li>Install SKIPTI on this phone, if it is not already, and sign in.</li>
+    <li>Copy this link.</li>
+    <li>In SKIPTI, open Groups, tap "Join a group", and paste it.</li>
+  </ol>
+  <button id="copy" type="button">Copy link</button>
+</main>
+<script>
+document.getElementById("copy").addEventListener("click", function () {
+  var button = this;
+  navigator.clipboard.writeText(window.location.href).then(function () {
+    button.textContent = "Link copied";
+  }, function () {
+    button.textContent = "Copy the address bar instead";
+  });
+});
+</script>
+</body>
+</html>

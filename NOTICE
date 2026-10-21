@@ -1,0 +1,139 @@
+NOTICE
+======
+
+SKIPTI: local-first personal finance and shared expense splitting.
+Copyright 2026 SKIPTI contributors
+
+This product is licensed under the Apache License, Version 2.0 (the
+"License"); you may not use it except in compliance with the License. A copy
+of the License is distributed as LICENSE in this repository, and is also
+available at http://www.apache.org/licenses/LICENSE-2.0.
+
+Third-party material incorporated or referenced
+-----------------------------------------------
+
+- Lucide icons: twenty drawings (`wallet`, `users`, `receipt`, `plus`,
+  `circle-check`, `user-round`, `user-plus`, `chevron-left`,
+  `chevron-right`, `search`, `check`, `sun`, `shield`, `download`, `info`,
+  `inbox`, `vibrate`, `x`, `lock`, `sparkles`),
+  used as both shells' tab bar icons, the account entry
+  point, a group's "Add people" button, the
+  back button's chevron (`chevron-left`), the chevron at the end of a list
+  row (`chevron-right`), the currency list's search field (`search`) and
+  selected row (`check`), the icon tiles on You's rows (`user-round`,
+  `sun`, `shield`, `download`, `info`), the empty Expenses list (`inbox`), the Haptics row (`vibrate`), the clear and remove cross (`x`), the lock screen (`lock`) and the Less motion row (`sparkles`) (D-179 replaced `scale` and `arrow-left-right`
+  with `wallet`, `users` and `circle-check`; D-186 added `user-plus`; D-217 added the two chevrons, which both
+  shells draw in place of their system chevrons; D-220 added `search` and
+  `check`, in place of two SF Symbols on iOS and new on Android; D-222 added
+  `sun`, `shield`, `download` and `info` for You's icon tiles; D-223 added
+  `inbox` for the drawn empty state; D-224 added `vibrate` for the Haptics
+  row on Appearance, its `<rect>` written as SVG 2's equivalent path; D-225
+  added `x` for the clear and remove cross and `lock` for the lock screen,
+  `lock`'s `<rect>` written the same way; D-231 added `sparkles` for the
+  Less motion row on Appearance, its `<circle>` written as its two-arc
+  path). Distributed under the ISC licence
+  (copyright Lucide Contributors). The path data shipped in
+  `android/app/src/main/java/com/vardrlabs/skipti/TabIcons.kt` and
+  `ios/Skipti/App/LucideIcon.swift` is copied VERBATIM from upstream
+  (github.com/lucide-icons/lucide); it is their drawing, not a redraw; only
+  the stroke colour (a theme token, chosen where each drawing is used) and
+  size are applied at render time. On iOS, SVG arc segments are converted to cubic Béziers to be drawn,
+  which changes the encoding of upstream's geometry and not the geometry
+  itself. Lucide's licence: "Copyright (c) 2026 Lucide Icons and Contributors"
+  (ISC). Lucide marks `plus`, `chevron-left`, `chevron-right`, `search`, `check`, `download`,
+  `info`, `x` and `lock` as derived from the Feather project, which is under the MIT License: "Copyright (c) 2013-present Cole Bemis". (Added
+  D-146: the Feather notice was missing.)
+
+- Fonts, all under the SIL Open Font License, Version 1.1 (added D-146;
+  they have been in the tree since 2026-08-24, `c989f5b`, without an
+  entry here). They ship in `native/fonts/` (iOS),
+  `android/app/src/main/res/font/` and `web/fonts/`; the licence
+  statement also rides in each file's name table.
+  - Space Grotesk: "Copyright 2020 The Space Grotesk Project Authors
+    (https://github.com/floriankarsten/space-grotesk)".
+  - IBM Plex Mono, Regular and Medium: "Copyright 2017 IBM Corp." with
+    Reserved Font Name "Plex". The apps ship IBM's files unmodified
+    (release `@ibm/plex-mono@2.5.0`, D-148): the OFL does not let a
+    trimmed copy keep a reserved name. The `web/fonts/` Plex subsets still
+    do, and must be replaced before the web build ships.
+  - IBM Plex Sans, Regular, Medium, SemiBold and Bold: "Copyright 2018 IBM
+    Corp." with Reserved Font Name "Plex". The apps ship IBM's files
+    unmodified (release `@ibm/plex-sans@1.1.0`, Version 3.005, D-215): the
+    OFL does not let a trimmed copy keep a reserved name. The body face of
+    both apps.
+  - Vardr Runes, Carved Regular: "Copyright 2026 Vardr Labs LLC" with
+    Reserved Font Name "Vardr". Vardr Labs' own font (release v1.000 of
+    the private vardrlabs/fonts repository, D-215), shipped unmodified under
+    the SIL OFL 1.1. The runes the Norse theme draws.
+  - Cormorant SC, SemiBold and Bold: "Copyright 2015 The Cormorant Project
+    Authors (github.com/CatharsisFonts/Cormorant)". The apps ship the
+    google/fonts files unmodified (Version 4.000, D-212); the licence
+    declares no Reserved Font Name. Norse's display and section labels.
+
+- C libraries compiled into the Rust core (added D-146):
+  - SQLCipher (BSD-3-Clause), "Copyright (c) 2008-2020 Zetetic LLC", built
+    from the sources bundled in the `libsqlite3-sys` crate; the vault every
+    ledger is stored in. Its licence requires this notice to travel with
+    binary builds, which the apps' Licences page does. SQLite, which it is
+    built on, is in the public domain.
+  - OpenSSL 3 (Apache-2.0), "Copyright 1995-2025 The OpenSSL Project
+    Authors", vendored through `openssl-src` into the Android builds only
+    (D-91), where it supplies SQLCipher's cryptography.
+
+- The complete list of what each app ships (every Rust crate in the core,
+  every Android library in each flavour, and the items above), with the
+  licence each is taken under and the text that licence requires, is
+  `native/licences/licences.json`. `scripts/licences.py` generates it from
+  the build's own dependency data, a gate leg keeps it current, and both
+  apps show it under Settings → About → Licences.
+
+- Components under the Mozilla Public License 2.0 (ADR-0028), consumed
+  UNMODIFIED from crates.io (source availability satisfied by the public
+  registry; Cargo.lock pins the versions):
+  - the UniFFI toolchain (`uniffi`, `uniffi-core`, `uniffi-bindgen`,
+    `uniffi-macros`, `uniffi-internal-macros`, `uniffi-meta`,
+    `uniffi-pipeline`, `uniffi-udl`), which generates the Swift and Kotlin
+    bindings for the Rust core;
+  - the webauthn-rs family, `webauthn-rs`, `webauthn-rs-core`,
+    `webauthn-rs-proto`, `webauthn-attestation-ca` (and the
+    test-only `webauthn-authenticator-rs`): the WebAuthn relying-party
+    implementation behind passkey authentication;
+  - `base64urlsafedata` (a webauthn-rs dependency).
+
+  If any of these is ever vendored or patched within this repository, the
+  modified files must be made available under MPL-2.0 and this section
+  updated; see ADR-0028's tripwire.
+
+- Components under the Community Data License Agreement, Permissive v2.0
+  (ADR-0029), consumed UNMODIFIED from crates.io:
+  - `webpki-roots`: Mozilla's CA root store as packaged for rustls, the
+    TLS trust anchors with which the relay's outbound HTTPS client (ureq)
+    fetches Apple's JWKS for Sign in with Apple. The licence governs the
+    root-store Data; unmodified redistribution carries it forward as-is.
+
+  If the Data is ever vendored or patched within this repository, the
+  agreement text must accompany it and this section updated; see
+  ADR-0029's tripwire.
+
+- ISO 4217 currency codes and minor-unit exponents are referenced as facts;
+  no proprietary data files are redistributed.
+
+- "Sign in with Google" button artwork (D-138) and Google's round "G" (D-172,
+  the bundle's icon-only art, beside "Signed in with Google" in Settings), from
+  Google's official sign-in assets bundle
+  (developers.google.com/identity/branding-guidelines), used unmodified in
+  `ios/Skipti/App/Assets.xcassets/{GoogleSignInButton,GoogleMark}.imageset`
+  and `android/app/src/play/res/drawable*/{google_sign_in,google_mark}.png`
+  (the `direct` flavour carries none). It is Google's trademark, used as Google's sign-in
+  branding guidelines permit, and is NOT covered by this project's licence:
+  a fork may not reuse it except under those same guidelines.
+
+Trademarks
+----------
+
+All trademarks mentioned in documentation (Splitwise, Tricount, Truecaller,
+Google, Google Play, Apple, App Store, UPI, Venmo, SEPA, and others) belong to their
+respective owners and are used only for factual identification. "SKIPTI"
+is not licensed for use by forks or derivative distributions beyond the
+reasonable-and-customary description of origin that the Apache License,
+Version 2.0 §6 permits.

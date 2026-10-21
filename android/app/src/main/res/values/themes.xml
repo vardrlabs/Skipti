@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- D-232 (decision 77): the window theme, which draws the launch frame before
+     the app's own code runs and so before it can read the person's stored
+     choice. It follows the phone: Material Light here, Material dark in
+     values-night (the platform's own DayNight theme starts at API 29; minSdk
+     is 26). The app draws every screen itself in the chosen mode. -->
+<resources>
+    <style name="Theme.Skipti" parent="@android:style/Theme.Material.Light.NoActionBar" />
+</resources>

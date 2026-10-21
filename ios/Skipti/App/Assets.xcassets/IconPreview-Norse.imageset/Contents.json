@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "icon-preview-norse.png",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

@@ -1,0 +1,15 @@
+08-27 16:59:55.612  3576  3576 I ImeTracker: com.vardrlabs.skipti:283b9b54: onRequestHide at ORIGIN_CLIENT_HIDE_SOFT_INPUT reason HIDE_SOFT_INPUT_BY_INSETS_API
+08-27 16:59:55.624  3576  3576 I ImeTracker: com.vardrlabs.skipti:283b9b54: onCancelled at PHASE_CLIENT_APPLY_ANIMATION
+08-27 16:59:55.628   534   775 D CoreBackPreview: Window{3318abf u0 com.vardrlabs.skipti/com.vardrlabs.skipti.MainActivity}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@c17670c, mPriority=0, mIsAnimationCallback=false}
+08-27 16:59:55.684  3576  3576 W FrameTracker: Missed SF frame:PREDICTION_ERROR, 20192, 0, CUJ=J<IME_INSETS_ANIMATION::0@0@com.vardrlabs.skipti>
+08-27 16:59:55.684  3576  3576 W FrameTracker: Missed SF frame:PREDICTION_ERROR, 20303, 0, CUJ=J<IME_INSETS_ANIMATION::0@0@com.vardrlabs.skipti>
+08-27 16:59:55.818  3576  3576 I ImeTracker: com.vardrlabs.skipti:a00b0cf5: onRequestHide at ORIGIN_CLIENT_HIDE_SOFT_INPUT reason HIDE_SOFT_INPUT_BY_INSETS_API
+08-27 16:59:55.818   534   775 I ImeTracker: com.vardrlabs.skipti:a00b0cf5: onCancelled at PHASE_SERVER_SHOULD_HIDE
+08-27 16:59:55.818  3576  3576 I ImeTracker: com.vardrlabs.skipti:a031ff87: onHidden
+08-27 16:59:58.667  3701  3701 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+08-27 16:59:58.669  3701  3701 I AndroidRuntime: Using default boot image
+08-27 16:59:58.669  3701  3701 I AndroidRuntime: Leaving lock profiling enabled
+08-27 16:59:58.719  3701  3701 D AndroidRuntime: Calling main entry com.android.commands.uiautomator.Launcher
+08-27 16:59:59.755  3701  3701 D AndroidRuntime: Shutting down VM
+08-27 17:00:00.517  3576  3576 E FrameTracker: force finish cuj, time out: J<IME_INSETS_ANIMATION::0@0@com.vardrlabs.skipti>
+08-27 17:00:06.075  3576  3576 E FrameTracker: force finish cuj, time out: J<IME_INSETS_ANIMATION::1@0@com.vardrlabs.skipti>

@@ -1,0 +1,19 @@
+# ADR-0030 layer 1: daily on-host snapshot of the relay vault.
+# Install with skipti-backup.timer; see DEPLOY-ORACLE.md §10.
+[Unit]
+Description=SKIPTI relay vault backup (sqlite3 .backup + integrity check)
+After=local-fs.target
+
+[Service]
+Type=oneshot
+# Hardened: the vault dir is 0700 skipti; the backup dir is 0700 root.
+# ReadPrivate... not needed; sqlite opens the db as root here, matching
+# the drill and manual runs. ExecStart is the version-controlled script.
+ExecStart=/usr/local/sbin/skipti-backup
+Nice=10
+IOSchedulingClass=idle
+
+# A failed backup must PAGE, not rot silently: this box has no alerting
+# yet (DEPLOY-ORACLE "What this does not cover"), so at minimum the unit
+# state goes failed and `systemctl --failed` names it.
+FailureAction=none

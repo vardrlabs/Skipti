@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- D-162 (SPEC §2.3 A7, §3.7): nothing of SKIPTI's goes into a Google cloud
+     backup or a device-to-device transfer. The vault's key lives in the
+     Android Keystore and never leaves this phone, so a copied vault could not
+     be opened anyway; the way back on a new phone is sync or the Recovery Kit.
+     allowBackup="false" covers Android 11 and earlier; these rules cover 12+,
+     where device transfer ignores allowBackup. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
+    </device-transfer>
+</data-extraction-rules>

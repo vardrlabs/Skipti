@@ -1,0 +1,8 @@
+08-27 18:04:56.746   531   550 W ziparchive: Unable to open '/data/app/~~q9eL1ZYgWVPvvlQfSknuBA==/com.vardrlabs.skipti-gafL2IFM2Q9d0-WqKK8GWg==/base.dm': No such file or directory
+08-27 18:04:56.746   531   550 I ActivityTaskManager: Displayed com.vardrlabs.skipti/.MainActivity for user 0: +452ms
+08-27 18:04:56.762   531  1130 I ImeTracker: com.vardrlabs.skipti:28a89f3e: onRequestHide at ORIGIN_SERVER_HIDE_INPUT reason HIDE_UNSPECIFIED_WINDOW
+08-27 18:04:56.762   531  1130 I ImeTracker: com.vardrlabs.skipti:28a89f3e: onCancelled at PHASE_SERVER_SHOULD_HIDE
+08-27 18:04:56.766   531   554 W WindowManager: Failed to deliver inset control state change to w=Window{1f8fe8d u0 com.vardrlabs.skipti/com.vardrlabs.skipti.MainActivity EXITING}
+08-27 18:04:56.906   531  2593 W WindowManager: Exception thrown during dispatchAppVisibility Window{1f8fe8d u0 com.vardrlabs.skipti/com.vardrlabs.skipti.MainActivity EXITING}
+08-27 18:04:57.085   531  1130 W InputManager-JNI: Input channel object '2bbb411 Splash Screen com.vardrlabs.skipti (client)' was disposed without first being removed with the input manager!
+08-27 18:04:57.086   531  2593 D CoreBackPreview: Window{2bbb411 u0 Splash Screen com.vardrlabs.skipti EXITING}: Setting back callback null

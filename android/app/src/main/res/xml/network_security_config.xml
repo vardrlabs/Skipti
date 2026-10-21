@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The shipped (release) build: no cleartext to any host (D-235, the Android
+     audit's L6). Production rides TLS (ADR-0040, Firebase). The loopback
+     allowance the local emulators need lives in src/debug/res/xml and exists
+     only in debug builds, as iOS keeps NSAllowsLocalNetworking to Debug. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>

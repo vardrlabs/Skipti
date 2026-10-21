@@ -1,0 +1,900 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A10001 /* SkiptiApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10001 /* SkiptiApp.swift */; };
+		A10002 /* SmokeScreenView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10002 /* SmokeScreenView.swift */; };
+		A10003 /* KeychainKeystore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10003 /* KeychainKeystore.swift */; };
+		A10004 /* VaultSmoke.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10004 /* VaultSmoke.swift */; };
+		A10005 /* skipti_core.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10005 /* skipti_core.swift */; };
+		A10006 /* SkiptiCore.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = B10006 /* SkiptiCore.xcframework */; };
+		A10007 /* SpaceGrotesk.ttf in Resources */ = {isa = PBXBuildFile; fileRef = B10007 /* SpaceGrotesk.ttf */; };
+		A10008 /* IBMPlexMono-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = B10008 /* IBMPlexMono-Regular.ttf */; };
+		A10200 /* CormorantSC-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = B10200 /* CormorantSC-SemiBold.ttf */; };
+		A10201 /* CormorantSC-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = B10201 /* CormorantSC-Bold.ttf */; };
+		A10009 /* IBMPlexMono-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = B10009 /* IBMPlexMono-Medium.ttf */; };
+		A10207 /* IBMPlexSans-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = B10207 /* IBMPlexSans-Regular.ttf */; };
+		A10208 /* IBMPlexSans-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = B10208 /* IBMPlexSans-Medium.ttf */; };
+		A10209 /* IBMPlexSans-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = B10209 /* IBMPlexSans-SemiBold.ttf */; };
+		A10210 /* IBMPlexSans-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = B10210 /* IBMPlexSans-Bold.ttf */; };
+		A10211 /* VardrRunes-CarvedRegular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = B10211 /* VardrRunes-CarvedRegular.ttf */; };
+		A10010 /* VaultRoundTripTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10010 /* VaultRoundTripTests.swift */; };
+		A10011 /* DesignTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10013 /* DesignTokens.swift */; };
+		A10012 /* TypeSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10014 /* TypeSystem.swift */; };
+		A10013 /* BalanceLineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10015 /* BalanceLineView.swift */; };
+		A10014 /* BalanceScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10016 /* BalanceScreen.swift */; };
+		A10015 /* BalanceLineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10017 /* BalanceLineTests.swift */; };
+		A10016 /* LedgerStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10018 /* LedgerStore.swift */; };
+		A10017 /* SettleScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10019 /* SettleScreen.swift */; };
+		A10018 /* AppLocale.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10020 /* AppLocale.swift */; };
+		A10019 /* AddExpenseScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10021 /* AddExpenseScreen.swift */; };
+		A10020 /* FxRates.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10022 /* FxRates.swift */; };
+		A10021 /* ExpenseListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10023 /* ExpenseListView.swift */; };
+		A10024 /* SignInScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10026 /* SignInScreen.swift */; };
+		A10031 /* VaultGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10033 /* VaultGate.swift */; };
+		A10032 /* VaultGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10034 /* VaultGateTests.swift */; };
+		A10035 /* LedgerPortTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10037 /* LedgerPortTests.swift */; };
+		A10039 /* AccountHubScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10108 /* AccountHubScreen.swift */; };
+		A10040 /* VaultRecoveryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10109 /* VaultRecoveryView.swift */; };
+		A10041 /* LucideIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10110 /* LucideIcon.swift */; };
+		A10042 /* HomeShell.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10111 /* HomeShell.swift */; };
+		A10140 /* FirebaseConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10155 /* FirebaseConfig.swift */; };
+		A10141 /* Account.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10156 /* Account.swift */; };
+		A10144 /* CloudSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10158 /* CloudSync.swift */; };
+		A10145 /* CloudProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10159 /* CloudProfile.swift */; };
+		A10147 /* Invites.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10160 /* Invites.swift */; };
+		A10149 /* Push.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10161 /* Push.swift */; };
+		A10150 /* People.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10162 /* People.swift */; };
+		A10222 /* SettingsSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10222 /* SettingsSync.swift */; };
+		A10220 /* ListRows.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10220 /* ListRows.swift */; };
+		A10216 /* HomeParts.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10216 /* HomeParts.swift */; };
+		A10218 /* DoneMoments.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10218 /* DoneMoments.swift */; };
+		A10213 /* Settled.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10213 /* Settled.swift */; };
+		A10212 /* YouProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10212 /* YouProgress.swift */; };
+		A10203 /* ThemeArt.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10203 /* ThemeArt.swift */; };
+		A10205 /* ThemeMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10205 /* ThemeMotion.swift */; };
+		A10161 /* ProfileSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10173 /* ProfileSync.swift */; };
+		A10156 /* Roles.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10168 /* Roles.swift */; };
+		A10158 /* RemovalFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10170 /* RemovalFlow.swift */; };
+		A10159 /* GroupSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10171 /* GroupSettings.swift */; };
+		A10152 /* UsernameRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10164 /* UsernameRules.swift */; };
+		A10155 /* UsernameStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10167 /* UsernameStep.swift */; };
+		A10151 /* Phones.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10163 /* Phones.swift */; };
+		A10146 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = P10002 /* FirebaseFirestore */; };
+		A10148 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = P10003 /* FirebaseMessaging */; };
+		A10142 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = P10001 /* FirebaseAuth */; };
+		A10133 /* GroupsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10148 /* GroupsScreen.swift */; };
+		A10134 /* OverviewScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10149 /* OverviewScreen.swift */; };
+		A10135 /* SettleAll.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10150 /* SettleAll.swift */; };
+		A10137 /* GroupPictures.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10152 /* GroupPictures.swift */; };
+		A10138 /* ActivityFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10153 /* ActivityFeed.swift */; };
+		A10132 /* SkiptiTabBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10147 /* SkiptiTabBar.swift */; };
+		A10043 /* GoogleSignIn.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10112 /* GoogleSignIn.swift */; };
+		A10044 /* AppleSignIn.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10113 /* AppleSignIn.swift */; };
+		A10045 /* ProviderSignInTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10114 /* ProviderSignInTests.swift */; };
+		A10143 /* AccountTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10157 /* AccountTests.swift */; };
+		A10157 /* RolesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10169 /* RolesTests.swift */; };
+		A10160 /* GroupListenersTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10172 /* GroupListenersTests.swift */; };
+		A10162 /* ProfileSyncTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10174 /* ProfileSyncTests.swift */; };
+		A10223 /* SettingsSyncTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10223 /* SettingsSyncTests.swift */; };
+		A10046 /* GroupStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10115 /* GroupStore.swift */; };
+		A10047 /* GroupSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10116 /* GroupSheets.swift */; };
+		A10048 /* GroupPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10117 /* GroupPicker.swift */; };
+		A10049 /* GroupStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10118 /* GroupStoreTests.swift */; };
+		A10080 /* ImportReview.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10080 /* ImportReview.swift */; };
+		A10081 /* ImportProofScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10081 /* ImportProofScreen.swift */; };
+		A10082 /* ImportReviewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10082 /* ImportReviewTests.swift */; };
+		A10083 /* Exporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10083 /* Exporter.swift */; };
+		A10084 /* ExportProofScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10084 /* ExportProofScreen.swift */; };
+		A10085 /* ExporterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10085 /* ExporterTests.swift */; };
+		A10086 /* ExportFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10086 /* ExportFlow.swift */; };
+		A10087 /* ExportFlowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10087 /* ExportFlowTests.swift */; };
+		A10101 /* CategoryWiringTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C01002 /* CategoryWiringTests.swift */; };
+		A10103 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B10102 /* Assets.xcassets */; };
+		A10104 /* ExpenseRevisionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10119 /* ExpenseRevisionTests.swift */; };
+		A10105 /* ExpenseEditing.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10120 /* ExpenseEditing.swift */; };
+		A10106 /* ExpenseDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10121 /* ExpenseDetailView.swift */; };
+		A10107 /* ExpenseEditingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10122 /* ExpenseEditingTests.swift */; };
+		A10108 /* Appearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10123 /* Appearance.swift */; };
+		A10109 /* AppearanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10124 /* AppearanceTests.swift */; };
+		A10202 /* TypeThemeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10202 /* TypeThemeTests.swift */; };
+		A10204 /* ThemeArtTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10204 /* ThemeArtTests.swift */; };
+		A10221 /* AppIconTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10221 /* AppIconTests.swift */; };
+		A10217 /* HomePartsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10217 /* HomePartsTests.swift */; };
+		A10219 /* DoneMomentsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10219 /* DoneMomentsTests.swift */; };
+		A10206 /* ThemeMotionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10206 /* ThemeMotionTests.swift */; };
+		A10215 /* SettledTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10215 /* SettledTests.swift */; };
+		A10214 /* YouProgressTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10214 /* YouProgressTests.swift */; };
+		A10110 /* Profile.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10125 /* Profile.swift */; };
+		A10111 /* ProfileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10126 /* ProfileTests.swift */; };
+		A10112 /* About.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10127 /* About.swift */; };
+		A10113 /* AboutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10128 /* AboutTests.swift */; };
+		A10114 /* licences.json in Resources */ = {isa = PBXBuildFile; fileRef = B10129 /* licences.json */; };
+		A10154 /* usernames.json in Resources */ = {isa = PBXBuildFile; fileRef = B10166 /* usernames.json */; };
+		A10117 /* ProjectionBytesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10132 /* ProjectionBytesTests.swift */; };
+		A10118 /* GroupRecordsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10133 /* GroupRecordsTests.swift */; };
+		A10124 /* AppLock.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10139 /* AppLock.swift */; };
+		A10125 /* AppLockTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10140 /* AppLockTests.swift */; };
+		A10126 /* CurrencyChoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10141 /* CurrencyChoice.swift */; };
+		A10127 /* CurrencyChoiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10142 /* CurrencyChoiceTests.swift */; };
+		A10128 /* ImportFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10143 /* ImportFlow.swift */; };
+		A10129 /* ImportFlowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10144 /* ImportFlowTests.swift */; };
+		A10130 /* AccountOwner.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10145 /* AccountOwner.swift */; };
+		A10131 /* AccountOwnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10146 /* AccountOwnerTests.swift */; };
+		A10153 /* UsernameRulesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10165 /* UsernameRulesTests.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		H10000 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = Z10000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E10001;
+			remoteInfo = Skipti;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		B10001 /* SkiptiApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkiptiApp.swift; sourceTree = "<group>"; };
+		B10002 /* SmokeScreenView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmokeScreenView.swift; sourceTree = "<group>"; };
+		B10003 /* KeychainKeystore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainKeystore.swift; sourceTree = "<group>"; };
+		B10004 /* VaultSmoke.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultSmoke.swift; sourceTree = "<group>"; };
+		B10005 /* skipti_core.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = skipti_core.swift; sourceTree = "<group>"; };
+		B10006 /* SkiptiCore.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = SkiptiCore.xcframework; path = Frameworks/SkiptiCore.xcframework; sourceTree = SOURCE_ROOT; };
+		B10007 /* SpaceGrotesk.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = SpaceGrotesk.ttf; path = ../native/fonts/SpaceGrotesk.ttf; sourceTree = SOURCE_ROOT; };
+		B10008 /* IBMPlexMono-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "IBMPlexMono-Regular.ttf"; path = "../native/fonts/IBMPlexMono-Regular.ttf"; sourceTree = SOURCE_ROOT; };
+		B10200 /* CormorantSC-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "CormorantSC-SemiBold.ttf"; path = "../native/fonts/CormorantSC-SemiBold.ttf"; sourceTree = SOURCE_ROOT; };
+		B10201 /* CormorantSC-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "CormorantSC-Bold.ttf"; path = "../native/fonts/CormorantSC-Bold.ttf"; sourceTree = SOURCE_ROOT; };
+		B10009 /* IBMPlexMono-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "IBMPlexMono-Medium.ttf"; path = "../native/fonts/IBMPlexMono-Medium.ttf"; sourceTree = SOURCE_ROOT; };
+		B10207 /* IBMPlexSans-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "IBMPlexSans-Regular.ttf"; path = "../native/fonts/IBMPlexSans-Regular.ttf"; sourceTree = SOURCE_ROOT; };
+		B10208 /* IBMPlexSans-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "IBMPlexSans-Medium.ttf"; path = "../native/fonts/IBMPlexSans-Medium.ttf"; sourceTree = SOURCE_ROOT; };
+		B10209 /* IBMPlexSans-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "IBMPlexSans-SemiBold.ttf"; path = "../native/fonts/IBMPlexSans-SemiBold.ttf"; sourceTree = SOURCE_ROOT; };
+		B10210 /* IBMPlexSans-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "IBMPlexSans-Bold.ttf"; path = "../native/fonts/IBMPlexSans-Bold.ttf"; sourceTree = SOURCE_ROOT; };
+		B10211 /* VardrRunes-CarvedRegular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "VardrRunes-CarvedRegular.ttf"; path = "../native/fonts/VardrRunes-CarvedRegular.ttf"; sourceTree = SOURCE_ROOT; };
+		B10010 /* VaultRoundTripTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultRoundTripTests.swift; sourceTree = "<group>"; };
+		B10011 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B10012 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B10013 /* DesignTokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignTokens.swift; sourceTree = "<group>"; };
+		B10014 /* TypeSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TypeSystem.swift; sourceTree = "<group>"; };
+		B10015 /* BalanceLineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BalanceLineView.swift; sourceTree = "<group>"; };
+		B10016 /* BalanceScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BalanceScreen.swift; sourceTree = "<group>"; };
+		B10017 /* BalanceLineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BalanceLineTests.swift; sourceTree = "<group>"; };
+		B10018 /* LedgerStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerStore.swift; sourceTree = "<group>"; };
+		B10019 /* SettleScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettleScreen.swift; sourceTree = "<group>"; };
+		B10020 /* AppLocale.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLocale.swift; sourceTree = "<group>"; };
+		B10021 /* AddExpenseScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddExpenseScreen.swift; sourceTree = "<group>"; };
+		B10022 /* FxRates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FxRates.swift; sourceTree = "<group>"; };
+		B10023 /* ExpenseListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpenseListView.swift; sourceTree = "<group>"; };
+		B10026 /* SignInScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignInScreen.swift; sourceTree = "<group>"; };
+		B10033 /* VaultGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultGate.swift; sourceTree = "<group>"; };
+		B10034 /* VaultGateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultGateTests.swift; sourceTree = "<group>"; };
+		B10037 /* LedgerPortTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerPortTests.swift; sourceTree = "<group>"; };
+		B10080 /* ImportReview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportReview.swift; sourceTree = "<group>"; };
+		B10081 /* ImportProofScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportProofScreen.swift; sourceTree = "<group>"; };
+		B10082 /* ImportReviewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportReviewTests.swift; sourceTree = "<group>"; };
+		B10083 /* Exporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Exporter.swift; sourceTree = "<group>"; };
+		B10084 /* ExportProofScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportProofScreen.swift; sourceTree = "<group>"; };
+		B10085 /* ExporterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExporterTests.swift; sourceTree = "<group>"; };
+		B10086 /* ExportFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportFlow.swift; sourceTree = "<group>"; };
+		B10087 /* ExportFlowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportFlowTests.swift; sourceTree = "<group>"; };
+		B10100 /* Skipti.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Skipti.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B10101 /* SkiptiTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SkiptiTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B10102 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		B10108 /* AccountHubScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountHubScreen.swift; sourceTree = "<group>"; };
+		B10109 /* VaultRecoveryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultRecoveryView.swift; sourceTree = "<group>"; };
+		B10110 /* LucideIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LucideIcon.swift; sourceTree = "<group>"; };
+		B10111 /* HomeShell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeShell.swift; sourceTree = "<group>"; };
+		B10155 /* FirebaseConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirebaseConfig.swift; sourceTree = "<group>"; };
+		B10156 /* Account.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Account.swift; sourceTree = "<group>"; };
+		B10158 /* CloudSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudSync.swift; sourceTree = "<group>"; };
+		B10159 /* CloudProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudProfile.swift; sourceTree = "<group>"; };
+		B10160 /* Invites.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Invites.swift; sourceTree = "<group>"; };
+		B10161 /* Push.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Push.swift; sourceTree = "<group>"; };
+		B10162 /* People.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = People.swift; sourceTree = "<group>"; };
+		B10222 /* SettingsSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsSync.swift; sourceTree = "<group>"; };
+		B10220 /* ListRows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListRows.swift; sourceTree = "<group>"; };
+		B10216 /* HomeParts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeParts.swift; sourceTree = "<group>"; };
+		B10218 /* DoneMoments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DoneMoments.swift; sourceTree = "<group>"; };
+		B10213 /* Settled.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Settled.swift; sourceTree = "<group>"; };
+		B10212 /* YouProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YouProgress.swift; sourceTree = "<group>"; };
+		B10203 /* ThemeArt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeArt.swift; sourceTree = "<group>"; };
+		B10205 /* ThemeMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeMotion.swift; sourceTree = "<group>"; };
+		B10173 /* ProfileSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileSync.swift; sourceTree = "<group>"; };
+		B10168 /* Roles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Roles.swift; sourceTree = "<group>"; };
+		B10170 /* RemovalFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemovalFlow.swift; sourceTree = "<group>"; };
+		B10171 /* GroupSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupSettings.swift; sourceTree = "<group>"; };
+		B10164 /* UsernameRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsernameRules.swift; sourceTree = "<group>"; };
+		B10167 /* UsernameStep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsernameStep.swift; sourceTree = "<group>"; };
+		B10163 /* Phones.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Phones.swift; sourceTree = "<group>"; };
+		B10148 /* GroupsScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupsScreen.swift; sourceTree = "<group>"; };
+		B10149 /* OverviewScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverviewScreen.swift; sourceTree = "<group>"; };
+		B10150 /* SettleAll.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettleAll.swift; sourceTree = "<group>"; };
+		B10152 /* GroupPictures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupPictures.swift; sourceTree = "<group>"; };
+		B10153 /* ActivityFeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityFeed.swift; sourceTree = "<group>"; };
+		B10147 /* SkiptiTabBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkiptiTabBar.swift; sourceTree = "<group>"; };
+		B10112 /* GoogleSignIn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = GoogleSignIn.swift; path = Skipti/Relay/GoogleSignIn.swift; sourceTree = SOURCE_ROOT; };
+		B10113 /* AppleSignIn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppleSignIn.swift; path = Skipti/Relay/AppleSignIn.swift; sourceTree = SOURCE_ROOT; };
+		B10114 /* ProviderSignInTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderSignInTests.swift; sourceTree = "<group>"; };
+		B10157 /* AccountTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountTests.swift; sourceTree = "<group>"; };
+		B10169 /* RolesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RolesTests.swift; sourceTree = "<group>"; };
+		B10172 /* GroupListenersTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupListenersTests.swift; sourceTree = "<group>"; };
+		B10174 /* ProfileSyncTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileSyncTests.swift; sourceTree = "<group>"; };
+		B10223 /* SettingsSyncTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsSyncTests.swift; sourceTree = "<group>"; };
+		B10115 /* GroupStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupStore.swift; sourceTree = "<group>"; };
+		B10116 /* GroupSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupSheets.swift; sourceTree = "<group>"; };
+		B10117 /* GroupPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupPicker.swift; sourceTree = "<group>"; };
+		B10118 /* GroupStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupStoreTests.swift; sourceTree = "<group>"; };
+		B10119 /* ExpenseRevisionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpenseRevisionTests.swift; sourceTree = "<group>"; };
+		B10120 /* ExpenseEditing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpenseEditing.swift; sourceTree = "<group>"; };
+		B10121 /* ExpenseDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpenseDetailView.swift; sourceTree = "<group>"; };
+		B10122 /* ExpenseEditingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpenseEditingTests.swift; sourceTree = "<group>"; };
+		B10123 /* Appearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Appearance.swift; sourceTree = "<group>"; };
+		B10124 /* AppearanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceTests.swift; sourceTree = "<group>"; };
+		B10202 /* TypeThemeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TypeThemeTests.swift; sourceTree = "<group>"; };
+		B10204 /* ThemeArtTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeArtTests.swift; sourceTree = "<group>"; };
+		B10221 /* AppIconTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconTests.swift; sourceTree = "<group>"; };
+		B10217 /* HomePartsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomePartsTests.swift; sourceTree = "<group>"; };
+		B10219 /* DoneMomentsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DoneMomentsTests.swift; sourceTree = "<group>"; };
+		B10206 /* ThemeMotionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeMotionTests.swift; sourceTree = "<group>"; };
+		B10215 /* SettledTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettledTests.swift; sourceTree = "<group>"; };
+		B10214 /* YouProgressTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YouProgressTests.swift; sourceTree = "<group>"; };
+		B10125 /* Profile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Profile.swift; sourceTree = "<group>"; };
+		B10126 /* ProfileTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileTests.swift; sourceTree = "<group>"; };
+		B10127 /* About.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = About.swift; sourceTree = "<group>"; };
+		B10128 /* AboutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutTests.swift; sourceTree = "<group>"; };
+		B10129 /* licences.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = licences.json; path = ../native/licences/licences.json; sourceTree = SOURCE_ROOT; };
+		B10166 /* usernames.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = usernames.json; path = ../firebase/functions/blocklist/usernames.json; sourceTree = SOURCE_ROOT; };
+		B10132 /* ProjectionBytesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectionBytesTests.swift; sourceTree = "<group>"; };
+		B10133 /* GroupRecordsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupRecordsTests.swift; sourceTree = "<group>"; };
+		B10139 /* AppLock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLock.swift; sourceTree = "<group>"; };
+		B10140 /* AppLockTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLockTests.swift; sourceTree = "<group>"; };
+		B10141 /* CurrencyChoice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CurrencyChoice.swift; sourceTree = "<group>"; };
+		B10142 /* CurrencyChoiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CurrencyChoiceTests.swift; sourceTree = "<group>"; };
+		B10143 /* ImportFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportFlow.swift; sourceTree = "<group>"; };
+		B10144 /* ImportFlowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportFlowTests.swift; sourceTree = "<group>"; };
+		B10145 /* AccountOwner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountOwner.swift; sourceTree = "<group>"; };
+		B10146 /* AccountOwnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountOwnerTests.swift; sourceTree = "<group>"; };
+		B10165 /* UsernameRulesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsernameRulesTests.swift; sourceTree = "<group>"; };
+		C01001 /* Skipti.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Skipti.entitlements; sourceTree = "<group>"; };
+		C01002 /* CategoryWiringTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategoryWiringTests.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		C10001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10006 /* SkiptiCore.xcframework in Frameworks */,
+				A10142 /* FirebaseAuth in Frameworks */,
+				A10146 /* FirebaseFirestore in Frameworks */,
+				A10148 /* FirebaseMessaging in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C10002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		D10000 = {
+			isa = PBXGroup;
+			children = (
+				D10001 /* Skipti */,
+				D10003 /* SkiptiTests */,
+				D10004 /* Fonts (native, shared) */,
+				D10005 /* Products */,
+				DC59A234303F893F00B00F9D /* Recovered References */,
+			);
+			sourceTree = "<group>";
+		};
+		D10001 /* Skipti */ = {
+			isa = PBXGroup;
+			children = (
+				D10002 /* App */,
+				D10006 /* Bindings */,
+				B10011 /* Info.plist */,
+			);
+			path = Skipti;
+			sourceTree = "<group>";
+		};
+		D10002 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				B10001 /* SkiptiApp.swift */,
+				B10002 /* SmokeScreenView.swift */,
+				B10003 /* KeychainKeystore.swift */,
+				B10004 /* VaultSmoke.swift */,
+				B10013 /* DesignTokens.swift */,
+				B10014 /* TypeSystem.swift */,
+				B10015 /* BalanceLineView.swift */,
+				B10016 /* BalanceScreen.swift */,
+				B10018 /* LedgerStore.swift */,
+				B10019 /* SettleScreen.swift */,
+				B10020 /* AppLocale.swift */,
+				B10021 /* AddExpenseScreen.swift */,
+				B10022 /* FxRates.swift */,
+				B10023 /* ExpenseListView.swift */,
+				B10123 /* Appearance.swift */,
+				B10125 /* Profile.swift */,
+				B10127 /* About.swift */,
+				B10120 /* ExpenseEditing.swift */,
+				B10121 /* ExpenseDetailView.swift */,
+				B10113 /* AppleSignIn.swift */,
+				B10112 /* GoogleSignIn.swift */,
+				B10026 /* SignInScreen.swift */,
+				B10117 /* GroupPicker.swift */,
+				B10116 /* GroupSheets.swift */,
+				B10115 /* GroupStore.swift */,
+				B10139 /* AppLock.swift */,
+				B10141 /* CurrencyChoice.swift */,
+				B10143 /* ImportFlow.swift */,
+				B10145 /* AccountOwner.swift */,
+				B10033 /* VaultGate.swift */,
+				B10108 /* AccountHubScreen.swift */,
+				B10109 /* VaultRecoveryView.swift */,
+				B10110 /* LucideIcon.swift */,
+				B10111 /* HomeShell.swift */,
+				B10155 /* FirebaseConfig.swift */,
+				B10156 /* Account.swift */,
+				B10158 /* CloudSync.swift */,
+				B10159 /* CloudProfile.swift */,
+				B10160 /* Invites.swift */,
+				B10161 /* Push.swift */,
+				B10162 /* People.swift */,
+				B10222 /* SettingsSync.swift */,
+				B10220 /* ListRows.swift */,
+				B10216 /* HomeParts.swift */,
+				B10218 /* DoneMoments.swift */,
+				B10213 /* Settled.swift */,
+				B10212 /* YouProgress.swift */,
+				B10203 /* ThemeArt.swift */,
+				B10205 /* ThemeMotion.swift */,
+				B10173 /* ProfileSync.swift */,
+				B10168 /* Roles.swift */,
+				B10170 /* RemovalFlow.swift */,
+				B10171 /* GroupSettings.swift */,
+				B10164 /* UsernameRules.swift */,
+				B10167 /* UsernameStep.swift */,
+				B10163 /* Phones.swift */,
+				B10148 /* GroupsScreen.swift */,
+				B10149 /* OverviewScreen.swift */,
+				B10150 /* SettleAll.swift */,
+				B10152 /* GroupPictures.swift */,
+				B10153 /* ActivityFeed.swift */,
+				B10147 /* SkiptiTabBar.swift */,
+				B10080 /* ImportReview.swift */,
+				B10081 /* ImportProofScreen.swift */,
+				B10083 /* Exporter.swift */,
+				B10084 /* ExportProofScreen.swift */,
+				B10086 /* ExportFlow.swift */,
+				C01001 /* Skipti.entitlements */,
+				B10102 /* Assets.xcassets */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		D10003 /* SkiptiTests */ = {
+			isa = PBXGroup;
+			children = (
+				B10010 /* VaultRoundTripTests.swift */,
+				B10017 /* BalanceLineTests.swift */,
+				B10118 /* GroupStoreTests.swift */,
+				B10119 /* ExpenseRevisionTests.swift */,
+				B10124 /* AppearanceTests.swift */,
+				B10202 /* TypeThemeTests.swift */,
+				B10204 /* ThemeArtTests.swift */,
+				B10221 /* AppIconTests.swift */,
+				B10217 /* HomePartsTests.swift */,
+				B10219 /* DoneMomentsTests.swift */,
+				B10206 /* ThemeMotionTests.swift */,
+				B10215 /* SettledTests.swift */,
+				B10214 /* YouProgressTests.swift */,
+				B10126 /* ProfileTests.swift */,
+				B10128 /* AboutTests.swift */,
+				B10132 /* ProjectionBytesTests.swift */,
+				B10133 /* GroupRecordsTests.swift */,
+				B10140 /* AppLockTests.swift */,
+				B10142 /* CurrencyChoiceTests.swift */,
+				B10144 /* ImportFlowTests.swift */,
+				B10146 /* AccountOwnerTests.swift */,
+				B10165 /* UsernameRulesTests.swift */,
+				B10122 /* ExpenseEditingTests.swift */,
+				B10114 /* ProviderSignInTests.swift */,
+				B10157 /* AccountTests.swift */,
+				B10169 /* RolesTests.swift */,
+				B10172 /* GroupListenersTests.swift */,
+				B10174 /* ProfileSyncTests.swift */,
+				B10223 /* SettingsSyncTests.swift */,
+				B10034 /* VaultGateTests.swift */,
+				B10037 /* LedgerPortTests.swift */,
+				B10082 /* ImportReviewTests.swift */,
+				B10085 /* ExporterTests.swift */,
+				B10087 /* ExportFlowTests.swift */,
+				C01002 /* CategoryWiringTests.swift */,
+				B10012 /* Info.plist */,
+			);
+			path = SkiptiTests;
+			sourceTree = "<group>";
+		};
+		D10004 /* Fonts (native, shared) */ = {
+			isa = PBXGroup;
+			children = (
+				B10007 /* SpaceGrotesk.ttf */,
+				B10008 /* IBMPlexMono-Regular.ttf */,
+				B10200 /* CormorantSC-SemiBold.ttf */,
+				B10201 /* CormorantSC-Bold.ttf */,
+				B10009 /* IBMPlexMono-Medium.ttf */,
+				B10207 /* IBMPlexSans-Regular.ttf */,
+				B10208 /* IBMPlexSans-Medium.ttf */,
+				B10209 /* IBMPlexSans-SemiBold.ttf */,
+				B10210 /* IBMPlexSans-Bold.ttf */,
+				B10211 /* VardrRunes-CarvedRegular.ttf */,
+				B10129 /* licences.json */,
+				B10166 /* usernames.json */,
+			);
+			name = "Fonts (native, shared)";
+			sourceTree = "<group>";
+		};
+		D10005 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				B10100 /* Skipti.app */,
+				B10101 /* SkiptiTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		D10006 /* Bindings */ = {
+			isa = PBXGroup;
+			children = (
+				B10005 /* skipti_core.swift */,
+			);
+			path = Bindings;
+			sourceTree = "<group>";
+		};
+		DC59A234303F893F00B00F9D /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+				B10006 /* SkiptiCore.xcframework */,
+			);
+			name = "Recovered References";
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		E10001 /* Skipti */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F10001 /* Build configuration list for PBXNativeTarget "Skipti" */;
+			buildPhases = (
+				G10001 /* Sources */,
+				C10001 /* Frameworks */,
+				G10002 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			packageProductDependencies = (
+				P10001 /* FirebaseAuth */,
+				P10002 /* FirebaseFirestore */,
+				P10003 /* FirebaseMessaging */,
+			);
+			name = Skipti;
+			productName = Skipti;
+			productReference = B10100 /* Skipti.app */;
+			productType = "com.apple.product-type.application";
+		};
+		E10002 /* SkiptiTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F10002 /* Build configuration list for PBXNativeTarget "SkiptiTests" */;
+			buildPhases = (
+				G10003 /* Sources */,
+				C10002 /* Frameworks */,
+				G10004 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				H10001 /* PBXTargetDependency */,
+			);
+			name = SkiptiTests;
+			productName = SkiptiTests;
+			productReference = B10101 /* SkiptiTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		Z10000 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					E10001 = {
+						CreatedOnToolsVersion = 16.0;
+					};
+					E10002 = {
+						CreatedOnToolsVersion = 16.0;
+						TestTargetID = E10001;
+					};
+				};
+			};
+			buildConfigurationList = F10003 /* Build configuration list for PBXProject "Skipti" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = D10000;
+			packageReferences = (
+				K10001 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+			);
+			productRefGroup = D10005 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				E10001 /* Skipti */,
+				E10002 /* SkiptiTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		G10002 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10007 /* SpaceGrotesk.ttf in Resources */,
+				A10008 /* IBMPlexMono-Regular.ttf in Resources */,
+				A10200 /* CormorantSC-SemiBold.ttf in Resources */,
+				A10201 /* CormorantSC-Bold.ttf in Resources */,
+				A10009 /* IBMPlexMono-Medium.ttf in Resources */,
+				A10207 /* IBMPlexSans-Regular.ttf in Resources */,
+				A10208 /* IBMPlexSans-Medium.ttf in Resources */,
+				A10209 /* IBMPlexSans-SemiBold.ttf in Resources */,
+				A10210 /* IBMPlexSans-Bold.ttf in Resources */,
+				A10211 /* VardrRunes-CarvedRegular.ttf in Resources */,
+				A10114 /* licences.json in Resources */,
+				A10154 /* usernames.json in Resources */,
+				A10103 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		G10004 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		G10001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10001 /* SkiptiApp.swift in Sources */,
+				A10002 /* SmokeScreenView.swift in Sources */,
+				A10003 /* KeychainKeystore.swift in Sources */,
+				A10004 /* VaultSmoke.swift in Sources */,
+				A10005 /* skipti_core.swift in Sources */,
+				A10011 /* DesignTokens.swift in Sources */,
+				A10012 /* TypeSystem.swift in Sources */,
+				A10013 /* BalanceLineView.swift in Sources */,
+				A10014 /* BalanceScreen.swift in Sources */,
+				A10016 /* LedgerStore.swift in Sources */,
+				A10017 /* SettleScreen.swift in Sources */,
+				A10018 /* AppLocale.swift in Sources */,
+				A10019 /* AddExpenseScreen.swift in Sources */,
+				A10020 /* FxRates.swift in Sources */,
+				A10021 /* ExpenseListView.swift in Sources */,
+				A10108 /* Appearance.swift in Sources */,
+				A10110 /* Profile.swift in Sources */,
+				A10112 /* About.swift in Sources */,
+				A10105 /* ExpenseEditing.swift in Sources */,
+				A10106 /* ExpenseDetailView.swift in Sources */,
+				A10044 /* AppleSignIn.swift in Sources */,
+				A10043 /* GoogleSignIn.swift in Sources */,
+				A10024 /* SignInScreen.swift in Sources */,
+				A10048 /* GroupPicker.swift in Sources */,
+				A10047 /* GroupSheets.swift in Sources */,
+				A10046 /* GroupStore.swift in Sources */,
+				A10124 /* AppLock.swift in Sources */,
+				A10126 /* CurrencyChoice.swift in Sources */,
+				A10128 /* ImportFlow.swift in Sources */,
+				A10130 /* AccountOwner.swift in Sources */,
+				A10031 /* VaultGate.swift in Sources */,
+				A10039 /* AccountHubScreen.swift in Sources */,
+				A10040 /* VaultRecoveryView.swift in Sources */,
+				A10041 /* LucideIcon.swift in Sources */,
+				A10042 /* HomeShell.swift in Sources */,
+				A10140 /* FirebaseConfig.swift in Sources */,
+				A10141 /* Account.swift in Sources */,
+				A10144 /* CloudSync.swift in Sources */,
+				A10145 /* CloudProfile.swift in Sources */,
+				A10147 /* Invites.swift in Sources */,
+				A10149 /* Push.swift in Sources */,
+				A10150 /* People.swift in Sources */,
+				A10222 /* SettingsSync.swift in Sources */,
+				A10220 /* ListRows.swift in Sources */,
+				A10216 /* HomeParts.swift in Sources */,
+				A10218 /* DoneMoments.swift in Sources */,
+				A10213 /* Settled.swift in Sources */,
+				A10212 /* YouProgress.swift in Sources */,
+				A10203 /* ThemeArt.swift in Sources */,
+				A10205 /* ThemeMotion.swift in Sources */,
+				A10161 /* ProfileSync.swift in Sources */,
+				A10156 /* Roles.swift in Sources */,
+				A10158 /* RemovalFlow.swift in Sources */,
+				A10159 /* GroupSettings.swift in Sources */,
+				A10152 /* UsernameRules.swift in Sources */,
+				A10155 /* UsernameStep.swift in Sources */,
+				A10151 /* Phones.swift in Sources */,
+				A10133 /* GroupsScreen.swift in Sources */,
+				A10134 /* OverviewScreen.swift in Sources */,
+				A10135 /* SettleAll.swift in Sources */,
+				A10137 /* GroupPictures.swift in Sources */,
+				A10138 /* ActivityFeed.swift in Sources */,
+				A10132 /* SkiptiTabBar.swift in Sources */,
+				A10080 /* ImportReview.swift in Sources */,
+				A10081 /* ImportProofScreen.swift in Sources */,
+				A10083 /* Exporter.swift in Sources */,
+				A10084 /* ExportProofScreen.swift in Sources */,
+				A10086 /* ExportFlow.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		G10003 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10010 /* VaultRoundTripTests.swift in Sources */,
+				A10015 /* BalanceLineTests.swift in Sources */,
+				A10049 /* GroupStoreTests.swift in Sources */,
+				A10104 /* ExpenseRevisionTests.swift in Sources */,
+				A10109 /* AppearanceTests.swift in Sources */,
+				A10202 /* TypeThemeTests.swift in Sources */,
+				A10204 /* ThemeArtTests.swift in Sources */,
+				A10221 /* AppIconTests.swift in Sources */,
+				A10217 /* HomePartsTests.swift in Sources */,
+				A10219 /* DoneMomentsTests.swift in Sources */,
+				A10206 /* ThemeMotionTests.swift in Sources */,
+				A10215 /* SettledTests.swift in Sources */,
+				A10214 /* YouProgressTests.swift in Sources */,
+				A10111 /* ProfileTests.swift in Sources */,
+				A10113 /* AboutTests.swift in Sources */,
+				A10117 /* ProjectionBytesTests.swift in Sources */,
+				A10118 /* GroupRecordsTests.swift in Sources */,
+				A10125 /* AppLockTests.swift in Sources */,
+				A10127 /* CurrencyChoiceTests.swift in Sources */,
+				A10129 /* ImportFlowTests.swift in Sources */,
+				A10131 /* AccountOwnerTests.swift in Sources */,
+				A10153 /* UsernameRulesTests.swift in Sources */,
+				A10107 /* ExpenseEditingTests.swift in Sources */,
+				A10045 /* ProviderSignInTests.swift in Sources */,
+				A10143 /* AccountTests.swift in Sources */,
+				A10157 /* RolesTests.swift in Sources */,
+				A10160 /* GroupListenersTests.swift in Sources */,
+				A10162 /* ProfileSyncTests.swift in Sources */,
+				A10223 /* SettingsSyncTests.swift in Sources */,
+				A10032 /* VaultGateTests.swift in Sources */,
+				A10035 /* LedgerPortTests.swift in Sources */,
+				A10082 /* ImportReviewTests.swift in Sources */,
+				A10085 /* ExporterTests.swift in Sources */,
+				A10087 /* ExportFlowTests.swift in Sources */,
+				A10101 /* CategoryWiringTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		H10001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = E10001 /* Skipti */;
+			targetProxy = H10000 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		XC0001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		XC0002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		XC0011 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon-Norse AppIcon-Vardr";
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Skipti/Skipti.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 7;
+				DEVELOPMENT_TEAM = 27GK2T7UCT;
+				ENABLE_TESTABILITY = YES;
+				FRAMEWORK_SEARCH_PATHS = "$(PROJECT_DIR)/Frameworks";
+				GENERATE_INFOPLIST_FILE = NO;
+				HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/Skipti/Bindings";
+				INFOPLIST_FILE = Skipti/Info.plist;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_PREPROCESS = YES;
+				INFOPLIST_PREPROCESSOR_DEFINITIONS = "SKIPTI_LOCAL_NETWORKING=1";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.5.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.vardrlabs.skipti;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_OBJC_BRIDGING_HEADER = "Skipti/App/Skipti-Bridging-Header.h";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		XC0012 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon-Norse AppIcon-Vardr";
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Skipti/Skipti.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 7;
+				DEVELOPMENT_TEAM = 27GK2T7UCT;
+				FRAMEWORK_SEARCH_PATHS = "$(PROJECT_DIR)/Frameworks";
+				GENERATE_INFOPLIST_FILE = NO;
+				HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/Skipti/Bindings";
+				INFOPLIST_FILE = Skipti/Info.plist;
+				INFOPLIST_PREPROCESS = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.5.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.vardrlabs.skipti;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_OBJC_BRIDGING_HEADER = "Skipti/App/Skipti-Bridging-Header.h";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		XC0021 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/Skipti/Bindings";
+				INFOPLIST_FILE = SkiptiTests/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.vardrlabs.skipti.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_OBJC_BRIDGING_HEADER = "Skipti/App/Skipti-Bridging-Header.h";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Skipti.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Skipti";
+			};
+			name = Debug;
+		};
+		XC0022 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/Skipti/Bindings";
+				INFOPLIST_FILE = SkiptiTests/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.vardrlabs.skipti.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_OBJC_BRIDGING_HEADER = "Skipti/App/Skipti-Bridging-Header.h";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Skipti.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Skipti";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		F10001 /* Build configuration list for PBXNativeTarget "Skipti" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				XC0011 /* Debug */,
+				XC0012 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F10002 /* Build configuration list for PBXNativeTarget "SkiptiTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				XC0021 /* Debug */,
+				XC0022 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F10003 /* Build configuration list for PBXProject "Skipti" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				XC0001 /* Debug */,
+				XC0002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		K10001 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
+			requirement = {
+				kind = exactVersion;
+				version = 12.19.2;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		P10001 /* FirebaseAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = K10001 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAuth;
+		};
+		P10002 /* FirebaseFirestore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = K10001 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFirestore;
+		};
+		P10003 /* FirebaseMessaging */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = K10001 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseMessaging;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = Z10000 /* Project object */;
+}
