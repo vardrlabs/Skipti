@@ -114,6 +114,26 @@ final class WelcomeTests: XCTestCase {
         XCTAssertTrue(about.contains("ListRow(title: WelcomeCopy.replay, trailing: .chevron)"), "the row, no summary")
     }
 
+    /// D-245 sabotage pin (I4 survived): the root's first-run close clears the flag on EVERY exit (Skip, Look around
+    /// first, Start a group): nothing between the exit and the clear can make it depend on which way out was taken.
+    func testEveryExitClearsTheFlagAtTheRoot() throws {
+        let app = try appSource("SkiptiApp.swift")
+        let close = """
+            WelcomeView(store: LedgerStore.defaultStore(), mode: .firstRun) { exit in
+                                welcomeExit = exit
+                                welcomePending = false
+                                WelcomeGate.closed(mode: .firstRun) { try WelcomeGate.clear(LedgerStore.defaultStore()) }
+                                welcomeShown = false
+                            }
+            """
+        XCTAssertTrue(app.contains(close), "the first-run close, whole: the clear runs for every exit")
+        XCTAssertEqual(app.components(separatedBy: "mode: .firstRun) { exit in").count - 1, 1, "one first-run close")
+        // Negative: the exit is only kept for after the cover (`WelcomeLook.after`), never read around the clear.
+        let body = try XCTUnwrap(app.components(separatedBy: "mode: .firstRun) { exit in").last?
+            .components(separatedBy: "welcomeShown = false").first)
+        XCTAssertEqual(body.components(separatedBy: "exit").count - 1, 1, "only `welcomeExit = exit`: \(body)")
+    }
+
     /// The first launch marks the welcome BEFORE it marks the phone launched (a launch killed between them still welcomes).
     func testTheWelcomeIsMarkedBeforeTheLaunch() throws {
         let gate = try appSource("VaultRecoveryView.swift")

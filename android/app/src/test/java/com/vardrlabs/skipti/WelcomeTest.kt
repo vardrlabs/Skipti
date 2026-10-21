@@ -113,6 +113,26 @@ class WelcomeTest {
         assertTrue("the row, no summary", "ListRow(WelcomeCopy.REPLAY, dark, trailing = RowTrailing.Chevron)" in about)
     }
 
+    /** D-245 sabotage pin (A5 survived): the root's first-run close clears the flag on EVERY exit (Skip, Look around
+     *  first, Start a group): nothing between the exit and the clear can make it depend on which way out was taken. */
+    @Test
+    fun every_exit_clears_the_flag_at_the_root() {
+        val root = src("AppRoot.kt")
+        val close = "WelcomeLayer(vaultPath, WelcomeMode.FIRST_RUN, welcome) { exit ->\n" +
+            "                    welcomePending = false\n" +
+            "                    welcome.close()\n" +
+            "                    scope.launch(Dispatchers.IO) {\n" +
+            "                        WelcomeGate.closed(WelcomeMode.FIRST_RUN) { WelcomeGate.clear(LedgerStore(vaultPath)) }\n" +
+            "                    }\n" +
+            "                    WelcomeLook.after(context, exit)\n" +
+            "                }"
+        assertTrue("the first-run close, whole: the clear runs for every exit", close in root)
+        assertEquals("one first-run close", 1, root.split("WelcomeMode.FIRST_RUN, welcome) { exit ->").size - 1)
+        // Negative: the exit is read only by the Appearance close and New group (`after`), never around the clear.
+        val body = root.substringAfter("WelcomeMode.FIRST_RUN, welcome) { exit ->").substringBefore("WelcomeLook.after(context, exit)")
+        assertFalse("exit" in body)
+    }
+
     /** The first launch marks the welcome BEFORE it marks the phone launched (a launch killed between them still
      *  welcomes): a mark that fails leaves the launch unmarked, so the next launch is a first launch again. */
     @Test
