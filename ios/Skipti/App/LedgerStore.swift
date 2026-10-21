@@ -387,7 +387,13 @@ extension LedgerStore {
 
         /// D-229 decision 45: a record for a group where this account has lost
         /// its place (`lost`): whatever it wrote would read as someone else.
-        struct PlaceLost: Error, Equatable {}
+        /// D-248 (D-247 residue e): where it shows, it reads as the banner's
+        /// one line (`RolesCopy.placeLostBanner`), as Android's `PlaceLost`
+        /// message always has; it printed its type name ("PlaceLost()").
+        struct PlaceLost: Error, Equatable, CustomStringConvertible, LocalizedError {
+            var description: String { RolesCopy.placeLostBanner }
+            var errorDescription: String? { description }
+        }
 
         /// Maps nothing: the backfills, the personal writers, and every write
         /// that is not about this account inside a group.

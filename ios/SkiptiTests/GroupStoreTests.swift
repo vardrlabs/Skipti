@@ -229,7 +229,8 @@ final class GroupStoreTests: XCTestCase {
         XCTAssertTrue(sheets.contains(".frame(width: ThemeArt.m(\"touchTarget\"), height: ThemeArt.m(\"touchTarget\"))"), "in a 48 target")
         XCTAssertEqual(count("FieldRow(\"Group name\", text: $groupName)"), 1)
         XCTAssertEqual(count("FieldRow(\"Your name\", text: $"), 2, "Your name on New group and on its own sheet")
-        XCTAssertEqual(count("FieldRow(\"Name\", text: $row.name, spoken: \"Person \\(index + 1)\")"), 1, "a person's field, named to VoiceOver")
+        // D-248 (U29.2): and driven by the sheet's focus (Return adds a row).
+        XCTAssertEqual(count("FieldRow(\"Name\", text: $row.name, spoken: \"Person \\(index + 1)\",\n"), 1, "a person's field, named to VoiceOver")
         for caption in ["A group settles in one currency, and it cannot be changed later.",
                         "You see yourself as \\\"Name (You)\\\". Others in the group see only the name.",
                         "Add people by name. They do not need SKIPTI; linking a name to their phone comes later.",

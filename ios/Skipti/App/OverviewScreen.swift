@@ -150,6 +150,29 @@ enum OverviewActions {
     static func changed(_ status: SyncStatus = .shared) { status.changed() }
 }
 
+/// D-248 (U30.6, decision 185): a group just created opens its page, pushed on Home's stack, so Back lands on Home (which
+/// lists it); the next thing a person does is add people or an expense there. Every create path asks once its sheet has
+/// gone (New group from Home, from Groups, and the welcome's Start a group); Home opens it (`OverviewScreen`). The first
+/// group's big moment is the window's overlay, so it still plays over the page. Android's twin opens the group's route.
+@MainActor @Observable
+final class GroupOpening {
+    static let shared = GroupOpening()
+    private(set) var pending: String?
+
+    func request(_ groupID: String) { pending = groupID }
+
+    /// The group to open, once.
+    func take() -> String? {
+        defer { pending = nil }
+        return pending
+    }
+}
+
+/// The group page Home pushes for `GroupOpening`.
+struct OpenedGroup: Hashable, Identifiable {
+    let id: String
+}
+
 struct OverviewScreen: View {
     var onSettle: () -> Void
 
@@ -167,6 +190,10 @@ struct OverviewScreen: View {
     @State private var latelyOpen: LatelyOpen?
     /// "See all" (A1): the whole-ledger Activity, pushed from the same container (the card can vanish, M1).
     @State private var seeAll = false
+    /// D-248 (U30.6): the group just created, pushed from the same container.
+    @State private var openedGroup: OpenedGroup?
+    /// The group Home's own New group made, opened once its sheet has gone.
+    @State private var createdID: String?
     @State private var needsYourName = false
     @State private var askingName = false
     @State private var creating = false
@@ -257,6 +284,13 @@ struct OverviewScreen: View {
         .navigationDestination(isPresented: $seeAll) {
             ActivityScreen(store: store, group: nil)
         }
+        .navigationDestination(item: $openedGroup) { opened in
+            GroupPageScreen(groupID: opened.id)
+        }
+        // D-248 (U30.6): a group made elsewhere (Groups, the welcome) opens here, on Home's stack.
+        .onChange(of: GroupOpening.shared.pending, initial: true) { _, _ in
+            if let id = GroupOpening.shared.take() { openedGroup = OpenedGroup(id: id) }
+        }
         .task(id: SyncStatus.shared.revision) {
             load()
             await loadUsername()
@@ -266,9 +300,13 @@ struct OverviewScreen: View {
             if appearedOnce { load() }
             appearedOnce = true
         }
-        .sheet(isPresented: $creating) {
+        .sheet(isPresented: $creating, onDismiss: {
+            // D-248 (U30.6): the new group's page, once the sheet has gone.
+            if let id = createdID { createdID = nil; openedGroup = OpenedGroup(id: id) }
+        }) {
             NavigationStack {
-                CreateGroupSheet(store: store, needsYourName: (try? store.ensureSelf())?.name == nil) { _ in
+                CreateGroupSheet(store: store, needsYourName: (try? store.ensureSelf())?.name == nil) { created in
+                    createdID = created.group.id
                     creating = false
                     load()
                     OverviewActions.changed()

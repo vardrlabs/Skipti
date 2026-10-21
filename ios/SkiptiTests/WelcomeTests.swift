@@ -263,7 +263,8 @@ final class WelcomeTests: XCTestCase {
         XCTAssertFalse(page.contains(".hairlineField()"), "no second line inside the card")
         XCTAssertFalse(page.contains("TextField("), "no bare field")
         let row = try appSource("ListRows.swift")
-        XCTAssertTrue(row.contains(".simultaneousGesture(TapGesture().onEnded { focused = true })"), "the whole row focuses")
+        // D-248: the row's own focus, or its form's.
+        XCTAssertTrue(row.contains(".simultaneousGesture(TapGesture().onEnded {\n                if let form { form.focus.wrappedValue = form.id } else { focused = true }"), "the whole row focuses")
     }
 
     func testOneActionAtTheBottom() {

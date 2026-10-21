@@ -1207,6 +1207,16 @@ extension View {
 
 /// D-213 (the founder, demo option A): every navigation title in the theme's display face, set on the
 /// navigation bars themselves, so the system's large title that folds into the bar on scroll is kept.
+/// D-248 (U31, decision 186): the room an inline title has on the narrowest iPhone (375 pt) beside the back button. UIKit
+/// centres the title, so it keeps clear of the back button's side on both sides: iOS 26 and later draw the back button
+/// as a 44 pt glass circle 16 from the edge, and the title keeps 8 more off it. Measured against the cut the founder saw
+/// (Norse's "Appearance" at text step 2; D248FixesTests).
+enum TitleWidth {
+    static let phone: CGFloat = 375
+    static let reserve: CGFloat = 16 + 44 + 8
+    static let room: CGFloat = phone - 2 * reserve
+}
+
 enum TitleStyle {
     /// The Look Book's `.title`: 700 (Vardr Labs 600).
     static func weight(_ theme: AppTheme) -> CGFloat { theme == .vardr ? 600 : 700 }
@@ -1220,12 +1230,24 @@ enum TitleStyle {
         }
     }
 
-    /// The system's sizes (large 34, inline 17), scaled for SKIPTI's text size.
+    /// The system's sizes (large 34, inline 17), scaled for SKIPTI's text size. D-248 (U31, decision 186): an INLINE title
+    /// stops growing at `inlineCap` (UIKit centres it between the back button and the trailing items and cuts what does not
+    /// fit: Norse's "APPEARANCE" at text step 2); large titles are untouched.
     static func font(large: Bool, theme: AppTheme, category: UIContentSizeCategory) -> UIFont {
         let base = TypeRole.base(TypeRole.face(.display, theme: theme), size: large ? TypeScale.largeTitle : TypeScale.inlineTitle, weight: weight(theme), tabular: false)
-        return UIFontMetrics(forTextStyle: large ? .largeTitle : .headline)
-            .scaledFont(for: base, compatibleWith: UITraitCollection(preferredContentSizeCategory: category))
+        let traits = UITraitCollection(preferredContentSizeCategory: category)
+        if large {
+            return UIFontMetrics(forTextStyle: .largeTitle).scaledFont(for: base, compatibleWith: traits)
+        }
+        return UIFontMetrics(forTextStyle: .headline).scaledFont(for: base, maximumPointSize: inlineCap(theme), compatibleWith: traits)
     }
+
+    /// D-248 (U31): the inline title's largest size per theme, measured so the longest fixed pushed title fits a 375 pt
+    /// iPhone beside the back button at every text step (D248FixesTests' width table; Android's bar is checked at 360 dp).
+    /// Measured: the widest is Norse's "Profile and account", 166.9 pt at 17, so 23 draws it 225.8 wide in the 239 of room
+    /// (24 would leave 3.4; 23 keeps the slack). One cap for every theme; step 2 on a phone at its default size (21) is
+    /// under it, so the cap only bites at the larger steps.
+    static func inlineCap(_ theme: AppTheme) -> CGFloat { 23 }
 
     static func attributes(large: Bool, theme: AppTheme, category: UIContentSizeCategory) -> [NSAttributedString.Key: Any] {
         let f = font(large: large, theme: theme, category: category)
@@ -1246,6 +1268,34 @@ enum TitleStyle {
 
     static func styleBarButton(_ item: UIBarButtonItem, _ attributes: [NSAttributedString.Key: Any]) {
         for controlState in barButtonStates { item.setTitleTextAttributes(attributes, for: controlState) }
+    }
+
+    /// D-248 (U31, the look): a bar on screen keeps its title label at the width measured in the last font, so a text
+    /// size or theme changed while the page shows (Appearance's own slider) cut its title ("APPEARAN..." in Norse at step 2;
+    /// the same page entered again was whole). Setting the title again makes UIKit measure it in the new font.
+    /// The look found that setting the title again is not enough (step 3 was still cut): the label and every view up to
+    /// the bar are told their size is stale, the bar lays out now, and once more on the next turn (SwiftUI may write the
+    /// title after this runs).
+    @MainActor
+    static func remeasureTitle(of bar: UINavigationBar, again: Bool = true) {
+        guard let title = bar.topItem?.title else { return }
+        func stale(_ view: UIView) {
+            for sub in view.subviews {
+                if let label = sub as? UILabel, (label.attributedText?.string ?? label.text) == title {
+                    var up: UIView? = label
+                    while let v = up, v !== bar {
+                        v.invalidateIntrinsicContentSize()
+                        v.setNeedsLayout()
+                        up = v.superview
+                    }
+                }
+                stale(sub)
+            }
+        }
+        stale(bar)
+        bar.setNeedsLayout()
+        bar.layoutIfNeeded()
+        if again { DispatchQueue.main.async { remeasureTitle(of: bar, again: false) } }
     }
 
     /// Every bar already on screen, and the appearance proxy for bars made later (a sheet's own stack).
@@ -1274,6 +1324,7 @@ enum TitleStyle {
             bar.compactScrollEdgeAppearance = nil
             bar.largeTitleTextAttributes = large
             bar.titleTextAttributes = inline
+            remeasureTitle(of: bar)
             bar.tintColor = BarTint.color
             for item in bar.items ?? [] {
                 for button in (item.leftBarButtonItems ?? []) + (item.rightBarButtonItems ?? []) + [item.backBarButtonItem].compactMap({ $0 }) {

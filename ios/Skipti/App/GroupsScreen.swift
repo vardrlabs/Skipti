@@ -87,8 +87,10 @@ struct PictureTile: View {
 /// one Balance, Expenses, Add and Settle up work on and opens Balance.
 struct GroupsScreen: View {
     var store: LedgerStore
-    /// Opens Balance on the group just chosen (or created, or joined).
+    /// Opens Balance on the group just chosen (or joined).
     var onOpen: () -> Void
+    /// D-248 (U30.6): a group just created: its page opens on Home's stack (`GroupOpening`), once the sheet has gone.
+    var onCreated: (String) -> Void = { _ in }
 
     @State private var groups: [NamedGroupWire] = []
     /// D-210 (Task 8 look): groups whose place for this account has not arrived.
@@ -101,6 +103,8 @@ struct GroupsScreen: View {
     @State private var copies: Set<String> = []
     /// D-208: the invitation being joined; its sheet hangs on this screen.
     @State private var joiningInvite: IncomingInvites.Item?
+    /// D-248 (U30.6): the group the sheet made, opened once it has gone.
+    @State private var createdID: String?
 
     var body: some View {
         ScrollView {
@@ -155,12 +159,16 @@ struct GroupsScreen: View {
         .auroraBackground()
         .navigationTitle("Groups")
         .navigationBarTitleDisplayMode(.large)
-        .sheet(isPresented: $creating) {
+        .sheet(isPresented: $creating, onDismiss: {
+            if let id = createdID { createdID = nil; onCreated(id) }
+        }) {
             NavigationStack {
-                CreateGroupSheet(store: store, needsYourName: needsYourName) { _ in
+                CreateGroupSheet(store: store, needsYourName: needsYourName) { created in
+                    createdID = created.group.id
                     creating = false
                     reload()
-                    onOpen()
+                    // Every screen reads the new group (Home lists it under its page).
+                    OverviewActions.changed()
                 }
             }
         }

@@ -111,6 +111,17 @@ struct PeopleDraft: Equatable {
 
     /// The button reads "Add a person" once every row is gone.
     var addLabel: String { rows.isEmpty ? "Add a person" : "Add another person" }
+
+    /// D-248 (U29.2): Return on row `id`: the row to focus next, or nil (editing ends). The last row with a name adds a
+    /// new row and moves to it; an empty last row ends editing; any other row moves to the one below. Android's twin is
+    /// `PeopleDraft.afterReturn`.
+    mutating func afterReturn(on id: Int) -> Int? {
+        guard let index = rows.firstIndex(where: { $0.id == id }) else { return nil }
+        if index < rows.count - 1 { return rows[index + 1].id }
+        guard !rows[index].name.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+        add()
+        return rows.last?.id
+    }
 }
 
 struct CreateGroupSheet: View {
@@ -124,6 +135,8 @@ struct CreateGroupSheet: View {
     @State private var currency = DefaultCurrency.current
     @State private var yourName = ""
     @State private var people = PeopleDraft()
+    /// D-248 (U29.2): which person row has the keyboard.
+    @FocusState private var focusedRow: Int?
     @State private var error: String?
     /// D-187 (the founder): a picture when making the group.
     @State private var pictureEmoji: String?
@@ -173,7 +186,8 @@ struct CreateGroupSheet: View {
                 if !people.rows.isEmpty {
                     ListCard {
                         ForEach(Array($people.rows.enumerated()), id: \.element.id) { index, $row in
-                            FieldRow("Name", text: $row.name, spoken: "Person \(index + 1)") {
+                            FieldRow("Name", text: $row.name, spoken: "Person \(index + 1)",
+                                     form: FieldFocus(id: row.id, focus: $focusedRow) { returned(on: row.id) }) {
                                 // D-225 (Design 8): Lucide's x at `clearGlyph` in textFaint, in a 48 target; only the
                                 // glyph removes.
                                 Button {
@@ -228,6 +242,13 @@ struct CreateGroupSheet: View {
         // D-224 fix wave (F1): the sheet has finished closing, so the shell shows: the first group's check begins now.
         // Nothing waits (a sheet closed without a create, or a later group): nothing happens.
         .onDisappear { DoneCenter.shared.begin() }
+    }
+
+    /// D-248 (U29.2): Return on a person row (`PeopleDraft.afterReturn`). A new row appears first, then takes the
+    /// keyboard on the next turn of the run loop (it has to exist to be focused).
+    private func returned(on id: Int) {
+        guard let next = people.afterReturn(on: id) else { focusedRow = nil; return }
+        DispatchQueue.main.async { focusedRow = next }
     }
 
     private var canCreate: Bool {

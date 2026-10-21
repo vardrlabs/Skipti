@@ -227,7 +227,7 @@ struct SettleFirstProgress: Equatable {
 /// The Redistribute screen's state for one currency: who is ticked, equal
 /// shares (core's) or typed ones, and whether they add up. Every amount is
 /// core's: the equal split is `ffiRedistributeEqual`, a typed amount is read
-/// by `ffiMoneyParseMinor` and given the balance's sign, and "adds up" is
+/// by `ffiMoneyParseTyped` (D-248: a decimal comma reads) and given the balance's sign, and "adds up" is
 /// `ffiRedistributionTally`.
 struct RedistributeModel: Equatable {
     enum Status: Equatable {
@@ -296,7 +296,7 @@ struct RedistributeModel: Equatable {
         var out: [IdAmount] = []
         var complete = true
         for id in tickedInOrder {
-            guard let minor = try? ffiMoneyParseMinor(digits: (typed[id] ?? "").trimmingCharacters(in: .whitespaces), currencyCode: currency),
+            guard let minor = AmountEntry.minor(typed[id] ?? "", currency: currency),
                   minor > 0 else { complete = false; continue }
             out.append(IdAmount(id: id, amountMinor: balance < 0 ? -minor : minor))
         }

@@ -142,7 +142,7 @@ enum SettleAll {
 }
 
 /// D-247 (decisions 167, 183): a card's "Another amount": what the field starts with and what it may hold. Every amount
-/// is core's: the field is parsed by `ffiMoneyParseMinor` and checked by `ffiCheckSettlement`; the shell only compares
+/// is core's: the field is parsed by `ffiMoneyParseTyped` (D-248: a decimal comma reads) and checked by `ffiCheckSettlement`; the shell only compares
 /// two of core's minor-unit numbers (never adds or subtracts them). Android's twin is `OtherAmount` in SettleAll.kt.
 enum OtherAmount {
     /// What the field says about itself.
@@ -151,6 +151,8 @@ enum OtherAmount {
         case incomplete
         /// More than the debt: refused in words, Settle disabled (a partial never flips who owes whom).
         case tooMuch(String)
+        /// D-248 (U30.2): something typed that is not an amount: `AmountEntry`'s words, Settle disabled.
+        case notAnAmount(String)
         /// Settle records this many minor units.
         case settles(Int64)
     }
@@ -173,9 +175,12 @@ enum OtherAmount {
     /// `text` against the debt (`debt`, the card's amount, always above 0). `check` is core's settlement check of the
     /// amount (`SettleAll.settlement(..., amount:)`); a refusal reads as incomplete.
     static func verdict(_ text: String, debt: Int64, currency: String, youOwe: Bool, other: String,
-                        check: (Int64) throws -> Void) -> Verdict {
-        guard let minor = try? ffiMoneyParseMinor(digits: text.trimmingCharacters(in: .whitespaces), currencyCode: currency),
-              minor > 0 else { return .incomplete }
+                        locale: Locale = .autoupdatingCurrent, check: (Int64) throws -> Void) -> Verdict {
+        if AmountEntry.isBlank(text) { return .incomplete }
+        guard let minor = AmountEntry.minor(text, currency: currency) else {
+            return .notAnAmount(AmountEntry.likeWords(currency: currency, locale: locale))
+        }
+        guard minor > 0 else { return .incomplete }
         if minor > debt { return .tooMuch(SettleAllCopy.moreThanDebt(youOwe: youOwe, other: other)) }
         guard (try? check(minor)) != nil else { return .incomplete }
         return .settles(minor)
@@ -401,7 +406,7 @@ struct SettleAllScreen: View {
                     settle(live, currency: draft.currency, named: draft.named,
                            key: SettleAll.key(named: draft.named, currency: draft.currency, entry: live), amount: amount)
                     return nil
-                case .tooMuch(let words): return words
+                case .tooMuch(let words), .notAnAmount(let words): return words
                 case .incomplete: return nil
                 }
             }, onCancel: { otherAmount = nil })
@@ -548,7 +553,7 @@ struct SettleAllScreen: View {
             #endif
             error = nil
         } catch LedgerStore.GroupStoreError.needsYourName {
-            error = String(localized: "Add your name on Balance first.")
+            error = String(localized: "Add your name first.")
         } catch {
             self.error = "Could not load the ledger. \(String(describing: error))"
         }
@@ -647,6 +652,7 @@ struct OtherAmountSheet: View {
     /// The cap's line: the field's own (more than the debt the sheet opened on), else the tap's refusal.
     static func capWords(_ verdict: OtherAmount.Verdict, refused: String?) -> String? {
         if case .tooMuch(let words) = verdict { return words }
+        if case .notAnAmount(let words) = verdict { return words }
         return refused
     }
 

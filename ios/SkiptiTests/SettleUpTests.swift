@@ -71,7 +71,8 @@ final class SettleUpTests: XCTestCase {
         XCTAssertEqual(OtherAmount.prefill(debt: 1_005, currency: "JPY"), "1005")
         let ok: (Int64) throws -> Void = { _ in }
         func verdict(_ text: String, youOwe: Bool = false) -> OtherAmount.Verdict {
-            OtherAmount.verdict(text, debt: 45_000, currency: "INR", youOwe: youOwe, other: "Ana", check: ok)
+            OtherAmount.verdict(text, debt: 45_000, currency: "INR", youOwe: youOwe, other: "Ana",
+                                locale: Locale(identifier: "en_US"), check: ok)
         }
         XCTAssertEqual(verdict("450.00"), .settles(45_000), "the whole debt")
         XCTAssertEqual(verdict("450"), .settles(45_000))
@@ -82,9 +83,19 @@ final class SettleUpTests: XCTestCase {
         XCTAssertEqual(verdict("451", youOwe: true), .tooMuch("That is more than you owe Ana."))
         XCTAssertEqual(verdict("99999999"), .tooMuch("That is more than Ana owes."))
         // Settle disabled, nothing said.
-        for text in ["", "0", "0.00", "abc", "1.2.3", "-5", "₹10"] {
+        for text in ["", "  ", "0", "0.00", "0,00", "-5"] {
             XCTAssertEqual(verdict(text), .incomplete, "'\(text)'")
         }
+        // D-248 (U30.2): a decimal comma reads; what is not an amount is said, with an example in the phone's mark.
+        XCTAssertEqual(verdict("200,50"), .settles(20_050), "a decimal comma")
+        for text in ["abc", "1.2.3", "₹10", "1,000.00", "2,00,000"] {
+            XCTAssertEqual(verdict(text), .notAnAmount("Enter an amount like 12.50."), "'\(text)'")
+        }
+        XCTAssertEqual(OtherAmount.verdict("abc", debt: 45_000, currency: "INR", youOwe: false, other: "Ana",
+                                           locale: Locale(identifier: "de_DE"), check: ok),
+                       .notAnAmount("Enter an amount like 12,50."))
+        XCTAssertEqual(OtherAmountSheet.capWords(.notAnAmount("w"), refused: nil), "w")
+        XCTAssertFalse(OtherAmountSheet.settles(.notAnAmount("w")))
         // Core's check refusing reads as incomplete (never settles).
         XCTAssertEqual(OtherAmount.verdict("10", debt: 45_000, currency: "INR", youOwe: false, other: "Ana") { _ in
             throw CoreError.InvalidInput("no")
