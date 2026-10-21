@@ -640,6 +640,11 @@ RustBuffer uniffi_skipti_core_fn_func_ffi_settlement_payload(RustBuffer from, Ru
 RustBuffer uniffi_skipti_core_fn_func_ffi_snapshot_for_group(RustBuffer snapshot, RustBuffer group, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SKIPTI_CORE_FN_FUNC_FFI_SNAPSHOT_PERSONAL
+#define UNIFFI_FFIDEF_UNIFFI_SKIPTI_CORE_FN_FUNC_FFI_SNAPSHOT_PERSONAL
+RustBuffer uniffi_skipti_core_fn_func_ffi_snapshot_personal(RustBuffer snapshot, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SKIPTI_CORE_FN_FUNC_FFI_SPLIT_COMPUTE
 #define UNIFFI_FFIDEF_UNIFFI_SKIPTI_CORE_FN_FUNC_FFI_SPLIT_COMPUTE
 RustBuffer uniffi_skipti_core_fn_func_ffi_split_compute(int64_t total_minor, RustBuffer currency_code, RustBuffer members, RustBuffer spec, RustCallStatus *_Nonnull out_status
@@ -685,6 +690,11 @@ RustBuffer uniffi_skipti_core_fn_func_ffi_group_stats(RustBuffer expenses, RustB
 #ifndef UNIFFI_FFIDEF_UNIFFI_SKIPTI_CORE_FN_FUNC_FFI_OVERVIEW
 #define UNIFFI_FFIDEF_UNIFFI_SKIPTI_CORE_FN_FUNC_FFI_OVERVIEW
 RustBuffer uniffi_skipti_core_fn_func_ffi_overview(RustBuffer groups, RustBuffer expenses, RustBuffer settlements, RustBuffer redistributions, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SKIPTI_CORE_FN_FUNC_FFI_SPENDING
+#define UNIFFI_FFIDEF_UNIFFI_SKIPTI_CORE_FN_FUNC_FFI_SPENDING
+RustBuffer uniffi_skipti_core_fn_func_ffi_spending(RustBuffer expenses, RustBuffer viewer_ids, uint64_t from_ms, uint64_t until_ms, RustBuffer view, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SKIPTI_CORE_FN_FUNC_FFI_YOUR_EFFECT
@@ -1312,6 +1322,12 @@ uint16_t uniffi_skipti_core_checksum_func_ffi_snapshot_for_group(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SKIPTI_CORE_CHECKSUM_FUNC_FFI_SNAPSHOT_PERSONAL
+#define UNIFFI_FFIDEF_UNIFFI_SKIPTI_CORE_CHECKSUM_FUNC_FFI_SNAPSHOT_PERSONAL
+uint16_t uniffi_skipti_core_checksum_func_ffi_snapshot_personal(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SKIPTI_CORE_CHECKSUM_FUNC_FFI_SPLIT_COMPUTE
 #define UNIFFI_FFIDEF_UNIFFI_SKIPTI_CORE_CHECKSUM_FUNC_FFI_SPLIT_COMPUTE
 uint16_t uniffi_skipti_core_checksum_func_ffi_split_compute(void
@@ -1363,6 +1379,12 @@ uint16_t uniffi_skipti_core_checksum_func_ffi_group_stats(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SKIPTI_CORE_CHECKSUM_FUNC_FFI_OVERVIEW
 #define UNIFFI_FFIDEF_UNIFFI_SKIPTI_CORE_CHECKSUM_FUNC_FFI_OVERVIEW
 uint16_t uniffi_skipti_core_checksum_func_ffi_overview(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SKIPTI_CORE_CHECKSUM_FUNC_FFI_SPENDING
+#define UNIFFI_FFIDEF_UNIFFI_SKIPTI_CORE_CHECKSUM_FUNC_FFI_SPENDING
+uint16_t uniffi_skipti_core_checksum_func_ffi_spending(void
     
 );
 #endif
