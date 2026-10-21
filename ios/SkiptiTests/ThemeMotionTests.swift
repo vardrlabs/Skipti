@@ -1065,8 +1065,10 @@ final class ThemeMotionTests: XCTestCase {
         // D-234 (A2, decision 80): the App icon rows open through the door too (AccountHubScreen's AppIconSection).
         // D-243 (amended on purpose): ThemeMotion.swift's third reader is `ArtTurn` (You's turning ring), beside ArtCanvas
         // and RuneLayer.
+        // D-250 (amended on purpose): ThemeMotion.swift's readers 4 to 7 are the change helpers (RowsMotion, Reveal,
+        // MoneyChange, FillMotion); every sweep site moves through them, so no other file gained a reader.
         XCTAssertEqual(readers, ["AccountHubScreen.swift": 1, "DoneMoments.swift": 4, "HomeShell.swift": 1, "ListRows.swift": 1,
-                                 "OverviewScreen.swift": 1, "Settled.swift": 1, "SkiptiTabBar.swift": 2, "ThemeMotion.swift": 3,
+                                 "OverviewScreen.swift": 1, "Settled.swift": 1, "SkiptiTabBar.swift": 2, "ThemeMotion.swift": 7,
                                  // D-245: the welcome's step change and its progress (a moment) read the door.
                                  "Welcome.swift": 2],
                        "every reader reads the door")
@@ -1494,6 +1496,192 @@ final class ThemeMotionTests: XCTestCase {
                                 }
         """), "lit runes only, each its own glyph's glow in the ring's gold")
     }
+
+    // MARK: - D-250 (decision 194): the change motion (goldens from .drafts/d250/goldens.out, re-derived in Python)
+
+    /// ChangeMotion's values POINT at the ones that already exist (the audit's table): the switch's travel, the toast's
+    /// way in and its ease and rise, Android's page, the welcome's sweep, the bar's fade. Goldens retyped, and the
+    /// pointers read in the source (a literal copy would drift). Negative: none of them is a literal of its own.
+    func testChangeMotionPointsAtTheValuesThatExist() throws {
+        XCTAssertEqual(ChangeMotion.change, 0.2, accuracy: 1e-12)
+        XCTAssertEqual(ChangeMotion.number, 0.2, accuracy: 1e-12)
+        XCTAssertTrue(ChangeMotion.numberEase == (0.2, 0.7, 0.3, 1.0))
+        XCTAssertEqual(ChangeMotion.rise, 10)
+        XCTAssertEqual(ChangeMotion.page, 0.25)
+        XCTAssertEqual(ChangeMotion.fill, 0.9)
+        XCTAssertEqual(ChangeMotion.fade, 0.15)
+        XCTAssertEqual(ChangeMotion.change, Double(ThemeArt.m("switchTravel")))
+        XCTAssertEqual(ChangeMotion.number, ToastMotion.fadeIn)
+        XCTAssertEqual(ChangeMotion.fill, WelcomeProgress.sweepSeconds)
+        XCTAssertEqual(ChangeMotion.Kind.allCases.map(ChangeMotion.seconds), [0.2, 0.2, 0.25, 0.9, 0.15].map { $0 })
+        let table = try motionSection("enum ChangeMotion {", to: "\n}\n")
+        for pointer in ["static let change = Double(ThemeArt.m(\"switchTravel\"))", "static let number = ToastMotion.fadeIn",
+                        "static let numberEase = ToastMotion.ease", "static let rise = ToastMotion.rise",
+                        "static let fill = WelcomeProgress.sweepSeconds"] {
+            XCTAssertTrue(table.contains(pointer), pointer)
+        }
+        XCTAssertFalse(table.contains("static let change = 0") || table.contains("static let number = 0")
+                       || table.contains("static let fill = 0"), "a value of its own")
+        // Every kind is a cut when reduced and moves otherwise; nothing reads power saving.
+        for kind in ChangeMotion.Kind.allCases {
+            XCTAssertNil(ChangeMotion.animation(kind, reduced: true), "\(kind) cuts when reduced")
+            XCTAssertNotNil(ChangeMotion.animation(kind, reduced: false), "\(kind) moves")
+        }
+        XCTAssertFalse(table.contains("PowerState") || table.contains("lowPower"), "never power saving")
+    }
+
+    /// The fill sweeps on the welcome's own in-out ease (goldens.out). Negatives: not linear at a quarter, never past 1.
+    func testTheFillSweepsAsTheWelcomeDoes() {
+        let goldens: [(Double, Double)] = [(0, 0), (0.1, 0.024691), (0.225, 0.125), (0.45, 0.5), (0.675, 0.875),
+                                           (0.8, 0.975309), (0.9, 1), (1.2, 1)]
+        for (t, share) in goldens { near(FillCurve.share(t, duration: 0.9), share, 1e-6, "share at \(t)") }
+        XCTAssertNotEqual(FillCurve.share(0.225, duration: 0.9), 0.25, accuracy: 1e-3, "not linear")
+        for step in 0...40 {
+            let t = Double(step) * 0.05
+            XCTAssertTrue((0...1).contains(FillCurve.share(t, duration: 0.9)), "in 0...1 at \(t)")
+        }
+    }
+
+    /// A roll counts down only when the value falls below the one shown; the first value counts up. A fill sweeps only
+    /// from a value already shown, and never when reduced (the door). Negatives in each table.
+    func testTheRollAndTheFillKnowTheirWay() {
+        XCTAssertFalse(MoneyChange.countsDown(from: nil, to: 5), "the first value")
+        XCTAssertTrue(MoneyChange.countsDown(from: 10, to: 5))
+        XCTAssertFalse(MoneyChange.countsDown(from: 5, to: 10))
+        XCTAssertFalse(MoneyChange.countsDown(from: 5, to: 5))
+        XCTAssertTrue(MoneyChange.countsDown(from: 0, to: -300), "a balance going negative counts down")
+        XCTAssertFalse(FillMotion.sweeps(reduced: false, seen: nil), "the first read lands at once")
+        XCTAssertTrue(FillMotion.sweeps(reduced: false, seen: 0.3))
+        XCTAssertFalse(FillMotion.sweeps(reduced: true, seen: 0.3), "reduced: a cut")
+    }
+
+    /// You's ring sweeps in its share and lights runes as it passes them: at rest the count's own integer rounding, mid
+    /// sweep the share's, which agree at every rest (totals 1 to 8, goldens.py). A sweep from 5/7 to 6/7 lights 18 at
+    /// 0.729167. Negative: just under that share it is still 17.
+    func testTheRingLightsRunesAsItSweeps() {
+        for total in 1...8 {
+            for done in 0...total {
+                let share = RuneRing.share(done: done, total: total)
+                XCTAssertEqual(RuneRing.lit(share: share), RuneRing.lit(done: done, total: total), "\(done) of \(total)")
+                XCTAssertEqual(RuneRing(done: done, total: total).fill, share)
+                XCTAssertEqual(CompletionRing(done: done, total: total).fill, share)
+            }
+        }
+        XCTAssertEqual(RuneRing.share(done: 3, total: 0), 0)
+        XCTAssertEqual(RuneRing.share(done: 9, total: 7), 1, "never past the whole")
+        XCTAssertEqual(RuneRing.lit(share: 0.729167), 18)
+        XCTAssertEqual(RuneRing.lit(share: 0.7291), 17)
+        XCTAssertEqual(RuneRing.lit(share: 1), 24)
+        var last = 0
+        for step in 0...1000 {
+            let lit = RuneRing.lit(share: Double(step) / 1000)
+            XCTAssertGreaterThanOrEqual(lit, last, "never unlights while it fills")
+            last = lit
+        }
+    }
+
+    /// Rows with no id of their own get unique keys: each repeat numbered. Negative: no two keys alike.
+    func testRowsWithoutIdsGetUniqueKeys() {
+        XCTAssertEqual(MotionKeys.unique(["a", "b", "a", "a"]), ["a", "b", "a#1", "a#2"])
+        XCTAssertEqual(MotionKeys.unique([]), [])
+        let keys = MotionKeys.unique(["Sam/INR", "Sam/INR", "Ana/INR", "Sam/USD"])
+        XCTAssertEqual(Set(keys).count, keys.count)
+    }
+
+    /// Settle up's card is keyed by its group, currency and person, never its place or its amount: a partial settle
+    /// keeps the card (the amount rolls), another currency is another card.
+    func testASettleCardKeepsItsIdentity() {
+        XCTAssertEqual(SettleAll.cardID(group: "g", currency: "INR", entry: ShareOut(id: "p", minorUnits: -500)), "g/INR/p")
+        XCTAssertEqual(SettleAll.cardID(group: "g", currency: "INR", entry: ShareOut(id: "p", minorUnits: -500)),
+                       SettleAll.cardID(group: "g", currency: "INR", entry: ShareOut(id: "p", minorUnits: -200)), "a partial keeps the card")
+        XCTAssertNotEqual(SettleAll.cardID(group: "g", currency: "INR", entry: ShareOut(id: "p", minorUnits: -500)),
+                          SettleAll.cardID(group: "g", currency: "USD", entry: ShareOut(id: "p", minorUnits: -500)))
+    }
+
+    /// Whether a helper's source reads the door: the environment reader, the animation through `ChangeMotion.animation`
+    /// with `reduceMotion` as its input, and no read of power saving or the phone's own flag.
+    static func readsTheDoor(_ helper: String) -> Bool {
+        helper.contains("@Environment(\\.motionReduced) private var reduceMotion")
+            && helper.components(separatedBy: "\n").contains { $0.contains("ChangeMotion.animation(") && $0.contains("reduceMotion") }
+            && !["PowerState", "lowPower", "artTicks", "isReduceMotionEnabled", "accessibilityReduceMotion", "withAnimation"]
+                .contains { helper.contains($0) }
+    }
+
+    /// D-250: every change helper reads the door and never power saving; the window's crossfade asks the imperative door
+    /// first. Negatives: the checker refuses a helper with no door, one that reads power saving, and one that animates
+    /// with `withAnimation` behind the door's back.
+    func testEveryChangeHelperReadsTheDoor() throws {
+        for start in ["struct RowsMotion<Value: Equatable>: ViewModifier {", "struct Reveal<Value: Equatable>: ViewModifier {",
+                      "struct MoneyChange: ViewModifier {", "struct FillMotion: ViewModifier {"] {
+            XCTAssertTrue(Self.readsTheDoor(try motionSection(start, to: "\n}\n")), start)
+        }
+        let money = try motionSection("struct MoneyChange: ViewModifier {", to: "\n}\n")
+        XCTAssertTrue(money.contains(".contentTransition(reduceMotion ? .identity : .numericText(countsDown:"), "the roll cuts too")
+        XCTAssertFalse(money.contains("Double("), "no Double made from money")
+        // The leaving card slides out to the trailing edge and fades; it comes back by fading (both inert outside a
+        // door-read change).
+        let leaves = try motionSection("static var cardLeaves: AnyTransition {", to: "\n    }\n")
+        XCTAssertTrue(leaves.contains(".asymmetric(insertion: .opacity, removal: .move(edge: .trailing).combined(with: .opacity))"))
+        let fade = try motionSection("enum ThemeCrossfade {", to: "\n}\n")
+        XCTAssertTrue(fade.contains("guard !MotionSetting.reducedNow(),"), "the imperative door first")
+        XCTAssertTrue(fade.contains("UIView.animate(withDuration: ChangeMotion.fade,"))
+        XCTAssertTrue(fade.contains("snapshot.isUserInteractionEnabled = false"), "the snapshot takes no touches")
+        XCTAssertFalse(fade.contains("PowerState") || fade.contains("lowPower"))
+        // The checker's negatives.
+        XCTAssertFalse(Self.readsTheDoor("struct X: ViewModifier { func body(content: Content) -> some View { content.animation(.easeInOut, value: v) } }"))
+        XCTAssertFalse(Self.readsTheDoor("""
+            @Environment(\\.motionReduced) private var reduceMotion
+            content.animation(ChangeMotion.animation(.change, reduced: reduceMotion || PowerState.shared.lowPower), value: v)
+            """))
+        XCTAssertFalse(Self.readsTheDoor("""
+            @Environment(\\.motionReduced) private var reduceMotion
+            content.animation(ChangeMotion.animation(.change, reduced: reduceMotion), value: v).onTapGesture { withAnimation { v.toggle() } }
+            """))
+    }
+
+    /// D-250: the sweep's sites move through the helpers, and nothing outside them animates a change behind the door:
+    /// every number roll is MoneyChange's (no other `.contentTransition(`), every `withAnimation` left in the app is one
+    /// of the four gated ones (the App icon rows, two pops to root, the scroll to top), and no row list keyed by its
+    /// place remains where rows come and go. Negative: New group's ungated spring is gone.
+    func testTheSweepMovesThroughTheHelpers() throws {
+        var transitions: [String: Int] = [:], springs: [String: Int] = [:]
+        for file in try appFiles() {
+            let text = try String(contentsOf: file, encoding: .utf8)
+            let code = text.components(separatedBy: "\n").map { line in
+                line.range(of: "//").map { String(line[..<$0.lowerBound]) } ?? line
+            }.joined(separator: "\n")
+            let t = code.components(separatedBy: ".contentTransition(").count - 1
+            let w = code.components(separatedBy: "withAnimation").count - 1
+            if t > 0 { transitions[file.lastPathComponent] = t }
+            if w > 0 { springs[file.lastPathComponent] = w }
+        }
+        XCTAssertEqual(transitions, ["ThemeMotion.swift": 1], "every roll is MoneyChange's")
+        XCTAssertEqual(springs, ["AccountHubScreen.swift": 1, "HomeShell.swift": 2, "SkiptiTabBar.swift": 1],
+                       "only the gated animations")
+        let sites: [(String, String)] = [
+            ("OverviewScreen.swift", ".moneyChange(first.amountMinor)"), ("OverviewScreen.swift", ".moneyChange(p.netMinor)"),
+            ("OverviewScreen.swift", ".rowsMotion(homeShape)"), ("OverviewScreen.swift", ".rowsMotion(pageShape)"),
+            ("OverviewScreen.swift", "id: \\.element.id) { i, e in"), ("HomeParts.swift", ".moneyChange(nets.first?.amountMinor ?? 0)"),
+            ("HomeParts.swift", ".fillMotion(SettledMeter.fraction(basisPoints))"), ("Settled.swift", ".fillMotion(SettledMeter.fraction(b.basisPoints))"),
+            ("SettleAll.swift", ".rowsMotion(SettleAll.shape(sections))"), ("SettleAll.swift", "ForEach(debts, id: \\.id) { debt in"),
+            ("SettleAll.swift", ".moneyChange(entry.minorUnits)"), ("ExpenseListView.swift", ".rowsMotion(shape)"),
+            ("ExpenseListView.swift", ".rowsMotion(expenses.isEmpty)"), ("AddExpenseScreen.swift", ".rowsMotion(formShape)"),
+            ("AddExpenseScreen.swift", ".reveals(error)"), ("GroupSheets.swift", ".rowsMotion(people.rows.map(\\.id))"),
+            ("Spending.swift", ".rowsMotion(view)"), ("Spending.swift", ".rowsMotion(pageShape)"), ("Spending.swift", ".moneyChange(first.totalMinor)"),
+            ("AccountHubScreen.swift", ".rowsMotion(shown.chosen)"), ("AccountHubScreen.swift", "ThemeCrossfade.change {"),
+            ("Profile.swift", ".fillMotion(progress.map { RuneRing.share(done: $0.done, total: $0.total) })"),
+            ("SettleAll.swift", ".transition(.cardLeaves)"), ("ExpenseListView.swift", ".transition(.cardLeaves)"),
+            ("Spending.swift", ".rowsMotion(\"\\(view.label)|\\(first?.currencyCode ?? \"none\")|\\(more)\")"),
+            ("YouProgress.swift", ".moneyChange(Int64(done))"), ("Welcome.swift", "ChangeMotion.animation(.page, reduced: reduceMotion)"),
+        ]
+        for (file, site) in sites { XCTAssertTrue(try appSource(file).contains(site), "\(file): \(site)") }
+        XCTAssertEqual(try appSource("DesignTokens.swift").components(separatedBy: ".rowsMotion(isEnabled)").count - 1, 4,
+                       "every button style brightens through the door")
+        let settle = try appSource("SettleAll.swift")
+        XCTAssertFalse(settle.contains("Array(debts.enumerated()), id: \\.offset"), "Settle up's cards keyed by place")
+        XCTAssertFalse(try appSource("GroupSheets.swift").contains("withAnimation"))
+    }
+
 }
 
 /// D-231: what `testTheRootHandsLessMotionToEveryView` saw.

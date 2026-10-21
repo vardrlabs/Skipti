@@ -125,6 +125,13 @@ struct ExpenseListView: View {
         count == 1 ? String(localized: "1 expense") : String(localized: "\(count) expenses")
     }
 
+    /// D-250: what the list shows, for RowsMotion: the chip, then every row's expense, section by section.
+    private var shape: [String] {
+        ["\(filter)"] + ExpenseSections.build(expenses, filter: filter).flatMap { s in
+            [s.groupID ?? "me"] + s.expenses.map(\.id)
+        }
+    }
+
     var body: some View {
         Group {
             if let loadError {
@@ -151,6 +158,7 @@ struct ExpenseListView: View {
                             Text(verbatim: actionError)
                                 .font(TypeRole.body())
                                 .foregroundStyle(Tokens.owed)
+                                .transition(.reveal)
                         }
 
                         chips
@@ -200,17 +208,25 @@ struct ExpenseListView: View {
                                     }
                                     // D-224 (Design 3): the warning as this row's question opens.
                                     .hapticWarning(when: confirmingDelete?.id == expense.id)
+                                    // D-250: a deleted row slides out as the rows below close up; Undo fades it back.
+                                    .transition(.cardLeaves)
                                 }
                             }
                             .glassCard(padding: 14) }
                         }
                     }
+                    // D-250: a deleted row fades and the rows below close the gap (an Undo brings it back); a chip's
+                    // pill and the filtered list cross over; the error line rises in.
+                    .rowsMotion(shape)
+                    .reveals(actionError)
                     .padding(16)
                     .shellScrollTop() // D-205
                 }
                 .auroraBackground() // D-176
             }
         }
+        // D-250: the last delete (or its Undo) crosses the empty state and the list over.
+        .rowsMotion(expenses.isEmpty)
         .navigationTitle("Expenses")
         .navigationBarTitleDisplayMode(.large)
         .navigationDestination(isPresented: $openSpending) { SpendingScreen(fromJustMeHeader: true) } // decision 206

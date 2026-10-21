@@ -209,8 +209,11 @@ struct LedgerCard<Tile: View>: View {
                 .foregroundStyle(Tokens.textDim)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
+                // D-250: the amount rolls when the group's net changes (core's signed minor units decide the way).
+                .moneyChange(nets.first?.amountMinor ?? 0)
             if let basisPoints {
                 SettledMeter(fraction: SettledMeter.fraction(basisPoints), big: false)
+                    .fillMotion(SettledMeter.fraction(basisPoints))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

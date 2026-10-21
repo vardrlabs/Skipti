@@ -678,6 +678,9 @@ struct YouHero: View {
             }
             AvatarView(avatar: avatar, name: name, size: 104)
         }
+        // D-250: a step done while away sweeps the ring from what it showed (the welcome's sweep; runes light as it
+        // passes); the first read lands at once.
+        .fillMotion(progress.map { RuneRing.share(done: $0.done, total: $0.total) })
         .frame(width: ThemeArt.m("ringBox"), height: ThemeArt.m("ringBox"))
     }
 

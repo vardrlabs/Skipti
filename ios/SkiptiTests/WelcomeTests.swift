@@ -583,7 +583,8 @@ final class WelcomeTests: XCTestCase {
         XCTAssertTrue(welcome.contains("set: @MainActor (String, String) -> Void = { SettingsSync.set($0, $1) }"))
         XCTAssertTrue(welcome.contains("{ AppIconSwitcher.applyIfNeeded(choice: $0, theme: $1) }"))
         XCTAssertTrue(welcome.contains("pageClosed: @MainActor () -> Void = { SettingsSync.pageClosed() }"))
-        XCTAssertTrue(welcome.contains("ThemeCard(theme: theme, selected: current == theme) { WelcomeLook.choose(theme) }"))
+        // D-250 (amended on purpose): the same write, inside the window's crossfade.
+        XCTAssertTrue(welcome.contains("ThemeCard(theme: theme, selected: current == theme) { ThemeCrossfade.change { WelcomeLook.choose(theme) } }"))
     }
 
     // MARK: - The name (decision 179)

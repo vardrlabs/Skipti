@@ -314,6 +314,13 @@ struct AddExpenseScreen: View {
         editing == nil ? String(localized: "Add expense") : String(localized: "Edit expense")
     }
 
+    /// D-250: the form's shape, for RowsMotion: which ledger, which rows and lines show (never what is typed).
+    private var formShape: [String] {
+        [justMe ? "me" : (named?.group.id ?? "none"), categoryParent ?? "none", selectedCategoryID == nil ? "hint" : "none",
+         kind.rawValue, summaryLine == nil ? "none" : "summary", splitProblem == nil ? "none" : "problem"]
+            + participants.sorted() + itemLines.map(\.id.uuidString)
+    }
+
     private var saveHint: String {
         editing == nil
             ? String(localized: "Records this expense in your ledger. It does not move money.")
@@ -378,12 +385,18 @@ struct AddExpenseScreen: View {
                         .font(TypeRole.body())
                         .foregroundStyle(Tokens.owed)
                         .accessibilityLabel(Text(verbatim: "Could not save. \(error)"))
+                        .transition(.reveal)
                 }
 
                 Text("Recorded in your ledger. It does not move money.")
                     .microLabelFont()
                     .foregroundStyle(Tokens.textDim)
             }
+            // D-250: the split reshaping moves: the sub-category row and its hint, a person's field as they join or
+            // leave the split, the kind's fields and hint, Itemised's lines, the summary and the problem lines; the
+            // save error rises in. The amount's own typing never moves anything (only whether a line shows does).
+            .rowsMotion(formShape)
+            .reveals(error)
             .padding(.horizontal, 16)
             .padding(.bottom, 16)
             .frame(maxWidth: .infinity, alignment: .leading)

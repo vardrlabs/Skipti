@@ -272,6 +272,8 @@ struct SpendingTile: View {
 struct SpendingSwitch: View {
     @Binding var view: SpendingView
     var compact = false
+    /// D-250: the chosen fill slides to the other half (one pill, `RowsMotion`).
+    @Namespace private var pill
 
     var body: some View {
         let shape = ThemeArt.pillShape(AppearanceState.shared.theme)
@@ -287,13 +289,14 @@ struct SpendingSwitch: View {
                         .padding(.horizontal, compact ? 10 : 8)
                         .padding(.vertical, compact ? 6 : 10)
                         .frame(maxWidth: compact ? nil : .infinity)
-                        .background { if chosen { shape.fill(Tokens.accent) } }
+                        .background { if chosen { shape.fill(Tokens.accent).matchedGeometryEffect(id: "chosen", in: pill) } }
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(chosen ? .isSelected : [])
             }
         }
+        .rowsMotion(view)
         .padding(3)
         .background(Tokens.surfaceRaised, in: shape)
     }
@@ -356,6 +359,8 @@ struct SpendingCard: View {
                                         .font(TypeRole.numeric(TypeScale.displayName + 4, weight: 700))
                                         .foregroundStyle(Tokens.text)
                                         .lineLimit(1).minimumScaleFactor(0.6)
+                                        // D-250: Just me to All (or a new expense) rolls the month's amount.
+                                        .moneyChange(first.totalMinor)
                                     if more > 0 {
                                         Text(verbatim: SpendingCopy.more(more))
                                             .font(TypeRole.body(TypeScale.detail)).foregroundStyle(Tokens.textDim)
@@ -380,6 +385,8 @@ struct SpendingCard: View {
             .accessibilityHint(Text(verbatim: SpendingCopy.hint))
             .accessibilityAddTraits(.isButton)
         }
+        // D-250: Just me to All crosses the card over (its amount rolls, its bar's slices move).
+        .rowsMotion("\(view.label)|\(first?.currencyCode ?? "none")|\(more)")
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassCard()
     }
@@ -408,6 +415,12 @@ struct SpendingScreen: View {
     }
     private var isCurrent: Bool { month == SpendingMonth.current() }
 
+    /// D-250: what the page shows, for RowsMotion: the view, the month, whether it failed, and its rows.
+    private var pageShape: [String] {
+        [SpendingPrefs.raw(view.wrappedValue), "\(month.year)-\(month.month)", error == nil ? "read" : "error", "\(table)"]
+            + (loaded?.out.rows.map(\.id) ?? [])
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
@@ -429,6 +442,9 @@ struct SpendingScreen: View {
                     }
                 }
             }
+            // D-250: Just me to All, a month to the next, and the page's rows: the note and the cards cross over, rows
+            // in and out move.
+            .rowsMotion(pageShape)
             .padding(16)
         }
         .auroraBackground()
@@ -498,6 +514,7 @@ struct SpendingScreen: View {
                     .font(TypeRole.numeric(TypeScale.largeTitle, weight: 700, relativeTo: .largeTitle))
                     .foregroundStyle(Tokens.text)
                     .lineLimit(1).minimumScaleFactor(0.6)
+                    .moneyChange(first.totalMinor)
                     .accessibilityLabel(Text(verbatim: RolesMoney.spoken(first.totalMinor, first.currencyCode)))
             }
             let others = l.out.currencies.dropFirst()
@@ -638,6 +655,8 @@ struct SpendingRow: View {
 /// "Chart" / "Table" on the where card (SPEC 8.4: every chart has a table view).
 struct ChartTableSwitch: View {
     @Binding var table: Bool
+    /// D-250: the chosen fill slides (one pill, `RowsMotion`).
+    @Namespace private var pill
 
     var body: some View {
         let shape = ThemeArt.pillShape(AppearanceState.shared.theme)
@@ -649,7 +668,7 @@ struct ChartTableSwitch: View {
                         .font(TypeRole.name(12))
                         .foregroundStyle(chosen ? Tokens.onAccent : Tokens.textDim)
                         .padding(.horizontal, 10).padding(.vertical, 5)
-                        .background { if chosen { shape.fill(Tokens.accent) } }
+                        .background { if chosen { shape.fill(Tokens.accent).matchedGeometryEffect(id: "chosen", in: pill) } }
                         .frame(minHeight: 32)
                         .contentShape(Rectangle())
                 }
@@ -657,6 +676,7 @@ struct ChartTableSwitch: View {
                 .accessibilityAddTraits(chosen ? .isSelected : [])
             }
         }
+        .rowsMotion(table)
         .padding(2)
         .background(Tokens.surfaceRaised, in: shape)
     }

@@ -1411,3 +1411,203 @@ extension ArtDraw {
         ctx.fill(Path(CGRect(x: at.x - side / 2, y: at.y - side / 2, width: side, height: side)), with: .color(Tokens.ring))
     }
 }
+
+// MARK: - D-250 (decision 194): the change motion
+
+/// D-250 (decision 194, the fluidity sweep): how a UI CHANGE moves: a row in or out, a line appearing, an amount or a
+/// count changing, a pill sliding, a button brightening, a meter or the ring filling, the theme changing. Every value
+/// POINTS at one that already exists (the audit, `.drafts/d249/audit.md` section 0), so nothing is invented. Android's
+/// twin is `ChangeMotion` in ThemeMotion.kt (its parity test reads this table). These are changes, not art: Reduce
+/// Motion and Less motion (the door, `\.motionReduced`) cut them; power saving never stills them (D-239: only the art
+/// reads it), as it never stills a moment.
+enum ChangeMotion {
+    /// Rows in and out, a pill sliding, a button brightening, a state swapping: the switch thumb's travel, easeInOut.
+    static let change = Double(ThemeArt.m("switchTravel"))
+    /// An amount or a count rolling, a line rising in: the toast's way in, on the toast's ease.
+    static let number = ToastMotion.fadeIn
+    static let numberEase = ToastMotion.ease
+    /// How far a line rises as it appears (Reveal): the toast's rise, in points.
+    static let rise = ToastMotion.rise
+    /// A page: Android's pushed window (the one page number that exists). iOS's own pushes and sheets slide by
+    /// themselves; the welcome's steps cross over in it.
+    static let page = 0.25
+    /// The settled meter and You's ring: the welcome's progress sweep, on its own ease (`WelcomeProgress.eased`).
+    static let fill = WelcomeProgress.sweepSeconds
+    /// A crossfade of the whole window (the person's theme or mode change): Android's bar fade, tween(150).
+    static let fade = 0.15
+
+    enum Kind: CaseIterable {
+        case change, number, page, fill, fade
+    }
+
+    static func seconds(_ kind: Kind) -> Double {
+        switch kind {
+        case .change: change
+        case .number: number
+        case .page: page
+        case .fill: fill
+        case .fade: fade
+        }
+    }
+
+    /// The animation of `kind`; nil (a cut) when motion is reduced. Never reads power saving.
+    static func animation(_ kind: Kind, reduced: Bool) -> Animation? {
+        guard !reduced else { return nil }
+        switch kind {
+        case .change, .page, .fade:
+            return .easeInOut(duration: seconds(kind))
+        case .number:
+            return .timingCurve(numberEase.0, numberEase.1, numberEase.2, numberEase.3, duration: number)
+        case .fill:
+            return Animation(FillCurve(duration: fill))
+        }
+    }
+}
+
+/// D-250: the fill's curve, `WelcomeProgress.eased` over `duration`, so the settled meter and You's ring sweep exactly
+/// as the welcome's progress line does (decision 192 ties them).
+struct FillCurve: CustomAnimation {
+    let duration: Double
+
+    /// The share of the change done `time` seconds in (0 at the start, 1 from `duration` on).
+    static func share(_ time: Double, duration: Double) -> Double { WelcomeProgress.eased(time / duration) }
+
+    func animate<V: VectorArithmetic>(value: V, time: TimeInterval, context: inout AnimationContext<V>) -> V? {
+        guard time < duration else { return nil }
+        return value.scaled(by: Self.share(time, duration: duration))
+    }
+}
+
+/// D-250: rows in and out (they fade, the rows below close the gap), a selection pill sliding, a button brightening, a
+/// state swapping in place: everything inside that changes when `value` changes moves over `ChangeMotion.change`. Hang it
+/// on the smallest stable container that holds the change (a card's stack, the form's stack), never on a ScrollView or
+/// a page (CLAUDE.md 10.1). Rows need STABLE ids (never `\.offset`). Reduced: a cut.
+struct RowsMotion<Value: Equatable>: ViewModifier {
+    let value: Value
+    @Environment(\.motionReduced) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content.animation(ChangeMotion.animation(.change, reduced: reduceMotion), value: value)
+    }
+}
+
+/// D-250: a line appearing (an error, a confirmation, a caption): it rises `ChangeMotion.rise` and fades in over the
+/// toast's way in (`ChangeMotion.number`, the toast's ease) and leaves at once (`AnyTransition.reveal`). `value` is what
+/// says whether the line shows. Reduced: a cut.
+struct Reveal<Value: Equatable>: ViewModifier {
+    let value: Value
+    @Environment(\.motionReduced) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content.animation(ChangeMotion.animation(.number, reduced: reduceMotion), value: value)
+    }
+}
+
+extension AnyTransition {
+    /// D-250: a card that is done (a settled payment) slides out to the trailing edge as it fades, so it does not sit
+    /// under the cards closing the gap; it comes back (an Undo) by fading in. Inert by itself, as `reveal`.
+    static var cardLeaves: AnyTransition {
+        .asymmetric(insertion: .opacity, removal: .move(edge: .trailing).combined(with: .opacity))
+    }
+
+    /// D-250: a revealed line's way in (rising from `ChangeMotion.rise` below, fading in) and out (at once). Inert by
+    /// itself: it moves only inside a `Reveal` (or `RowsMotion`) change, so the door decides.
+    static var reveal: AnyTransition {
+        .asymmetric(insertion: .opacity.combined(with: .offset(y: ChangeMotion.rise)), removal: .identity)
+    }
+}
+
+/// D-250: an amount or a count that changes rolls, digit by digit (`numericText`), counting down when it falls, over
+/// `ChangeMotion.number` on the toast's ease. `value` is core's integer behind the words (minor units, a count, basis
+/// points): never a Double made from money (ADR-0002); the words themselves stay core's string. Reduced: a cut.
+struct MoneyChange: ViewModifier {
+    let value: Int64
+    @Environment(\.motionReduced) private var reduceMotion
+    /// The value shown before this change: read in the change's own update, so the roll knows its direction.
+    @State private var last: Int64?
+
+    /// Down when the new value is below the one shown (the first value counts up).
+    static func countsDown(from last: Int64?, to value: Int64) -> Bool { value < (last ?? value) }
+
+    func body(content: Content) -> some View {
+        content
+            .contentTransition(reduceMotion ? .identity : .numericText(countsDown: Self.countsDown(from: last, to: value)))
+            .animation(ChangeMotion.animation(.number, reduced: reduceMotion), value: value)
+            .onAppear { last = value }
+            .onChange(of: value) { _, new in last = new }
+    }
+}
+
+/// D-250: a meter or You's ring filling: from what was shown to what is now over `ChangeMotion.fill` on the welcome's
+/// sweep (`FillCurve`). The drawing must be `Animatable` in its share (`SettledMeter`, `CompletionRing`, `RuneRing`), so
+/// it is drawn at every share between. `value` nil means not read yet: the first value lands at once (no sweep from
+/// empty on every visit). A moment's rule: reduced, a cut; power saving plays.
+struct FillMotion: ViewModifier {
+    let value: Double?
+    @Environment(\.motionReduced) private var reduceMotion
+    /// The value shown before this change (nil: none yet).
+    @State private var seen: Double?
+
+    /// It sweeps only from a value already shown, and only with motion.
+    static func sweeps(reduced: Bool, seen: Double?) -> Bool { !reduced && seen != nil }
+
+    func body(content: Content) -> some View {
+        content
+            .animation(ChangeMotion.animation(.fill, reduced: !Self.sweeps(reduced: reduceMotion, seen: seen)), value: value)
+            .onAppear { seen = value }
+            .onChange(of: value) { _, new in seen = new }
+    }
+}
+
+extension View {
+    /// D-250: see `RowsMotion`.
+    func rowsMotion<Value: Equatable>(_ value: Value) -> some View { modifier(RowsMotion(value: value)) }
+    /// D-250: see `Reveal`; the line itself takes `.transition(.reveal)`.
+    func reveals<Value: Equatable>(_ value: Value) -> some View { modifier(Reveal(value: value)) }
+    /// D-250: see `MoneyChange`.
+    func moneyChange(_ value: Int64) -> some View { modifier(MoneyChange(value: value)) }
+    /// D-250: see `FillMotion`.
+    func fillMotion(_ value: Double?) -> some View { modifier(FillMotion(value: value)) }
+}
+
+/// D-250: the person's theme or mode change crossfades the whole window from a snapshot of the old look over
+/// `ChangeMotion.fade`, instead of every colour and the art flipping in one frame. Only a change the person made (a
+/// theme card, the mode control, the welcome's look): never at launch, never sync applying another phone's setting
+/// (D-244). Outside a view, the door is `MotionSetting.reducedNow()`: reduced, a cut. Power saving never stills it.
+/// The snapshot takes no touches and is gone when the fade ends.
+@MainActor
+enum ThemeCrossfade {
+    /// Applies `change`, crossfading from the window as it looked before.
+    static func change(_ change: () -> Void) {
+        guard !MotionSetting.reducedNow(),
+              let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
+                .flatMap(\.windows).first(where: \.isKeyWindow),
+              let snapshot = window.snapshotView(afterScreenUpdates: false)
+        else {
+            change()
+            return
+        }
+        snapshot.isUserInteractionEnabled = false
+        snapshot.frame = window.bounds
+        window.addSubview(snapshot)
+        change()
+        UIView.animate(withDuration: ChangeMotion.fade, delay: 0, options: [.curveEaseInOut, .allowUserInteraction]) {
+            snapshot.alpha = 0
+        } completion: { _ in
+            snapshot.removeFromSuperview()
+        }
+    }
+}
+
+/// D-250: rows that have no id of their own (Home's people: one per name and currency) keyed by what they show, each
+/// repeat numbered, so every key is unique and a row keeps its key while the rows around it come and go.
+enum MotionKeys {
+    static func unique(_ base: [String]) -> [String] {
+        var seen: [String: Int] = [:]
+        return base.map { key in
+            let n = seen[key, default: 0]
+            seen[key] = n + 1
+            return n == 0 ? key : "\(key)#\(n)"
+        }
+    }
+}

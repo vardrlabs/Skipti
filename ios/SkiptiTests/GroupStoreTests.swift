@@ -243,7 +243,11 @@ final class GroupStoreTests: XCTestCase {
         for label in ["Your name", "Group", "You", "People"] {
             XCTAssertEqual(count("header(\"\(label)\")"), 1, label)
         }
-        XCTAssertTrue(sheets.contains("Button(people.addLabel) { withAnimation { people.add() } }\n                    .buttonStyle(SecondaryButtonStyle())"))
+        // D-250 (amended on purpose): the rows move through RowsMotion, the door's helper; the old ungated
+        // `withAnimation { people.add() }` played under Reduce Motion and Less motion. Negative: no withAnimation left.
+        XCTAssertTrue(sheets.contains("Button(people.addLabel) { people.add() }\n                    .buttonStyle(SecondaryButtonStyle())"))
+        XCTAssertTrue(sheets.contains(".rowsMotion(people.rows.map(\\.id))"), "the people rows move through the door")
+        XCTAssertFalse(sheets.contains("withAnimation"), "no ungated animation on New group")
         // FieldRow speaks its `spoken` name when given ("Person 2"), else its placeholder (Android's `FieldRow(spoken:)`).
         let rows = try String(contentsOf: url.deletingLastPathComponent().appendingPathComponent("ListRows.swift"), encoding: .utf8)
         XCTAssertTrue(rows.contains(".keyboardType(keyboard)\n            .accessibilityLabel(Text(verbatim: spoken ?? placeholder))"))

@@ -209,8 +209,9 @@ struct SettleLatch<Key: Equatable>: Equatable {
 /// meter shape (Aurora a capsule, Norse and Vardr Labs square). Decorative: the percent carries it. Android's twin is
 /// `SettledMeter` in Settled.kt.
 struct SettledMeter: View {
-    /// A drawing ratio of core's basis points, never money.
-    let fraction: Double
+    /// A drawing ratio of core's basis points, never money. D-250: `Animatable` in it, so `FillMotion` sweeps the fill
+    /// from the share shown to the new one.
+    var fraction: Double
     var big = true
 
     /// art.py 19: big 10, small 6; Vardr Labs draws thinner (7 and 4).
@@ -258,6 +259,14 @@ struct SettledMeter: View {
     }
 }
 
+/// D-250: the meter is drawn at every share of a sweep (`FillMotion`).
+extension SettledMeter: Animatable {
+    var animatableData: Double {
+        get { fraction }
+        set { fraction = newValue }
+    }
+}
+
 /// D-221 (L43, Design 2, 6): the group's Settled card: "Settled" (Norse's mark) and core's percent on one baseline, the
 /// big meter, then what is still to settle in core's money. One block per currency (the settlement currency first);
 /// with more than one, "Settled" heads the card once and each block's row names its currency in the kicker face.
@@ -286,9 +295,14 @@ struct SettledCard: View {
                             .font(TypeRole.numeric(TypeScale.settledPercent, weight: 700))
                             .foregroundStyle(Tokens.text)
                             .lineLimit(1)
+                            // D-250: the percent rolls with the meter.
+                            .moneyChange(Int64(b.basisPoints))
                     }
                     SettledMeter(fraction: SettledMeter.fraction(b.basisPoints), big: true)
+                        // D-250: a settle sweeps the meter (the welcome's sweep); the first read lands at once.
+                        .fillMotion(SettledMeter.fraction(b.basisPoints))
                     Text(verbatim: left).font(TypeRole.body(TypeScale.detail)).foregroundStyle(Tokens.textDim)
+                        .moneyChange(Int64(b.outstandingMinor))
                 }
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(Text(verbatim: SettledSpoken.block(

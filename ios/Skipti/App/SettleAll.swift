@@ -109,6 +109,21 @@ enum SettleAll {
         "\(named.group.id)/\(currency)/\(entry.id)/\(entry.minorUnits)"
     }
 
+    /// D-250: a card's identity on the screen: the group, the currency and the other person (never its place in the list,
+    /// never its amount: a partial settle keeps the card and rolls the amount). Android's twin is `SettleAll.cardId`.
+    static func cardID(group: String, currency: String, entry: ShareOut) -> String {
+        "\(group)/\(currency)/\(entry.id)"
+    }
+
+    /// D-250: what Settle up shows, for RowsMotion: each group's state and its cards' identities.
+    static func shape(_ sections: [SettleSection]) -> [String] {
+        sections.flatMap { s in
+            ["\(s.named.group.id):\(s.state)"] + s.lines.flatMap { line in
+                line.entries.map { cardID(group: s.named.group.id, currency: line.currencyCode, entry: $0) }
+            }
+        }
+    }
+
     /// Every card's key, as the screen shows them.
     static func keys(_ sections: [SettleSection]) -> [String] {
         sections.flatMap { s in s.lines.flatMap { line in line.entries.map { key(named: s.named, currency: line.currencyCode, entry: $0) } } }
@@ -382,6 +397,7 @@ struct SettleAllScreen: View {
                 // shows the same line).
                 if let error = error ?? SettleHold.shared.failure {
                     Text(verbatim: error).font(TypeRole.body()).foregroundStyle(Tokens.owed)
+                        .transition(.reveal)
                 }
                 if loaded && sections.isEmpty && error == nil {
                     Text(verbatim: SettleAllCopy.empty(groupCount: groupCount)).font(TypeRole.body()).foregroundStyle(Tokens.textDim).glassCard()
@@ -390,6 +406,10 @@ struct SettleAllScreen: View {
                     sectionView(section)
                 }
             }
+            // D-250: a settled card leaves (it fades, the cards below close the gap) and an Undo brings it back; a group
+            // turning settled crossfades to its panel; the error line rises in.
+            .rowsMotion(SettleAll.shape(sections))
+            .reveals(error ?? SettleHold.shared.failure)
             .padding(16)
             .shellScrollTop() // D-205
         }
@@ -446,9 +466,15 @@ struct SettleAllScreen: View {
             .background(Tokens.owingSoft, in: ThemeArt.panelShape(AppearanceState.shared.theme, radius: 18, continuous: true))
             .accessibilityElement(children: .combine)
         } else {
-            let debts = section.lines.flatMap { line in line.entries.map { (line.currencyCode, $0) } }
-            ForEach(Array(debts.enumerated()), id: \.offset) { _, pair in
-                debtCard(pair.1, currency: pair.0, named: named)
+            // D-250: keyed by the card's person and currency (`SettleAll.cardID`), never its place: the card that
+            // leaves is the one settled, and a partial keeps its card while the amount rolls.
+            let debts = section.lines.flatMap { line in
+                line.entries.map { (id: SettleAll.cardID(group: named.group.id, currency: line.currencyCode, entry: $0),
+                                    currency: line.currencyCode, entry: $0) }
+            }
+            ForEach(debts, id: \.id) { debt in
+                debtCard(debt.entry, currency: debt.currency, named: named)
+                    .transition(.cardLeaves)
             }
             plan(section.lines, named: named)
         }
@@ -469,6 +495,8 @@ struct SettleAllScreen: View {
             .font(TypeRole.numeric(19, weight: 600))
             .foregroundStyle(youOwe ? Tokens.owed : Tokens.owing)
             .lineLimit(1).minimumScaleFactor(0.6)
+            // D-250: another amount leaves the remainder: it rolls down.
+            .moneyChange(entry.minorUnits)
         return VStack(alignment: .leading, spacing: 14) {
             Group {
                 // §11.7: at accessibility sizes the amount gets its own line.
@@ -601,6 +629,7 @@ struct OtherAmountSheet: View {
 
     var body: some View {
         let verdict = self.verdict
+        let cap = OtherAmountSheet.capWords(verdict, refused: refused, rested: rested)
         NavigationStack {
             VStack(spacing: 20) {
                 VStack(spacing: 10) {
@@ -623,8 +652,9 @@ struct OtherAmountSheet: View {
                         .padding(.horizontal, 12)
                         .padding(.vertical, 4)
                         .themePill(.accent, onPage: false)
-                    if let words = OtherAmountSheet.capWords(verdict, refused: refused, rested: rested) {
+                    if let words = cap {
                         Text(verbatim: words).font(TypeRole.body(TypeScale.detail)).foregroundStyle(Tokens.owed)
+                            .transition(.reveal)
                     }
                     // Section 11.6, verbatim.
                     Text(verbatim: SettleAllCopy.explainer)
@@ -633,6 +663,8 @@ struct OtherAmountSheet: View {
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                // D-250: the cap's words rise in.
+                .reveals(cap)
                 .frame(maxWidth: .infinity)
                 .glassCard()
                 VStack(spacing: 10) {
