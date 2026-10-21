@@ -230,6 +230,21 @@ object BarDecisions {
     fun titleSize(form: BarForm, collapsed: Boolean): Float =
         if (form == BarForm.TAB_ROOT && !collapsed) TypeScale.largeTitle else TypeScale.inlineTitle
 
+    /** D-248 (U31, decision 186): the inline title's largest drawn size, dp. Measured so the longest fixed pushed title
+     *  fits a 360 dp phone beside the back button ([INLINE_TITLE_ROOM_360]) in every theme at any font scale (DoneMomentsTest's
+     *  width table, AWT on the bundled faces): the widest is Norse's "Profile and account", 166.9 at 17, so 22 draws it
+     *  216.0 wide in the 220 of room (23 would be 225.8). iOS's cap is 23 on its 375 pt phone (TitleStyle.inlineCap);
+     *  Android's narrower phone takes 22. At the phone's own size (17) and up to step +2 (21.1) it does not bite. */
+    const val INLINE_TITLE_CAP = 22
+
+    /** The room a pushed title has on a 360 dp phone: the bar inside its side margins, less the back button's node
+     *  ([controlShift] and the 48 dp target) on both sides (the title is centred on the bar) and [TITLE_GAP] each side. */
+    val INLINE_TITLE_ROOM_360: Int
+        get() = 360 - 2 * BAR_SIDE_MARGIN - 2 * (controlShift(BACK_CENTRE_FROM_EDGE) + TOUCH_TARGET) - 2 * TITLE_GAP
+
+    /** An inline title's size in dp: the scaled 17 ([scaledDp], the font scale's), at most [INLINE_TITLE_CAP]. */
+    fun inlineTitleDp(scaledDp: Float): Float = minOf(scaledDp, INLINE_TITLE_CAP.toFloat())
+
     /** Whether the bar's own centred title shows. A tab root shows it once the large title's bottom is under the
      *  bar: [largeTitleBottomPx] is that bottom measured from the bar's lower edge with the content unscrolled, so
      *  the title has gone under it when the content has scrolled that far. A pushed or sheet bar always shows it. */
@@ -445,9 +460,13 @@ private fun BarRow(start: (@Composable () -> Unit)?, end: (@Composable () -> Uni
 /** The centred 17 title: one line, ellipsis, as wide as [BarRow] lets it be. [alpha] is the tab root's crossfade. */
 @Composable
 private fun InlineTitle(title: String, form: BarForm, dark: Boolean, alpha: Float, heading: Boolean) {
+    // D-248 (U31): the 17 scaled by the font scale (nonlinear on Android 14 and later), stopped at the cap.
+    val size = with(LocalDensity.current) {
+        BarDecisions.inlineTitleDp(BarDecisions.titleSize(form, collapsed = true).sp.toDp().value).dp.toSp().value
+    }
     Text(
         title,
-        style = Type.title(dark, BarDecisions.titleSize(form, collapsed = true)),
+        style = Type.title(dark, size),
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
         modifier = Modifier

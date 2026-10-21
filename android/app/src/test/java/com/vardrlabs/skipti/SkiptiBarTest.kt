@@ -272,7 +272,9 @@ class SkiptiBarTest {
         // The sizes come from the one decision (BarDecisions.titleSize), which reads Task 1's table: the composables
         // never name a size of their own, so the tested function is the live one.
         assertTrue(src.contains("Type.title(dark, BarDecisions.titleSize(BarForm.TAB_ROOT, collapsed = false))"))
-        assertTrue(src.contains("Type.title(dark, BarDecisions.titleSize(form, collapsed = true))"))
+        // D-248 (U31): the inline title's size is the same decision, scaled and stopped at the cap (D248FixesTest).
+        assertTrue(src.contains("BarDecisions.inlineTitleDp(BarDecisions.titleSize(form, collapsed = true).sp.toDp().value)"))
+        assertTrue(src.contains("Type.title(dark, size)"))
         assertFalse("a title size named in a composable", Regex("""Type\.title\(dark, TypeScale""").containsMatchIn(src))
         for (other in listOf("Type.display(", "Type.label(", "Type.name(", "Type.microLabel(", "Type.kicker(")) {
             assertFalse("SkiptiBar.kt must not style a title with $other", src.contains(other))

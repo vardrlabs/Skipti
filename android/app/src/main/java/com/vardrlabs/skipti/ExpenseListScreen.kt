@@ -129,9 +129,8 @@ object ExpenseListUi {
  * has the expense's stable id, edits show as edited and deleted expenses
  * are gone. A tap opens the expense (`onOpen`); a long press offers Edit and
  * Delete in place (the founder's choice, 2026-09-19). A delete is confirmed
- * first, and Undo is offered at the foot of the list (`justDeleted`, kept by
- * the shell so a delete made on the detail page is offered back here too)
- * until the person leaves the tab.
+ * first, and Undo is offered on the done toast (D-248: [ExpenseUndo], as from
+ * every detail page; the foot row went).
  */
 @OptIn(ExperimentalFoundationApi::class)
 /** D-181: the Expenses tab's words; iOS's twin is `ExpenseCopy`. */
@@ -165,9 +164,6 @@ fun ExpenseListScreen(
     vaultPath: String,
     onOpen: (String) -> Unit = {},
     onEdit: (String) -> Unit = {},
-    justDeleted: String? = null,
-    onDeleted: (String) -> Unit = {},
-    onUndone: () -> Unit = {},
     /** D-217: the account glyph, the bar's trailing item (null: none). */
     onOpenAccount: (() -> Unit)? = null,
     /** D-225 T7 (A5): the tab's place, kept by the shell across a pushed route or another tab. */
@@ -175,8 +171,7 @@ fun ExpenseListScreen(
 ) {
     val dark = isSystemInDarkTheme()
     val scope = rememberCoroutineScope()
-    // Every projected expense, deleted ones included: Undo needs the one
-    // that holds the delete. D-225 T7 (A5): the read is the kept one, so the list is there on the first frame back.
+    // Every projected expense (deleted ones are filtered below). D-225 T7 (A5): the read is the kept one, so the list is there on the first frame back.
     var projected by keep.slot<List<ProjectedExpenseOut>?>("projected") { null }
     var loadError by keep.slot<String?>("loadError") { null }
     var actionError by remember { mutableStateOf<String?>(null) }
@@ -190,7 +185,7 @@ fun ExpenseListScreen(
     var only by keep.slot<String?>("only") { null }
 
     // D-178: SyncStatus.revision: read again when sync brings records.
-    LaunchedEffect(vaultPath, reloads, justDeleted, SyncStatus.revision) {
+    LaunchedEffect(vaultPath, reloads, SyncStatus.revision) {
         try {
             val (loadedGroups, loaded) = withContext(Dispatchers.IO) {
                 val store = LedgerStore(vaultPath)
@@ -236,19 +231,12 @@ fun ExpenseListScreen(
     }
 
     val expenses = projected?.filter { !it.deleted }
-    // Undo, while the person is still here (the shell forgets it when
-    // the tab changes; the expense stays recoverable in the records).
-    val undoable = justDeleted?.let { id -> projected?.firstOrNull { it.id == id && it.deleted } }
-    // D-220: the shell's tab bar overlays the page; with the undo row showing, the row keeps the bar's height clear and
-    // the list ends above it.
-    val shellInset = LocalShellBarInset.current
     // D-223 follow-up (R2): the list (not a centred state) is what the scaffold shows.
     val listShown = loadError == null && !expenses.isNullOrEmpty()
     // D-181: on the shell's glow, not a second one of its own (D-180's seam).
     Column(Modifier.fillMaxSize()) {
         // D-217: the title (and the Norse ornament) is the scaffold's, so every state below keeps it, as iOS's bar does.
         Box(Modifier.weight(1f)) {
-          CompositionLocalProvider(LocalShellBarInset provides if (undoable != null) 0.dp else shellInset) {
             TabRootScaffold(
                 title = "Expenses",
                 ornament = true,
@@ -378,31 +366,6 @@ fun ExpenseListScreen(
                     }
                 }
             }
-          }
-        }
-
-        if (undoable != null) {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = shellInset)
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-                    .background(Tok.surfaceRaised(dark), ThemeArt.panelShape(Appearance.theme, 12))
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    undoable.note?.let { "Deleted “$it”." } ?: "Expense deleted.",
-                    style = Type.body(dark),
-                    maxLines = 2,
-                    modifier = Modifier.weight(1f),
-                )
-                Spacer(Modifier.width(12.dp))
-                // D-213 (fix wave 2): iOS's SecondaryButtonStyle, fixed to its words.
-                SecondaryAction("Undo", dark, modifier = Modifier) {
-                    write({ ExpenseEditingUi.undo(undoable, groupOf(undoable)?.selfId) }) { onUndone() }
-                }
-            }
         }
     }
 
@@ -416,7 +379,10 @@ fun ExpenseListScreen(
             confirmButton = {
                 TextButton(onClick = {
                     confirming = null
-                    write({ ExpenseEditingUi.delete(e, groupOf(e)?.selfId) }) { onDeleted(e.id) }
+                    write({ ExpenseEditingUi.delete(e, groupOf(e)?.selfId) }) {
+                        // D-248 (U30.4): the Undo is the toast, as from every detail page.
+                        ExpenseUndo.offer(e, vaultPath, groupOf(e)?.selfId)
+                    }
                 }) { Text("Delete expense", color = Tok.owed(dark)) }
             },
             dismissButton = {

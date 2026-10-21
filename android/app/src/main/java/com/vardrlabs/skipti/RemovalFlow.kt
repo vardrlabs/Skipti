@@ -72,7 +72,6 @@ import uniffi.skipti_core.ffiBalanceLine
 import uniffi.skipti_core.ffiBalancesCompute
 import uniffi.skipti_core.ffiEncodeRedistribution
 import uniffi.skipti_core.ffiMoneyInputDigits
-import uniffi.skipti_core.ffiMoneyParseMinor
 import uniffi.skipti_core.ffiRedistributeEqual
 import uniffi.skipti_core.ffiRedistributionTally
 import kotlin.math.abs
@@ -298,7 +297,7 @@ class SettleFirstProgress(val total: Int, appended: Int = 0, removed: Boolean = 
 /** The Redistribute screen's state for one currency: who is ticked, equal
  *  shares (core's) or typed ones, and whether they add up. Every amount is
  *  core's: the equal split is `ffiRedistributeEqual`, a typed amount is read
- *  by `ffiMoneyParseMinor` and given the balance's sign, and "adds up" is
+ *  by `ffiMoneyParseTyped` (D-248: a decimal comma reads) and given the balance's sign, and "adds up" is
  *  `ffiRedistributionTally`. */
 data class RedistributeModel(
     val from: String,
@@ -352,7 +351,7 @@ data class RedistributeModel(
         val out = mutableListOf<IdAmount>()
         var complete = true
         for (id in tickedInOrder) {
-            val minor = runCatching { ffiMoneyParseMinor((typed[id] ?: "").trim(), currency) }.getOrNull()
+            val minor = AmountEntry.minor(typed[id] ?: "", currency)
             if (minor == null || minor <= 0L) {
                 complete = false
                 continue

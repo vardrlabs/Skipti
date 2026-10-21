@@ -42,7 +42,7 @@ import uniffi.skipti_core.ProjectedExpenseOut
  * D-143: one expense, opened from the Expenses list. The twin of iOS
  * `ExpenseDetailView` (D-142). The whole split, SPEC §5.7's "added by" and
  * "last edited by" with a timestamp, Edit (the Add form, filled in) and
- * Delete (confirmed first; the list then offers Undo). When two devices set
+ * Delete (confirmed first; the toast then offers Undo, D-248's [ExpenseUndo]). When two devices set
  * different amounts, SPEC §6.1's question is the first thing on the page,
  * with one button per version. Read from core's projection, never the kv
  * ledger.
@@ -256,7 +256,13 @@ fun ExpenseDetailScreen(
             confirmButton = {
                 TextButton(onClick = {
                     confirmingDelete = false
-                    if (e != null) write({ ExpenseEditingUi.delete(e, group?.selfId) }) { onDeleted(e.id) }
+                    if (e != null) {
+                        write({ ExpenseEditingUi.delete(e, group?.selfId) }) {
+                            // D-248 (U30.4): the Undo the dialog promised, here, whoever opened this page.
+                            ExpenseUndo.offer(e, vaultPath, group?.selfId)
+                            onDeleted(e.id)
+                        }
+                    }
                 }) { Text("Delete expense", color = Tok.owed(dark)) }
             },
             dismissButton = {
@@ -406,3 +412,40 @@ fun ExpenseConflictProofScreen(dir: java.io.File) {
 private data class Detail(
     val expense: ProjectedExpenseOut?, val group: NamedGroupWire?, val isCopy: Boolean, val names: Map<String, String>,
 )
+
+/** D-248 (U30.4): a deleted expense's Undo comes to where the delete happened: the done toast ("Expense deleted", its
+ *  description) with Undo, wherever the detail was opened (the group page, Lately, Activity, a notification, the Expenses
+ *  list) and for the list's long-press delete. It stays for the hold's window ([SettleHold.window]: longer with a screen
+ *  reader). Undo writes the restoring revision from the projection that holds the delete, then every screen reads again.
+ *  The Expenses list's foot row went (one way to undo, everywhere). The twin of iOS's `ExpenseUndo`. */
+object ExpenseUndo {
+    fun moment(deleted: ProjectedExpenseOut, seconds: Double): DoneMoment =
+        DoneMoments.lineWithAction(DoneCopy.EXPENSE_DELETED, DoneCopy.UNDO, seconds, listOf(deleted.note))
+
+    /** Posts the toast; its Undo writes [undo] off the main thread ([run]). On the main thread (the centre's rule). */
+    fun offer(
+        deleted: ProjectedExpenseOut,
+        vaultPath: String,
+        editor: String?,
+        center: DoneMomentCenter = DoneCenter,
+        screenReader: Boolean = ScreenReader.running(),
+        store: () -> LedgerStore = { LedgerStore(vaultPath) },
+        written: (String) -> Unit = SettleHold::liveWritten,
+        run: (() -> Unit) -> Unit = { work -> kotlinx.coroutines.MainScope().launch(Dispatchers.IO) { work() } },
+        /** When the toast is posted (uptime ms, in the app). */
+        clock: () -> Long = { android.os.SystemClock.uptimeMillis() },
+    ) {
+        center.post(moment(deleted, SettleHold.window(screenReader)), clock(), onAction = {
+            run { undo(deleted, store(), editor, written) }
+        })
+    }
+
+    /** Written from the projection that HOLDS the delete, so the Undo has seen it; then every screen reads again
+     *  ([written]). False when it could not be written (a local vault write: rare, and nothing is said, as iOS). */
+    fun undo(deleted: ProjectedExpenseOut, store: LedgerStore, editor: String?, written: (String) -> Unit = SettleHold::liveWritten): Boolean =
+        runCatching {
+            val current = store.projectedExpenses().expenses.firstOrNull { it.id == deleted.id } ?: deleted
+            store.reviseExpense(ExpenseEditingUi.undo(current, editor))
+            written(store.path)
+        }.isSuccess
+}

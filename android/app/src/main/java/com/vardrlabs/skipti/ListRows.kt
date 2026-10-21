@@ -381,6 +381,9 @@ fun FieldRow(
     /** D-245: the welcome's name field is centred (iOS's `.multilineTextAlignment(.center)`): the placeholder spans the
      *  row so the style's centred alignment applies to it too. */
     centred: Boolean = false,
+    /** D-248 (U29.2): the text field's own modifier (a form that moves the keyboard between rows hangs its
+     *  `focusRequester` here; [modifier] is the whole row's). */
+    fieldModifier: Modifier = Modifier,
 ) {
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         BasicTextField(
@@ -391,7 +394,7 @@ fun FieldRow(
             cursorBrush = SolidColor(Tok.accent(dark)),
             keyboardOptions = keyboard,
             keyboardActions = actions,
-            modifier = Modifier.weight(1f).semantics { contentDescription = spoken },
+            modifier = Modifier.weight(1f).then(fieldModifier).semantics { contentDescription = spoken },
             decorationBox = { field ->
                 Box(
                     Modifier

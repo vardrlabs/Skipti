@@ -774,9 +774,7 @@ private fun HomeShell(
             GroupPictures.load(LedgerStore(vaultPath))
         }
     }
-    // D-143: the expense just deleted, offered back on the Expenses tab until
-    // the tab changes (a delete made on the detail page included).
-    var justDeleted by rememberSaveable { mutableStateOf<String?>(null) }
+    // D-248 (U30.4): a delete's Undo is the done toast wherever it happened (`ExpenseUndo`); the shell keeps nothing.
     // Bumped after an import so every tab reads the ledger again.
     var generation by remember { mutableIntStateOf(0) }
     // D-205: per tab, bumped by a re-tap at the tab's first screen.
@@ -1085,12 +1083,16 @@ private fun HomeShell(
                 vaultPath = vaultPath,
                 // D-224 follow-up (A-R3): Home's new page is read before the moment and the return to Balance.
                 homeKeep = if (fromYou) null else homeKeep,
-                onCreated = {
+                onCreated = { created ->
                     if (fromYou) {
                         route = "account"
                     } else {
+                        // D-248 (U30.6, decision 185): the new group's page opens over Home (Back lands on Home, which
+                        // lists it), from Home's New group, Groups' and the welcome's Start a group alike; the first
+                        // group's big moment still plays over it (the shell's overlay). The twin of iOS's `GroupOpening`.
                         route = null
                         selectedName = HomeTab.BALANCE.name
+                        openGroup = created
                     }
                     SyncStatus.changed()
                 },
@@ -1116,10 +1118,7 @@ private fun HomeShell(
                     expenseId = id,
                     onBack = { route = null },
                     onEdit = { route = "expense-edit/$id/detail" },
-                    onDeleted = { deleted ->
-                        justDeleted = deleted
-                        route = null
-                    },
+                    onDeleted = { route = null },
                 )
                 return
             }
@@ -1131,10 +1130,7 @@ private fun HomeShell(
                     expenseId = opened.expense,
                     onBack = { route = opened.activity },
                     onEdit = { route = "expense-edit/${opened.expense}/from/$r" },
-                    onDeleted = { deleted ->
-                        justDeleted = deleted
-                        route = opened.activity
-                    },
+                    onDeleted = { route = opened.activity },
                 )
                 return
             }
@@ -1184,10 +1180,7 @@ private fun HomeShell(
                     target = PushRoute.Target(groupId, expense),
                     onBack = { route = null },
                     onEdit = { route = "expense-edit/$expense/detail" },
-                    onDeleted = { deleted ->
-                        justDeleted = deleted
-                        route = null
-                    },
+                    onDeleted = { route = null },
                 )
                 return
             }
@@ -1373,9 +1366,6 @@ private fun HomeShell(
                                 vaultPath = vaultPath,
                                 onOpen = { route = "expense/$it" },
                                 onEdit = { route = "expense-edit/$it/list" },
-                                justDeleted = justDeleted,
-                                onDeleted = { justDeleted = it },
-                                onUndone = { justDeleted = null },
                                 onOpenAccount = ::openYou,
                                 keep = expensesKeep,
                             )
@@ -1405,7 +1395,6 @@ private fun HomeShell(
                         // D-224 (Design 3): a tap that switches tabs, and only that, plays the light haptic.
                         Haptics.play(view, HapticKind.LIGHT)
                         selectedName = tap.tab.name
-                        justDeleted = null
                         openGroup = null
                     }
                     is TabTap.PopToRoot -> openGroup = null

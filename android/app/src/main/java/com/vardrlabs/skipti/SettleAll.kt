@@ -60,7 +60,6 @@ import uniffi.skipti_core.ShareOut
 import uniffi.skipti_core.ffiBalanceLine
 import uniffi.skipti_core.ffiCheckSettlement
 import uniffi.skipti_core.ffiMoneyInputDigits
-import uniffi.skipti_core.ffiMoneyParseMinor
 import uniffi.skipti_core.ffiSettledProgress
 import kotlin.math.abs
 
@@ -194,7 +193,7 @@ object SettleAll {
 }
 
 /** D-247 (decisions 167, 183): a card's "Another amount": what the field starts with and what it may hold. Every amount
- *  is core's: the field is parsed by `ffiMoneyParseMinor` and checked by `ffiCheckSettlement`; the shell only compares
+ *  is core's: the field is parsed by `ffiMoneyParseTyped` (D-248: a decimal comma reads) and checked by `ffiCheckSettlement`; the shell only compares
  *  two of core's minor-unit numbers (never adds or subtracts them). The twin of iOS's `OtherAmount`. */
 object OtherAmount {
     /** What the field says about itself. */
@@ -204,6 +203,9 @@ object OtherAmount {
 
         /** More than the debt: refused in words, Settle disabled (a partial never flips who owes whom). */
         data class TooMuch(val words: String) : Verdict
+
+        /** D-248 (U30.2): something typed that is not an amount: `AmountEntry`'s words, Settle disabled. */
+        data class NotAnAmount(val words: String) : Verdict
 
         /** Settle records this many minor units. */
         data class Settles(val minor: Long) : Verdict
@@ -220,13 +222,26 @@ object OtherAmount {
         else Verdict.Settles(minor)
 
     /** The sheet's cap line: the field's own (more than the debt the sheet opened on), else the tap's refusal. */
-    fun capWords(verdict: Verdict, refused: String?): String? = (verdict as? Verdict.TooMuch)?.words ?: refused
+    fun capWords(verdict: Verdict, refused: String?): String? = when (verdict) {
+        is Verdict.TooMuch -> verdict.words
+        is Verdict.NotAnAmount -> verdict.words
+        else -> refused
+    }
 
     /** [text] against the debt ([debt], the card's amount, always above 0). [check] is core's settlement check of the
      *  amount (`SettleAll.settlement(..., amount)`); a refusal reads as incomplete. */
-    fun verdict(text: String, debt: Long, currency: String, youOwe: Boolean, other: String, check: (Long) -> Unit): Verdict {
-        val minor = runCatching { ffiMoneyParseMinor(text.trim(), currency) }.getOrNull()
-        if (minor == null || minor <= 0) return Verdict.Incomplete
+    fun verdict(
+        text: String,
+        debt: Long,
+        currency: String,
+        youOwe: Boolean,
+        other: String,
+        locale: java.util.Locale = java.util.Locale.getDefault(),
+        check: (Long) -> Unit,
+    ): Verdict {
+        if (AmountEntry.isBlank(text)) return Verdict.Incomplete
+        val minor = AmountEntry.minor(text, currency) ?: return Verdict.NotAnAmount(AmountEntry.likeWords(currency, locale))
+        if (minor <= 0) return Verdict.Incomplete
         if (minor > debt) return Verdict.TooMuch(SettleAllCopy.moreThanDebt(youOwe, other))
         if (runCatching { check(minor) }.isFailure) return Verdict.Incomplete
         return Verdict.Settles(minor)
@@ -454,7 +469,7 @@ fun SettleAllScreen(
                 error = null
             },
             onFailure = {
-                error = if (it is NeedsYourNameException) "Add your name on Balance first."
+                error = if (it is NeedsYourNameException) "Add your name first."
                 else "Could not load the ledger. ${it.message ?: it}"
             },
         )
@@ -603,6 +618,7 @@ fun SettleAllScreen(
                         null
                     }
                     is OtherAmount.Verdict.TooMuch -> verdict.words
+                    is OtherAmount.Verdict.NotAnAmount -> verdict.words
                     OtherAmount.Verdict.Incomplete -> null
                 }
             },

@@ -28,6 +28,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -45,7 +48,8 @@ import uniffi.skipti_core.NamedGroupWire
 import uniffi.skipti_core.ProjectedExpenseOut
 import uniffi.skipti_core.SplitSpecInput
 import uniffi.skipti_core.ffiCategoryTreeDefault
-import uniffi.skipti_core.ffiMoneyParseMinor
+import uniffi.skipti_core.ffiMoneyInputDigits
+import uniffi.skipti_core.ffiMoneyParseTyped
 import uniffi.skipti_core.ffiSplitCompute
 
 /** D-183: the Add sheet's words (the founder's canvas); iOS's twin is
@@ -90,6 +94,57 @@ object AddSheetCopy {
             val e = ffiYourEffect(expense, viewer)
             summary(e.amountMinor, BalanceUi.moneyFormat(kotlin.math.abs(e.amountMinor), e.currencyCode, locale))
         }.getOrNull()
+}
+
+/** D-248 (U30.2, decision 184): every amount a person types is read by core's typed parser (`ffiMoneyParseTyped`: one
+ *  ',' and no '.' is the decimal mark, so a decimal-comma keyboard can enter an amount), and a field that still holds no
+ *  amount says so in words, with an example in the phone's own decimal mark. The twin of iOS's `AmountEntry`. */
+object AmountEntry {
+    /** A typed amount refused in words (the save-error line shows [words]). */
+    class Refusal(val words: String) : IllegalArgumentException(words) {
+        override fun equals(other: Any?): Boolean = other is Refusal && other.words == words
+        override fun hashCode(): Int = words.hashCode()
+    }
+
+    /** The amount field's hint (U29.4: drawn in `groundFaint` at full opacity). */
+    const val HINT = "0"
+
+    /** The phone's decimal mark: ',' where its locale writes one, else '.' (the two core's typed parser reads). */
+    fun mark(locale: java.util.Locale = java.util.Locale.getDefault()): String =
+        if (java.text.DecimalFormatSymbols.getInstance(locale).decimalSeparator == ',') "," else "."
+
+    /** An example amount in [currency]'s own decimals: core's entry form of 1,250 minor units ("12.50"; "1250" in JPY,
+     *  "1.250" in KWD), in the phone's mark. Nothing here does money arithmetic. Null for a currency core does not know
+     *  (no example is made up). */
+    fun example(currency: String, locale: java.util.Locale = java.util.Locale.getDefault()): String? =
+        runCatching { ffiMoneyInputDigits(1_250, currency) }.getOrNull()?.replace(".", mark(locale))
+
+    fun likeWords(currency: String, locale: java.util.Locale = java.util.Locale.getDefault()): String =
+        example(currency, locale)?.let { "Enter an amount like $it." } ?: "Enter an amount."
+
+    /** U30.3: an exact row left blank at Save. */
+    fun forPerson(name: String): String = "Enter an amount for $name."
+
+    /** Core's minor units for [text], or null while it is not an amount (the live lines). */
+    fun minor(text: String, currency: String): Long? = runCatching { ffiMoneyParseTyped(text, currency) }.getOrNull()
+
+    /** Save's read: core's minor units, or a [Refusal] in words. Too large keeps core's own error (SplitWords' words). */
+    fun parse(text: String, currency: String, locale: java.util.Locale = java.util.Locale.getDefault()): Long =
+        try {
+            ffiMoneyParseTyped(text, currency)
+        } catch (e: CoreException.Overflow) {
+            throw e
+        } catch (e: CoreException) {
+            throw Refusal(likeWords(currency, locale))
+        }
+
+    fun isBlank(text: String?): Boolean = (text ?: "").isBlank()
+}
+
+/** D-248 (U29.3): when Add expense's amount takes the keyboard: a new expense, the first time its page shows (not back
+ *  from a choice page, not after a save error), never on Edit. The twin of iOS's `AmountFocus`. */
+object AmountFocus {
+    fun focusesOnOpen(editing: Boolean, already: Boolean): Boolean = !editing && !already
 }
 
 /** D-184: why a split cannot be saved, in words, with core's amounts. A
@@ -178,7 +233,7 @@ object AddExpenseRows {
  * Computed data for the add-expense screen: the pure save path the JVM
  * tests drive against the REAL core, exactly like BalanceUi/ExpenseListUi.
  * No arithmetic happens here or in the composable: the decimal STRING goes
- * to core (ffiMoneyParseMinor), the split goes to core (ffiSplitCompute),
+ * to core (ffiMoneyParseTyped, D-248's `AmountEntry`), the split goes to core (ffiSplitCompute),
  * and the record persists through the vault loop. A float never enters.
  */
 object AddExpenseUi {
@@ -291,18 +346,33 @@ object AddExpenseUi {
      * The spec builder: iOS's buildSpec, one-to-one. Every refusal here is
      * either CORE's (surfaced as CoreException) or the shell's own rule that
      * iOS also owns (whole-number percents). No arithmetic happens in this
-     * file: minor units come from ffiMoneyParseMinor, bps are integer
+     * file: minor units come from ffiMoneyParseTyped (`AmountEntry`), bps are integer
      * percents × 100, and the actual SPLIT is ffiSplitCompute's job.
+     * D-248 (U30.3): tax, tip, an adjustment and an item's amount left blank are 0 (an item at 0 gets core's "Every item
+     * needs an amount above zero."); an exact row left blank is named ("Enter an amount for Rahul.", [name] gives the
+     * row's name); anything typed that is not an amount gets `AmountEntry`'s words, never core's raw error. The live
+     * line's blanks are [liveDraft]'s.
      */
-    fun buildSpec(draft: SplitDraft, roster: List<String>, currency: String, payer: String): SplitSpecInput {
-        fun minor(text: String?): Long = ffiMoneyParseMinor(text ?: "", currency)
+    fun buildSpec(
+        draft: SplitDraft,
+        roster: List<String>,
+        currency: String,
+        payer: String,
+        name: (String) -> String = { it },
+        locale: java.util.Locale = java.util.Locale.getDefault(),
+    ): SplitSpecInput {
+        fun optional(text: String?): Long = if (AmountEntry.isBlank(text)) 0 else AmountEntry.parse(text ?: "", currency, locale)
+        fun required(text: String?, id: String): Long {
+            if (AmountEntry.isBlank(text)) throw AmountEntry.Refusal(AmountEntry.forPerson(name(id)))
+            return AmountEntry.parse(text ?: "", currency, locale)
+        }
 
         return when (draft) {
             is SplitDraft.Equal -> SplitSpecInput.Equal
 
             is SplitDraft.Exact -> SplitSpecInput.Exact(
                 entries = roster.map { id ->
-                    uniffi.skipti_core.IdAmount(id = id, amountMinor = minor(draft.amounts[id]))
+                    uniffi.skipti_core.IdAmount(id = id, amountMinor = required(draft.amounts[id], id))
                 },
             )
 
@@ -328,19 +398,19 @@ object AddExpenseUi {
 
             is SplitDraft.Adjustment -> SplitSpecInput.Adjustment(
                 entries = roster.map { id ->
-                    uniffi.skipti_core.IdAmount(id = id, amountMinor = minor(draft.deltas[id]))
+                    uniffi.skipti_core.IdAmount(id = id, amountMinor = optional(draft.deltas[id]))
                 },
             )
 
             is SplitDraft.Itemised -> SplitSpecInput.Itemised(
                 lines = draft.lines.map {
                     uniffi.skipti_core.LineInput(
-                        amountMinor = minor(it.amount),
+                        amountMinor = optional(it.amount),
                         participants = it.who.sorted(),
                     )
                 },
-                taxMinor = minor(draft.tax),
-                tipMinor = minor(draft.tip),
+                taxMinor = optional(draft.tax),
+                tipMinor = optional(draft.tip),
             )
 
             is SplitDraft.PayerOnly -> SplitSpecInput.PayerOnly(payer = payer)
@@ -365,14 +435,16 @@ object AddExpenseUi {
         nowMs: Long = System.currentTimeMillis(),
         /** D-141: §5.7's "added by", the participant id of whoever adds it. */
         addedBy: String? = null,
+        /** D-248 (U30.3): a member's name, for an exact row left blank ("Enter an amount for Rahul."). */
+        name: (String) -> String = { it },
     ): ExpenseDTO {
-        val total = ffiMoneyParseMinor(amountText, currency)
+        val total = AmountEntry.parse(amountText, currency)
         require(total > 0) { "the amount must be positive" }
         require(participants.isNotEmpty()) { "at least one member shares this expense" }
         val roster = participants.sorted()
         // Split types are core's full enum (D-42); shares are COMPUTED by
         // core: the shell never divides.
-        val computed = ffiSplitCompute(total, currency, roster, buildSpec(draft, roster, currency, payer))
+        val computed = ffiSplitCompute(total, currency, roster, buildSpec(draft, roster, currency, payer, name))
         // D-136: the payer and the group are the person's choice on the screen.
         // This used to call loadGroupsOrSeed(), so the first saved expense on a
         // fresh install wrote the fixture "Goa Trip", paid by the fixture Ada.
@@ -402,7 +474,7 @@ private val splitDraftSaver = Saver<AddExpenseUi.SplitDraft, String>(
  * §5.3/§5.4's add-expense screen: port of ios/Skipti/App/AddExpenseScreen.swift,
  * ALL SEVEN split types (§5.4's table; the equal-split-only interim from
  * D-110 is gone). Amounts enter as decimal STRINGS and become integer minor
- * units through ffiMoneyParseMinor, never through a float (ADR-0002), the
+ * units through ffiMoneyParseTyped (D-248), never through a float (ADR-0002), the
  * same rule that keeps ffiMoneyFormat on the render side.
  */
 /** D-235 (H1): a save button's latch. [begin] is called in the tap itself, before any work is launched: true, and the
@@ -467,6 +539,18 @@ fun AddExpenseScreen(
     // rotation, which would throw away what the person typed).
     var editing by remember { mutableStateOf<ProjectedExpenseOut?>(null) }
     var prefilled by rememberSaveable { mutableStateOf(false) }
+    // D-248 (U29.3): the amount takes the keyboard when a NEW expense opens (never on Edit), once.
+    val amountFocus = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    var focusedOnce by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        // A new expense starts at its amount, once (not again after a rotation or back from a choice page, not on Edit).
+        if (AmountFocus.focusesOnOpen(editing = editingId != null, already = focusedOnce)) {
+            focusedOnce = true
+            runCatching { amountFocus.requestFocus() }
+            keyboard?.show()
+        }
+    }
 
     // The split draft survives rotation and process death through the JSON
     // saver (kotlinx handles the sealed hierarchy). Switching kinds starts
@@ -547,7 +631,7 @@ fun AddExpenseScreen(
             },
             onFailure = {
                 error = if (it is NeedsYourNameException) {
-                    "Add your name on Balance first."
+                    "Add your name first."
                 } else {
                     it.message?.takeIf { m -> m.isNotBlank() } ?: it.toString()
                 }
@@ -558,6 +642,8 @@ fun AddExpenseScreen(
     val members = named?.let { group ->
         group.members.map { it.id to LedgerStore.label(it.id, group) }
     } ?: emptyList()
+    /** D-248 (U30.3): a member's name, for an exact row left blank at Save. */
+    val nameOf: (String) -> String = { id -> members.firstOrNull { it.first == id }?.second ?: "" }
 
     /** D-183: another group: its people, you paying, everyone in, and its
      *  currency unless one was picked for this expense. */
@@ -577,7 +663,7 @@ fun AddExpenseScreen(
     // D-184: or, while the split does not add up, how far off it is.
     val built = named?.let { g ->
         runCatching {
-            AddExpenseUi.buildExpense(amountText, currency, note, selectedCategory, participants, draft, payer, g.group.id)
+            AddExpenseUi.buildExpense(amountText, currency, note, selectedCategory, participants, draft, payer, g.group.id, name = nameOf)
         }
     }
     val summaryLine = named?.let { g ->
@@ -621,7 +707,7 @@ fun AddExpenseScreen(
                         val result = withContext(Dispatchers.IO) {
                             try {
                                 val group = named
-                                    ?: throw IllegalStateException("Create a group on Balance first.")
+                                    ?: throw IllegalStateException("Create a group first.")
                                 val expense = AddExpenseUi.buildExpense(
                                     amountText = amountText,
                                     currency = currency,
@@ -632,6 +718,7 @@ fun AddExpenseScreen(
                                     payer = payer,
                                     groupId = group.group.id,
                                     addedBy = group.selfId,
+                                    name = nameOf,
                                 )
                                 val target = editing
                                 if (target != null) {
@@ -654,6 +741,8 @@ fun AddExpenseScreen(
                                 CloudSync.ledgerChanged(vaultPath)
                                 paid = expense.paidMinor to expense.currencyCode
                                 null
+                            } catch (e: AmountEntry.Refusal) {
+                                e.words
                             } catch (e: CoreException) {
                                 SplitWords.message(e, currency) ?: AddExpenseUi.humanError(e)
                             } catch (e: Exception) {
@@ -704,11 +793,13 @@ fun AddExpenseScreen(
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 modifier = Modifier
                     .fillMaxWidth()
+                    .focusRequester(amountFocus)
                     .semantics { contentDescription = "Amount" },
                 decorationBox = { field ->
                     Box(contentAlignment = Alignment.Center) {
-                        // A hint, not an amount: lighter than any number, as iOS's placeholder.
-                        if (amountText.isEmpty()) Text("0", style = big.copy(color = Tok.textFaint(dark).copy(alpha = 0.45f)))
+                        // A hint, not an amount. D-248 (U29.4): `groundFaint` at full opacity on the page ground (the old
+                        // 45% textFaint came to about 2:1 in Norse), as iOS's prompt.
+                        if (amountText.isEmpty()) Text(AmountEntry.HINT, style = big.copy(color = Tok.groundFaint(dark)))
                         field()
                     }
                 },

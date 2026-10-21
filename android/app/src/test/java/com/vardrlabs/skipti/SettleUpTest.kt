@@ -124,7 +124,7 @@ class SettleUpTest {
         assertEquals("450.00", OtherAmount.prefill(45_000, "INR"))
         assertEquals("1005", OtherAmount.prefill(1_005, "JPY"))
         val ok: (Long) -> Unit = {}
-        fun verdict(text: String, youOwe: Boolean = false) = OtherAmount.verdict(text, 45_000, "INR", youOwe, "Ana", ok)
+        fun verdict(text: String, youOwe: Boolean = false) = OtherAmount.verdict(text, 45_000, "INR", youOwe, "Ana", check = ok)
         assertEquals("the whole debt", OtherAmount.Verdict.Settles(45_000), verdict("450.00"))
         assertEquals(OtherAmount.Verdict.Settles(45_000), verdict("450"))
         assertEquals("a partial", OtherAmount.Verdict.Settles(20_000), verdict("200"))
@@ -134,8 +134,12 @@ class SettleUpTest {
         assertEquals(OtherAmount.Verdict.TooMuch("That is more than you owe Ana."), verdict("451", youOwe = true))
         assertEquals(OtherAmount.Verdict.TooMuch("That is more than Ana owes."), verdict("99999999"))
         // Settle disabled, nothing said.
-        for (text in listOf("", "0", "0.00", "abc", "1.2.3", "-5", "₹10")) {
+        for (text in listOf("", "  ", "0", "0.00", "0,00", "-5")) {
             assertEquals("'$text'", OtherAmount.Verdict.Incomplete, verdict(text))
+        }
+        // D-248 (U30.2): what is not an amount is said (D248FixesTest has the locales and the comma).
+        for (text in listOf("abc", "1.2.3", "₹10")) {
+            assertEquals("'$text'", OtherAmount.Verdict.NotAnAmount(AmountEntry.likeWords("INR")), verdict(text))
         }
         // Core's check refusing reads as incomplete (never settles).
         assertEquals(

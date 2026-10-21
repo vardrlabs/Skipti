@@ -202,6 +202,9 @@ object DoneCopy {
     const val UNDO = "Undo"
     const val NOT_RECORDED = "Not recorded."
 
+    /** D-248 (U30.4): an expense deleted, its Undo on the toast wherever the delete happened. */
+    const val EXPENSE_DELETED = "Expense deleted"
+
     /** D-247 fix wave (decision 201): what a screen reader hears after a toast that offers an action, so the action is
      *  named and its time said ([seconds], whole seconds as digits). */
     fun actionSpoken(label: String, seconds: String): String = "$label is available for $seconds seconds."
@@ -252,14 +255,21 @@ object DoneMoments {
 
     /** Design 7: an everyday moment (the toast): [title], one of [DoneCopy]'s words, then the parts that are there. A
      *  missing or blank part is left out, never shown empty, so a note-less expense reads "Expense added ᛫ 2,400". */
-    fun line(title: String, vararg parts: String?): DoneMoment =
-        DoneMoment.Small(DoneLine(title, parts.mapNotNull { it?.trim()?.takeIf(String::isNotEmpty) }))
+    fun line(title: String, vararg parts: String?): DoneMoment = DoneMoment.Small(DoneLine(title, kept(parts.toList())))
+
+    /** The parts that are there: a missing or blank one is left out. */
+    private fun kept(parts: List<String?>): List<String> = parts.mapNotNull { it?.trim()?.takeIf(String::isNotEmpty) }
 
     /** D-247: an everyday moment that offers one action ([action], its label), shown for [seconds] (the hold's window).
      *  Its own name (never an overload of [line], whose parts a second string would otherwise become). The twin of
      *  iOS's `line(_:action:seconds:)`. */
-    fun lineWithAction(title: String, action: String, seconds: Double = DoneCenter.ACTION_SECONDS): DoneMoment =
-        DoneMoment.Small(DoneLine(title, emptyList(), action, seconds))
+    fun lineWithAction(
+        title: String,
+        action: String,
+        seconds: Double = DoneCenter.ACTION_SECONDS,
+        /** D-248 (U30.4): the line's parts (a deleted expense's description), left out when missing or blank. */
+        parts: List<String?> = emptyList(),
+    ): DoneMoment = DoneMoment.Small(DoneLine(title, kept(parts), action, seconds))
 
     /** The toast's time on screen: [ToastMotion.TOTAL], or, with an action, the line's [DoneLine.actionSeconds] (the
      *  action's whole window, so it never goes before what it offers does). The twin of iOS's `toastSeconds`. */

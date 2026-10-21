@@ -289,6 +289,21 @@ class AppearanceTest {
         ground.blue + (fg.blue - ground.blue) * alpha,
     )
 
+    /** D-248 (U29.4): Add expense's "0" hint sits on the page ground in `groundFaint` at full opacity (never dimmed): 4.5:1
+     *  on the page in every set. The negative: the old hint, `textFaint` at 45%, came to about 2:1 on Norse's page. The
+     *  twin of iOS's testTheAmountHintIsGroundFaintAtFullOpacityOnThePage. */
+    @Test
+    fun the_amount_hint_is_ground_faint_at_full_opacity_on_the_page() {
+        for (set in ThemeSet.entries) {
+            assertTrue("$set: the hint on the page", contrast(Tok.groundFaint.of(set), Tok.bg.of(set)) >= 4.5)
+        }
+        val old = over(Tok.textFaint.of(ThemeSet.NORSE), 0.45f, Tok.bg.of(ThemeSet.NORSE))
+        assertTrue("the old 45% hint fails", contrast(old, Tok.bg.of(ThemeSet.NORSE)) < 4.5)
+        val add = java.io.File("src/main/java/com/vardrlabs/skipti/AddExpenseScreen.kt").readText()
+        assertTrue("if (amountText.isEmpty()) Text(AmountEntry.HINT, style = big.copy(color = Tok.groundFaint(dark)))" in add)
+        assertFalse("no dimmed hint", ".copy(alpha = 0.45f)" in add)
+    }
+
     /** D-221 (art.py sections 18 to 23): E4's pairs hold their floors in every set, at art.py's own values (two
      *  decimals): the ring's arc and the meter's dim end on the track (3:1), the soft avatar's initials and the seal's
      *  number (accent on accentSoft, 4.5), the badge's initials (onAccent on accent, 4.5), Vardr Labs' progress dot on
