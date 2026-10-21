@@ -378,16 +378,53 @@ final class D248FixesTests: XCTestCase {
         XCTAssertGreaterThan(TitleStyle.font(large: true, theme: .norse, category: .accessibilityLarge).pointSize, TitleStyle.inlineCap(.norse))
     }
 
-    /// Decision 202 (review I2): one inline cap, 22, on both shells (stage 1 had 23 here, 22 on Android).
+    /// Decision 202 (revised, second wave): one inline cap on both shells, 20, the most iOS 26 and later draw an inline
+    /// title at (measured on iOS 27: 22 asked, 20 drawn).
     func testTheInlineCapIsTheTwinsOne() throws {
-        for theme in AppTheme.allCases { XCTAssertEqual(TitleStyle.inlineCap(theme), 22, "\(theme)") }
+        for theme in AppTheme.allCases { XCTAssertEqual(TitleStyle.inlineCap(theme), 20, "\(theme)") }
         let biggest = try XCTUnwrap(TextSize.ladder.last)
-        XCTAssertEqual(TitleStyle.font(large: false, theme: .norse, category: biggest).pointSize, 22)
+        XCTAssertEqual(TitleStyle.font(large: false, theme: .norse, category: biggest).pointSize, 20)
         let android = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("android/app/src/main/java/com/vardrlabs/skipti/SkiptiBar.kt")
         let bar = try String(contentsOf: android, encoding: .utf8)
-        XCTAssertTrue(bar.contains("const val INLINE_TITLE_CAP = 22\n"), "Android's cap")
+        XCTAssertTrue(bar.contains("const val INLINE_TITLE_CAP = 20\n"), "Android's cap")
         XCTAssertTrue(bar.contains("const val PILL_TEXT_CAP = 20f\n"), "Android's pill text stops where iOS's bar button does")
+        XCTAssertTrue(bar.contains("const val BAR_TEXT_FLOOR = 17f\n"), "Android's bar text starts where iOS's does")
+    }
+
+    /// Decision 202 (revised, second wave): bar text, the inline title and a bar button's, is asked for between 17 and 20
+    /// at every text step, iOS 26's own range (measured: 15 asked at XS draws 17, 22 asked draws 20), so iOS 17 to 25 draw
+    /// the same and the width tables measure what UIKit draws. The negatives: the system's own scaling goes under 17 at
+    /// the smallest step and over 20 at the largest, so the clamp is doing the work at both ends.
+    func testBarTextIsAskedFor17To20AtEveryTextStep() throws {
+        let smallest = try XCTUnwrap(TextSize.ladder.first)
+        let biggest = try XCTUnwrap(TextSize.ladder.last)
+        for theme in AppTheme.allCases {
+            for category in TextSize.ladder {
+                let title = TitleStyle.font(large: false, theme: theme, category: category).pointSize
+                let button = try XCTUnwrap(TitleStyle.barButtonAttributes(theme: theme, category: category)[.font] as? UIFont).pointSize
+                for (what, size) in [("title", title), ("button", button)] {
+                    XCTAssertGreaterThanOrEqual(size, 17, "\(theme) \(category.rawValue) \(what)")
+                    XCTAssertLessThanOrEqual(size, 20, "\(theme) \(category.rawValue) \(what)")
+                }
+                let kern = try XCTUnwrap(TitleStyle.attributes(large: false, theme: theme, category: category)[.kern] as? CGFloat)
+                XCTAssertEqual(kern, title * TitleStyle.tracking(theme), accuracy: 0.0001, "the tracking follows the drawn size")
+            }
+            XCTAssertEqual(TitleStyle.font(large: false, theme: theme, category: smallest).pointSize, 17, "\(theme)")
+            XCTAssertEqual(TitleStyle.font(large: false, theme: theme, category: biggest).pointSize, 20, "\(theme)")
+            XCTAssertEqual((TitleStyle.barButtonAttributes(theme: theme, category: smallest)[.font] as? UIFont)?.pointSize, 17)
+            XCTAssertEqual((TitleStyle.barButtonAttributes(theme: theme, category: biggest)[.font] as? UIFont)?.pointSize, 20)
+        }
+        XCTAssertEqual(TitleWidth.floor, 17)
+        XCTAssertEqual(TitleStyle.barButtonCap, 20)
+        let base = TypeRole.base(TypeRole.face(.display, theme: .norse), size: TypeScale.inlineTitle, weight: TitleStyle.weight(.norse), tabular: false)
+        let system = { (category: UIContentSizeCategory) in
+            UIFontMetrics(forTextStyle: .headline).scaledFont(for: base, compatibleWith: UITraitCollection(preferredContentSizeCategory: category)).pointSize
+        }
+        XCTAssertLessThan(system(smallest), 17, "the system's own size at the smallest step")
+        XCTAssertGreaterThan(system(biggest), 20, "the system's own size at the largest step")
+        // Large titles are not bar text: they keep the system's scaling.
+        XCTAssertGreaterThan(TitleStyle.font(large: true, theme: .norse, category: biggest).pointSize, 20)
     }
 
     // MARK: - Review I3: sheet titles beside their pill
@@ -405,7 +442,7 @@ final class D248FixesTests: XCTestCase {
 
     /// Each sheet title fits beside its pill (`TitleWidth.sheetRoom`, the pill as wide as its text makes it at that
     /// step) on a 375 pt iPhone, in every theme at every text step, with 2 points of slack, at the size this app asks
-    /// for (the inline cap, above what iOS 26 draws). The negative: with the bar button's text uncapped (iOS 17 to 25
+    /// for (17 to 20, what iOS 26 draws; the real-bar test below checks UIKit draws it). The negative: with the bar button's text uncapped (iOS 17 to 25
     /// drew what it was given) the Cancel pill leaves "Pick your username" no room at the largest step.
     @MainActor
     func testEverySheetTitleClearsItsPillAtEveryTextStep() throws {
@@ -415,11 +452,8 @@ final class D248FixesTests: XCTestCase {
                 for (title, pill) in sheetTitles {
                     let room = pill.map { TitleWidth.sheetRoom(pill: TitleWidth.pill($0, theme: theme, category: category)) }
                         ?? TitleWidth.phone - 2 * TitleWidth.edge
-                    var attributes = TitleStyle.attributes(large: false, theme: theme, category: category)
-                    if let font = attributes[.font] as? UIFont, font.pointSize < TitleWidth.floor {
-                        attributes[.font] = font.withSize(TitleWidth.floor)
-                        attributes[.kern] = TitleWidth.floor * TitleStyle.tracking(theme)
-                    }
+                    // The title in its own attributes: 17 to 20 (TitleStyle.barText), what UIKit draws.
+                    let attributes = TitleStyle.attributes(large: false, theme: theme, category: category)
                     let drawn = NSAttributedString(string: title, attributes: attributes).size().width
                     XCTAssertLessThanOrEqual(drawn, room - 2, "\(theme) \(category.rawValue) '\(title)' is \(drawn) in \(room)")
                     measured += 1
@@ -495,6 +529,11 @@ final class D248FixesTests: XCTestCase {
                     // The table's pill is UIKit's, at every step iOS 26 draws (it stops the text at 20 too).
                     XCTAssertEqual(pillFrame.width, TitleWidth.pill(pill, theme: theme, category: category), accuracy: 1, "\(at): \(pill)")
                     XCTAssertLessThanOrEqual(button.font.pointSize, TitleStyle.barButtonCap, at)
+                    XCTAssertGreaterThanOrEqual(button.font.pointSize, TitleWidth.floor, at)
+                    // Second wave: the title is drawn at the size the tables measure (17 to 20), not one UIKit chose.
+                    let drawnFont = (label.attributedText?.length ?? 0) > 0 ? label.attributedText?.attribute(.font, at: 0, effectiveRange: nil) as? UIFont : label.font
+                    XCTAssertEqual(try XCTUnwrap(drawnFont, at).pointSize, TitleStyle.font(large: false, theme: theme, category: category).pointSize,
+                                   accuracy: 0.01, "\(at): the title's size")
                     laidOut += 1
                 }
             }

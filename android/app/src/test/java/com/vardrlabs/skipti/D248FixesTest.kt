@@ -456,15 +456,15 @@ class D248FixesTest {
             measured++
         }
         assertTrue(measured > 100)
-        // The cap: at the phone's size and up to step +2 nothing changes; the largest scale stops at it.
+        // The range: the phone's size and step +1 unchanged; the largest scale stops at 20, the smallest at 17.
         assertEquals(17f, BarDecisions.inlineTitleDp(17f), 0f)
-        assertEquals(17f * 1.24f, BarDecisions.inlineTitleDp(17f * 1.24f), 0.001f)
-        assertEquals(22f, BarDecisions.inlineTitleDp(17f * 2f), 0f)
-        // The negatives: uncapped (17 at the 2.0 scale) the longest title does not fit, and the next size up from the cap
-        // leaves less than the slack in Norse.
+        assertEquals(17f * 1.12f, BarDecisions.inlineTitleDp(17f * 1.12f), 0.001f)
+        assertEquals(20f, BarDecisions.inlineTitleDp(17f * 1.24f), 0f)
+        assertEquals(20f, BarDecisions.inlineTitleDp(17f * 2f), 0f)
+        assertEquals(17f, BarDecisions.inlineTitleDp(17f * 0.75f), 0f)
+        // The negative: uncapped (17 at the 2.0 scale) the longest title does not fit.
         val longest = SettingsSection.PROFILE_ACCOUNT.title
         assertTrue("uncapped", titleWidth(longest, AppTheme.NORSE, 34f) > room)
-        assertTrue("23 is too big here", titleWidth(longest, AppTheme.NORSE, BarDecisions.INLINE_TITLE_CAP + 1f) > room - slack)
         // The instrument: Norse's widest title at 17 is iOS's Core Text width (166.889 in the probe).
         assertEquals(166.889, titleWidth(longest, AppTheme.NORSE, 17f), 0.01)
         // The bar draws the capped size, and the room's geometry is the bar's own.
@@ -472,10 +472,47 @@ class D248FixesTest {
         assertTrue("BarDecisions.inlineTitleDp(BarDecisions.titleSize(form, collapsed = true).sp.toDp().value).dp.toSp().value" in bar)
         assertTrue("style = Type.title(dark, size)," in bar)
         assertTrue(".padding(start = BarDecisions.controlShift(BarDecisions.BACK_CENTRE_FROM_EDGE).dp)\n            .size(BarDecisions.TOUCH_TARGET.dp)" in bar)
-        // Decision 202 (review I2): iOS's twin caps at the same 22 (stage 1 had 23 there).
+        // Decision 202 (revised, second wave): iOS's twin caps at the same 20, the most iOS 26 draws.
         val ios = java.io.File("../../ios/Skipti/App/ThemeArt.swift").readText()
-        assertTrue("static func inlineCap(_ theme: AppTheme) -> CGFloat { 22 }" in ios)
-        assertEquals(22, BarDecisions.INLINE_TITLE_CAP)
+        assertTrue("static func inlineCap(_ theme: AppTheme) -> CGFloat { 20 }" in ios)
+        assertEquals(20, BarDecisions.INLINE_TITLE_CAP)
+    }
+
+    /** Decision 202 (revised, second wave): bar text, the inline title and a pill's label, is drawn between 17 and 20 dp
+     *  at every font scale the app can reach, iOS 26's own range for bar text (measured on iOS 27: 15 asked at XS draws 17,
+     *  22 asked draws 20; iOS asks for the same range, `TitleStyle.barText`). So the twins' titles and pills are the same
+     *  size at every step. The negatives: without the clamp the smallest scale draws under 17 and the largest over 20. */
+    @Test
+    fun bar_text_is_drawn_17_to_20_as_ios_draws_it() {
+        val scales = listOf(0.5f, 0.75f, 0.85f, 1.0f, 1.12f, 1.24f, 1.3f, 1.5f, 1.75f, 2.0f, 2.6f)
+        for (scale in scales) {
+            val title = BarDecisions.inlineTitleDp(TypeScale.inlineTitle * scale)
+            val pill = BarDecisions.pillTextDp(BarDecisions.BAR_BUTTON_SIZE * scale)
+            for ((what, size) in listOf("title" to title, "pill" to pill)) {
+                assertTrue("x$scale $what $size", size >= 17f && size <= 20f)
+            }
+            // Inside the range the scaled size is drawn as it is (iOS's own scaling there).
+            val scaled = 17f * scale
+            if (scaled in 17f..20f) assertEquals(scaled, title, 0.0001f)
+            assertEquals("the twins' title and pill take the same range", title, pill, 0.0001f)
+        }
+        assertEquals(17f, BarDecisions.BAR_TEXT_FLOOR, 0f)
+        assertEquals(20f, BarDecisions.PILL_TEXT_CAP, 0f)
+        assertEquals(17f, BarDecisions.inlineTitleDp(17f * 0.75f), 0f)
+        assertEquals(17f, BarDecisions.pillTextDp(17f * 0.75f), 0f)
+        assertEquals(20f, BarDecisions.inlineTitleDp(17f * 2f), 0f)
+        assertEquals(20f, BarDecisions.pillTextDp(17f * 2f), 0f)
+        // The negatives: the scaled size alone leaves the range at both ends.
+        assertTrue(17f * 0.75f < 17f && 17f * 2f > 20f)
+        // Both bar text sites draw through the clamp; iOS's floor and caps are the same numbers.
+        val bar = src("SkiptiBar.kt")
+        assertTrue("fun barTextDp(scaledDp: Float, cap: Float): Float = scaledDp.coerceIn(BAR_TEXT_FLOOR, cap)" in bar)
+        assertTrue("fun inlineTitleDp(scaledDp: Float): Float = barTextDp(scaledDp, INLINE_TITLE_CAP.toFloat())" in bar)
+        assertTrue("fun pillTextDp(scaledDp: Float): Float = barTextDp(scaledDp, PILL_TEXT_CAP)" in bar)
+        val ios = java.io.File("../../ios/Skipti/App/ThemeArt.swift").readText()
+        assertTrue("static let floor: CGFloat = 17" in ios)
+        assertTrue("font.pointSize < TitleWidth.floor ? font.withSize(TitleWidth.floor) : font" in ios)
+        assertTrue("return [.font: barText(font)]" in ios)
     }
 
     // ---- Review I3: sheet titles beside their pill ----

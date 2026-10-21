@@ -1262,16 +1262,24 @@ enum TitleStyle {
         if large {
             return UIFontMetrics(forTextStyle: .largeTitle).scaledFont(for: base, compatibleWith: traits)
         }
-        return UIFontMetrics(forTextStyle: .headline).scaledFont(for: base, maximumPointSize: inlineCap(theme), compatibleWith: traits)
+        return barText(UIFontMetrics(forTextStyle: .headline).scaledFont(for: base, maximumPointSize: inlineCap(theme), compatibleWith: traits))
     }
 
-    /// D-248 (U31; fix wave, decision 202): the inline title's largest size, measured so the longest fixed pushed title
-    /// fits beside the back button at every text step on both phones (D248FixesTests' width table here, a 375 pt iPhone;
-    /// Android's at 360 dp). The widest is Norse's "Profile and account", 166.9 pt at 17: 22 draws it 216.0 wide, in
-    /// iOS's 239 of room and Android's 220. One cap, the same on both shells (Android's `INLINE_TITLE_CAP`): the twins
-    /// look identical (stage 1 had 23 here, a visible twin difference the review's I2 found). Step 2 on a phone at its
-    /// default size (21) is under it, so the cap only bites at the larger steps.
-    static func inlineCap(_ theme: AppTheme) -> CGFloat { 22 }
+    /// D-248 second wave (decision 202, revised): bar text (the inline title and the bar buttons) is drawn between
+    /// `TitleWidth.floor` (17) and its cap (20), as iOS 26 and later draw it whatever they are given (measured on iOS 27,
+    /// `.drafts/d248/fix/probe-ios2.txt`). Asking for the same range here makes iOS 17 to 25 draw it too, and makes the
+    /// width tables measure what UIKit draws. Android's bar clamps its title and pill labels to the same 17 to 20
+    /// (`BarDecisions.barTextDp`).
+    static func barText(_ font: UIFont) -> UIFont {
+        font.pointSize < TitleWidth.floor ? font.withSize(TitleWidth.floor) : font
+    }
+
+    /// D-248 (U31; fix wave and second wave, decision 202 revised): the inline title's largest size. iOS 26 and later
+    /// draw an inline title at 20 at most whatever they are given (measured on iOS 27: 22 asked, 20 drawn), so the cap is
+    /// that 20: the width tables (D248FixesTests, a 375 pt iPhone; Android's at 360 dp) then measure what UIKit draws,
+    /// and iOS 17 to 25 draw the same. One cap on both shells (Android's `INLINE_TITLE_CAP`): the twins look identical.
+    /// The widest fixed title, Norse's "Profile and account", is 166.9 pt at 17 and about 196 at 20.
+    static func inlineCap(_ theme: AppTheme) -> CGFloat { 20 }
 
     static func attributes(large: Bool, theme: AppTheme, category: UIContentSizeCategory) -> [NSAttributedString.Key: Any] {
         let f = font(large: large, theme: theme, category: category)
@@ -1285,7 +1293,7 @@ enum TitleStyle {
         let base = TypeRole.base(TypeRole.face(.body, theme: theme), size: 17, weight: 400, tabular: false)
         let font = UIFontMetrics(forTextStyle: .body)
             .scaledFont(for: base, maximumPointSize: barButtonCap, compatibleWith: UITraitCollection(preferredContentSizeCategory: category))
-        return [.font: font]
+        return [.font: barText(font)]
     }
 
     /// D-248 fix wave (review I3): the largest a bar button's text is drawn. iOS 26 and later draw it at 20 at most
