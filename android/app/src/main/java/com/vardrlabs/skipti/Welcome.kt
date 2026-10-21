@@ -6,6 +6,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
@@ -40,6 +41,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -63,6 +66,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -70,7 +74,9 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.drawText
@@ -152,8 +158,10 @@ object WelcomeCopy {
     // About
     const val REPLAY = "Show the welcome again"
 
-    /** A name the vault could not store (not a rule: the rules are the three words above). New group's words. */
-    fun nameNotSaved(error: Throwable) = "Could not save your name. ${error.message ?: error}"
+    /** A name or a picture the vault could not store (not a rule: the rules are the three words above). Fixed words,
+     *  never the raw error (fix wave M4): New group's opening words. */
+    const val NAME_NOT_SAVED = "Could not save your name."
+    const val PICTURE_NOT_SAVED = "Could not save your picture."
 
     /** Every fixed word, by iOS's name for it (WelcomeTest reads iOS's `static let` lines and compares). */
     val byIosName: Map<String, String> = mapOf(
@@ -166,22 +174,18 @@ object WelcomeCopy {
         "lookAround" to LOOK_AROUND, "sheetTitle" to SHEET_TITLE, "groupsPicture" to GROUPS_PICTURE,
         "groupsName" to GROUPS_NAME, "notNow" to NOT_NOW, "errEmpty" to ERR_EMPTY, "errLong" to ERR_LONG,
         "errChar" to ERR_CHAR, "photoUnreadable" to PHOTO_UNREADABLE, "replay" to REPLAY,
+        "nameNotSaved" to NAME_NOT_SAVED, "pictureNotSaved" to PICTURE_NOT_SAVED,
     )
+}
 
-    /** Every fixed word the five welcome screens show (the G5 scan reads these; the done title with a sample name). */
-    val welcomeScreens: List<String>
-        get() = listOf(NEXT, SKIP, BACK, step(1), WELCOME_TITLE, WELCOME_LEAD, WORDMARK, WELCOME_LINE) + PLACES + listOf(
-            WELCOME_FOOT, LOOK_TITLE, LOOK_LINE, NORSE_DARK, NAME_TITLE, NAME_LINE, NAME_PLACEHOLDER, nameCaption("Sam"),
-            SAVE_NAME, PICTURE_TITLE, PICTURE_LINE, MORE, PHOTO, USE, PICTURE_FOOT, doneTitle("Sam"), DONE_TITLE_NO_NAME,
-            DONE_LINE, START_GROUP, LOOK_AROUND, ERR_EMPTY, ERR_LONG, ERR_CHAR, PHOTO_UNREADABLE, DoneCopy.NAME_SAVED,
-            DoneCopy.PICTURE_SAVED,
-        ) + AppTheme.entries.map { it.label }
-
-    /** GUARANTEES #5 (plan 1.6): words the welcome never shows, case-insensitive. */
+/** GUARANTEES #5 (plan 1.6): the words the welcome never shows. Kept out of [WelcomeCopy], so a scan of that whole table
+ *  (fix wave M6: the table as written, not a list kept beside it) reads only the welcome's words. iOS's `WelcomeG5`. */
+object WelcomeG5 {
+    /** Case-insensitive. */
     val FORBIDDEN = listOf("account", "sign", "sync", "cloud", "google", "apple", "join")
 
     /** The forbidden words a list of strings contains (empty when clean). */
-    fun g5Hits(strings: List<String>): List<String> = strings.filter { s -> FORBIDDEN.any { s.lowercase().contains(it) } }
+    fun hits(strings: List<String>): List<String> = strings.filter { s -> FORBIDDEN.any { s.lowercase().contains(it) } }
 }
 
 enum class WelcomeStep { WELCOME, LOOK, NAME, PICTURE, DONE }
@@ -196,10 +200,10 @@ enum class WelcomeExit { SKIPPED, LOOK_AROUND, START_GROUP }
 enum class WelcomeAction { NEXT, SAVE_NAME, USE_PICTURE, FINISH }
 
 /** D-245: the flow, pure. W1 to W4 carry Skip; the bottom carries one action at a time (Save name while the field
- *  holds an unsaved name, Use this picture while one is staged, else Next); W5 finishes. The twin of iOS's. */
+ *  holds an unsaved name, Use this picture while one is staged, else Next); W5 finishes. Decision 200: W3 hides Next
+ *  while the field holds an unsaved name (one action at a time, as mock v2 drew); Skip and Back remain. The twin of
+ *  iOS's. */
 object WelcomeFlow {
-    const val STEPS = 4
-
     fun next(after: WelcomeStep): WelcomeStep? = WelcomeStep.entries.getOrNull(after.ordinal + 1)
 
     fun skippable(step: WelcomeStep) = step != WelcomeStep.DONE
@@ -216,6 +220,32 @@ object WelcomeFlow {
 
     /** What TalkBack says for the progress ("Step 2 of 4"). */
     fun spoken(step: WelcomeStep): String? = number(step)?.let(WelcomeCopy::step)
+
+    /** Each step's title (W5's carries the saved name). */
+    fun title(step: WelcomeStep, name: String?): String = when (step) {
+        WelcomeStep.WELCOME -> WelcomeCopy.WELCOME_TITLE
+        WelcomeStep.LOOK -> WelcomeCopy.LOOK_TITLE
+        WelcomeStep.NAME -> WelcomeCopy.NAME_TITLE
+        WelcomeStep.PICTURE -> WelcomeCopy.PICTURE_TITLE
+        WelcomeStep.DONE -> doneTitle(name)
+    }
+
+    /** Fix wave M8: what TalkBack says when the page changes, and the progress's label: "Step 2 of 4, Pick a look";
+     *  W5 is its title alone. */
+    fun announcement(step: WelcomeStep, name: String?): String =
+        spoken(step)?.let { "$it, ${title(step, name)}" } ?: title(step, name)
+
+    /** Fix wave I2: W1's and W4's quiet foot says the data stays on this phone, so it shows only WITHOUT an account
+     *  (Profile's `ProfileCopy.footnotes(signedIn)` rule); a signed-in replay shows none. */
+    fun foot(step: WelcomeStep, signedIn: Boolean): String? = if (signedIn) null else when (step) {
+        WelcomeStep.WELCOME -> WelcomeCopy.WELCOME_FOOT
+        WelcomeStep.PICTURE -> WelcomeCopy.PICTURE_FOOT
+        else -> null
+    }
+
+    /** Fix wave I3: W1's five places, as rows of indices: three then two, or one per row at the large text sizes
+     *  ([TextSize.stacks]; iOS's accessibility sizes), where a label is wider than a column. */
+    fun placeRows(stacked: Boolean): List<List<Int>> = if (stacked) (0 until 5).map { listOf(it) } else listOf(listOf(0, 1, 2), listOf(3, 4))
 
     fun doneTitle(name: String?): String {
         val trimmed = name?.let(NameRule::trimmed)
@@ -499,16 +529,17 @@ object RuneInk {
         Offset(centre.x - (inkLeft + inkRight) / 2, centre.y - (inkTop + inkBottom) / 2)
 }
 
-/** Decisions 192 and 197: the progress, drawn in the theme's language. Spoken as "Step n of 4". A moment
+/** Decisions 192 and 197: the progress, drawn in the theme's language. Spoken as the step's announcement ("Step n of 4,
+ *  <title>"), a polite live region, so TalkBack says the page changed (fix wave M8; iOS posts the same words). A moment
  *  ([MotionState.moment]): Reduce Motion and Less motion land it at once, power saving never stills it. */
 @Composable
-fun WelcomeProgressBar(from: Double, to: Double, startedAtMs: Long, spoken: String?, dark: Boolean) {
+fun WelcomeProgressBar(from: Double, to: Double, startedAtMs: Long, spoken: String, dark: Boolean) {
     val motion = rememberMotionState().moment()
     val theme = Appearance.theme
     val play = remember(startedAtMs, motion.tick) { MomentPlay(startedAtMs, still = !motion.tick) }
     LaunchedEffect(play) { play.run(WelcomeProgress.SETTLES) }
     val pose = WelcomeProgress.pose(theme, from, to, play.elapsed(WelcomeProgress.SETTLES), still = !motion.tick)
-    Box(Modifier.clearAndSetSemantics { if (spoken != null) contentDescription = spoken }) {
+    Box(Modifier.clearAndSetSemantics { contentDescription = spoken; liveRegion = LiveRegionMode.Polite }) {
         WelcomeProgressDrawing(pose, theme, dark)
     }
 }
@@ -678,6 +709,12 @@ class WelcomeSession {
     var progressStart by mutableLongStateOf(0L)
     /** The vault's name has been read into the field once (a restored field keeps what was typed). */
     var loaded = false
+    /** Fix wave I1: this run of the welcome closed; the next show starts fresh ([opening]). Saved with the session. */
+    var closed = false
+        private set
+    /** Fix wave M2: one name or picture save at a time, D-235's latch (not saved: a re-made activity has none in
+     *  flight). */
+    val saving = SaveLatch()
 
     val nameDone: Boolean get() = nameDoneFor != null && nameDoneFor == NameRule.trimmed(name)
 
@@ -696,9 +733,23 @@ class WelcomeSession {
         return true
     }
 
+    /** Fix wave I1: the welcome closed (any exit). */
+    fun close() {
+        closed = true
+    }
+
+    /** Fix wave I1: the welcome is about to show. A session that closed starts fresh (after an erase the new vault's
+     *  first run opens at W1 with an empty field); one still open (a re-made activity, a lock that came back) keeps
+     *  its step and what was typed. */
+    fun opening() {
+        if (closed) reset()
+    }
+
     fun reset() {
         step = WelcomeStep.WELCOME
         name = ""
+        savedName = null
+        saved = Avatar.None
         nameDoneFor = null
         nameError = null
         stage = PictureStage()
@@ -708,13 +759,14 @@ class WelcomeSession {
         progressTo = 0.0
         progressStart = 0L
         loaded = false
+        closed = false
     }
 
     companion object {
         val Saver = listSaver<WelcomeSession, Any?>(
             save = {
                 listOf(it.step.ordinal, it.name, it.nameDoneFor, it.progressTo, it.moreOpen, (it.stage.staged as? Avatar.Emoji)?.emoji,
-                    it.stage.done, it.loaded)
+                    it.stage.done, it.loaded, it.closed)
             },
             restore = { v ->
                 WelcomeSession().apply {
@@ -726,6 +778,7 @@ class WelcomeSession {
                     moreOpen = v[4] as Boolean
                     stage = PictureStage(staged = (v[5] as String?)?.let { Avatar.Emoji(it) }, done = v[6] as String?)
                     loaded = v[7] as Boolean
+                    if (v[8] as Boolean) close()
                 }
             },
         )
@@ -752,20 +805,18 @@ fun WelcomeLayer(vaultPath: String, mode: WelcomeMode, session: WelcomeSession, 
 }
 
 /** W1's five places: the real bar's glyphs in the current theme (Norse runes, Lucide elsewhere), the + on the accent,
- *  You as the person glyph, each in the theme's person tile (Aurora circle, Norse diamond, Vardr Labs square). */
+ *  You as the person glyph, each in the theme's person tile (Aurora circle, Norse diamond, Vardr Labs square). Fix wave
+ *  I3: a label wraps to two lines in its column; at the large text sizes ([stacked]) the place is a row, its tile then
+ *  its label, which wraps as far as it needs. */
 @Composable
-private fun WelcomePlace(index: Int, dark: Boolean) {
+private fun WelcomePlace(index: Int, dark: Boolean, stacked: Boolean) {
     val theme = Appearance.theme
     val kind = TileShape.of(theme, person = true)
     val side = ThemeArt.m("seal").toInt()
     val add = index == 2
     val tint = if (add) Tok.onAccent(dark) else if (index == 4) Tok.accent(dark) else Tok.ring(dark)
     val tabs = mapOf(0 to HomeTab.BALANCE, 1 to HomeTab.GROUPS, 3 to HomeTab.SETTLE)
-    Column(
-        Modifier.width(92.dp).semantics(mergeDescendants = true) {},
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
+    val tile: @Composable () -> Unit = {
         Box(Modifier.size(side.dp).clearAndSetSemantics {}, contentAlignment = Alignment.Center) {
             Box(
                 Modifier
@@ -788,15 +839,33 @@ private fun WelcomePlace(index: Int, dark: Boolean) {
                 }
             }
         }
-        // iOS's minimumScaleFactor(0.8): shrink to 80% before an ellipsis (the theme tiles' way).
-        Text(
-            WelcomeCopy.PLACES[index],
-            style = Type.name(dark, TypeScale.detail.toInt()),
-            maxLines = 1,
-            softWrap = false,
-            overflow = TextOverflow.Ellipsis,
-            autoSize = TextAutoSize.StepBased(minFontSize = (TypeScale.detail * 0.8f).sp, maxFontSize = TypeScale.detail.sp, stepSize = 0.2.sp),
-        )
+    }
+    if (stacked) {
+        Row(
+            Modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            tile()
+            Text(WelcomeCopy.PLACES[index], style = Type.name(dark, TypeScale.detail.toInt()))
+        }
+    } else {
+        Column(
+            Modifier.width(92.dp).semantics(mergeDescendants = true) {},
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            tile()
+            // iOS's lineLimit(2) and minimumScaleFactor(0.8): two lines, shrinking to 80% before an ellipsis.
+            Text(
+                WelcomeCopy.PLACES[index],
+                style = Type.name(dark, TypeScale.detail.toInt()),
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                autoSize = TextAutoSize.StepBased(minFontSize = (TypeScale.detail * 0.8f).sp, maxFontSize = TypeScale.detail.sp, stepSize = 0.2.sp),
+            )
+        }
     }
 }
 
@@ -831,6 +900,35 @@ private fun WelcomeDetail(text: String, dark: Boolean, color: Color = Tok.textDi
     Text(text, style = Type.body(dark).copy(fontSize = TypeScale.detail.sp, color = color), textAlign = TextAlign.Center)
 }
 
+/** Fix wave (twins): the step change, iOS's `.animation(.easeInOut(duration: 0.25), value: step)` with the page's
+ *  opacity transition: ONE crossfade of the whole page, the leaving page fading out while the arriving one fades in, and
+ *  Back, Skip and the bottom action changing WITH it (a control both steps draw stays put, as a view of the same
+ *  identity does on iOS). Pure, so the JVM tests read it. */
+object WelcomeFade {
+    /** iOS's 0.25 s. */
+    const val MILLIS = 250
+    /** SwiftUI's easeInOut (Core Animation's ease-in-ease-out curve). */
+    val EASING = CubicBezierEasing(0.42f, 0f, 0.58f, 1f)
+
+    /** How far the current crossfade has run (0 to 1): `fade` is animated to `turn`, one per step change. */
+    fun progress(fade: Float, turn: Int): Float = (fade - (turn - 1)).coerceIn(0f, 1f)
+
+    /** A control's opacity at `t`: drawn by both steps it stays; drawn by the arriving one it fades in; by the leaving one
+     *  it fades out. */
+    fun slot(leaving: Boolean, arriving: Boolean, t: Float): Float = when {
+        leaving && arriving -> 1f
+        arriving -> t
+        leaving -> 1f - t
+        else -> 0f
+    }
+}
+
+/** The leaving layer of a crossfade: drawn at [alpha], silent to TalkBack, and it takes no touch. */
+private fun Modifier.leavingLayer(alpha: Float): Modifier = this
+    .graphicsLayer { this.alpha = alpha }
+    .clearAndSetSemantics {}
+    .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() } } }
+
 /** D-245: the welcome's five screens. The twin of iOS's `WelcomeView`. */
 @Composable
 fun WelcomeScreen(vaultPath: String, session: WelcomeSession, onClose: (WelcomeExit) -> Unit) {
@@ -853,13 +951,24 @@ fun WelcomeScreen(vaultPath: String, session: WelcomeSession, onClose: (WelcomeE
     }
     LaunchedEffect(s.completed) { s.advance(s.completed, SystemClock.uptimeMillis()) }
 
-    fun saveName() {
+    /** [returned]: the keyboard's Done, which never saves an unchanged name again (fix wave M1). One save at a time
+     *  (fix wave M2). */
+    fun saveName(returned: Boolean = false) {
+        if (!s.saving.begin()) return
         val typed = s.name
+        val saved = s.savedName
         scope.launch {
-            val outcome = withContext(Dispatchers.IO) {
-                ProfileSave.name(typed, LedgerStore(vaultPath), ProfileSave.Effects.live(vaultPath))
+            val outcome = try {
+                withContext(Dispatchers.IO) {
+                    val store = LedgerStore(vaultPath)
+                    val effects = ProfileSave.Effects.live(vaultPath)
+                    if (returned) ProfileSave.returned(typed, saved, store, effects) else ProfileSave.name(typed, store, effects)
+                }
+            } finally {
+                s.saving.release()
             }
             when (outcome) {
+                null -> focus.clearFocus()
                 is ProfileSave.NameOutcome.Saved -> {
                     s.savedName = outcome.name
                     s.name = outcome.name
@@ -874,20 +983,26 @@ fun WelcomeScreen(vaultPath: String, session: WelcomeSession, onClose: (WelcomeE
         }
     }
 
+    /** Use this picture: through the confirm's one seam, once (fix waves M2, M6); a failure in words (M4). */
     fun usePicture() {
-        val picked = s.stage.staged ?: return
+        if (!s.saving.begin()) return
+        val before = s.stage
         scope.launch {
-            val failure = withContext(Dispatchers.IO) {
-                runCatching { ProfileSave.picture(picked, LedgerStore(vaultPath), ProfileSave.Effects.live(vaultPath)) }.exceptionOrNull()
+            val result = try {
+                withContext(Dispatchers.IO) {
+                    runCatching { ProfileSave.answer(PictureAnswer.USE, before, { LedgerStore(vaultPath) }, ProfileSave.Effects.live(vaultPath)) }
+                }
+            } finally {
+                s.saving.release()
             }
-            if (failure == null) {
-                s.saved = picked
-                s.stage = s.stage.used(picked)
-                s.moreOpen = false
-                ProfileSave.done(ProfileSave.pictureMoment(picked), ProfileSave.Feedback.HAPTIC)
-            } else {
-                s.pictureError = failure.message ?: failure.toString()
-            }
+            result.onSuccess { answered ->
+                s.stage = answered.stage
+                answered.written?.let {
+                    s.saved = it
+                    s.moreOpen = false
+                    ProfileSave.done(ProfileSave.pictureMoment(it), ProfileSave.Feedback.HAPTIC)
+                }
+            }.onFailure { s.pictureError = WelcomeCopy.PICTURE_NOT_SAVED }
         }
     }
 
@@ -910,76 +1025,29 @@ fun WelcomeScreen(vaultPath: String, session: WelcomeSession, onClose: (WelcomeE
         }
     }
 
-    // The step change fades out, then in (iOS's opacity transition); under reduced motion the page changes at once.
+    // The step change ([WelcomeFade]): `to` is the step drawn, `from` the one leaving; one crossfade per change. Under
+    // reduced motion the page changes at once.
     val reduce = rememberMotionState().reduce
-    var shown by remember { mutableStateOf(s.step) }
-    val fade by animateFloatAsState(if (shown == s.step) 1f else 0f, if (reduce) snap() else tween(125), label = "welcomeStep", finishedListener = { if (it == 0f) shown = s.step })
-    val page = if (reduce) s.step else shown
+    var from by remember { mutableStateOf(s.step) }
+    var to by remember { mutableStateOf(s.step) }
+    var turn by remember { mutableIntStateOf(0) }
+    LaunchedEffect(s.step) {
+        if (s.step != to) {
+            from = to
+            to = s.step
+            turn++
+        }
+    }
+    val fade by animateFloatAsState(turn.toFloat(), if (reduce) snap() else tween(WelcomeFade.MILLIS, easing = WelcomeFade.EASING), label = "welcomeStep")
+    val t = WelcomeFade.progress(fade, turn)
+    val leaving = if (t < 1f && from != to) from else null
+    val dirty = NameRule.dirty(s.name, s.savedName)
+    val staged = s.stage.staged != null
 
-    Column(Modifier.fillMaxSize().auroraBackground(dark)) {
-        // Top: decision 198's back on W2 to W4, Skip on W1 to W4.
-        Row(
-            Modifier.fillMaxWidth().height(44.dp).padding(horizontal = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            val previous = WelcomeFlow.previous(s.step)
-            if (previous != null) {
-                Box(
-                    Modifier
-                        .size(44.dp)
-                        .clickable { s.step = previous }
-                        .semantics { contentDescription = WelcomeCopy.BACK; role = Role.Button },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(TabIcons.ChevronLeft, contentDescription = null, tint = Tok.groundAccent(dark), modifier = Modifier.size(22.dp))
-                }
-            }
-            Spacer(Modifier.weight(1f))
-            if (WelcomeFlow.skippable(s.step)) {
-                Box(
-                    Modifier.heightIn(min = 44.dp).widthIn(min = 44.dp).clickable(role = Role.Button) { onClose(WelcomeExit.SKIPPED) },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(WelcomeCopy.SKIP, style = Type.label(dark, TypeScale.inlineTitle.toInt()).copy(color = Tok.groundAccent(dark)))
-                }
-            }
-        }
-        Box(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp), contentAlignment = Alignment.Center) {
-            WelcomeProgressBar(s.progressFrom, s.progressTo, s.progressStart, WelcomeFlow.spoken(s.step), dark)
-        }
-        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
-            val viewport = maxHeight
-            Column(
-                Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState()),
-            ) {
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = viewport)
-                        .padding(horizontal = 24.dp, vertical = 16.dp)
-                        .graphicsLayer { alpha = if (reduce) 1f else fade },
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                ) {
-                    when (page) {
-                        WelcomeStep.WELCOME -> WelcomePage(dark)
-                        WelcomeStep.LOOK -> LookPage(dark) { WelcomeLook.choose(context, it) }
-                        WelcomeStep.NAME -> NamePage(s, dark, onSave = { saveName() })
-                        WelcomeStep.PICTURE -> PicturePage(s, dark, signedIn, onPhoto = {
-                            pickPhoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                        })
-                        WelcomeStep.DONE -> DonePage(s, dark)
-                    }
-                }
-            }
-        }
-        Column(
-            Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            when (s.action) {
+    @Composable
+    fun Actions(step: WelcomeStep, modifier: Modifier) {
+        Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            when (WelcomeFlow.action(step, dirty, staged)) {
                 WelcomeAction.NEXT -> PrimaryAction(WelcomeCopy.NEXT, dark) { goNext() }
                 WelcomeAction.SAVE_NAME -> PrimaryAction(WelcomeCopy.SAVE_NAME, dark, enabled = NameRule.check(s.name) == null) { saveName() }
                 WelcomeAction.USE_PICTURE -> PrimaryAction(WelcomeCopy.USE, dark) { usePicture() }
@@ -990,10 +1058,98 @@ fun WelcomeScreen(vaultPath: String, session: WelcomeSession, onClose: (WelcomeE
             }
         }
     }
+
+    Column(Modifier.fillMaxSize().auroraBackground(dark)) {
+        // Top: decision 198's back on W2 to W4, Skip on W1 to W4. Fix wave I3: at least 44 high, taller when Skip grows
+        // with the font scale (never clipped).
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 44.dp).padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            val back = WelcomeFlow.previous(to)
+            val backAlpha = WelcomeFade.slot(leaving?.let { WelcomeFlow.previous(it) != null } == true, back != null, t)
+            if (backAlpha > 0f) {
+                Box(
+                    Modifier
+                        .size(44.dp)
+                        .then(if (back != null) Modifier.graphicsLayer { alpha = backAlpha } else Modifier.leavingLayer(backAlpha))
+                        .then(if (back != null) Modifier.clickable { s.step = back } else Modifier)
+                        .semantics { contentDescription = WelcomeCopy.BACK; role = Role.Button },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(TabIcons.ChevronLeft, contentDescription = null, tint = Tok.groundAccent(dark), modifier = Modifier.size(22.dp))
+                }
+            }
+            Spacer(Modifier.weight(1f))
+            val skips = WelcomeFlow.skippable(to)
+            val skipAlpha = WelcomeFade.slot(leaving?.let(WelcomeFlow::skippable) == true, skips, t)
+            if (skipAlpha > 0f) {
+                Box(
+                    Modifier
+                        .heightIn(min = 44.dp)
+                        .widthIn(min = 44.dp)
+                        .then(if (skips) Modifier.graphicsLayer { alpha = skipAlpha } else Modifier.leavingLayer(skipAlpha))
+                        .then(if (skips) Modifier.clickable(role = Role.Button) { onClose(WelcomeExit.SKIPPED) } else Modifier),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(WelcomeCopy.SKIP, style = Type.label(dark, TypeScale.inlineTitle.toInt()).copy(color = Tok.groundAccent(dark)))
+                }
+            }
+        }
+        Box(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp), contentAlignment = Alignment.Center) {
+            WelcomeProgressBar(s.progressFrom, s.progressTo, s.progressStart, WelcomeFlow.announcement(to, s.savedName), dark)
+        }
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+            val viewport = maxHeight
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = viewport)
+                        .padding(horizontal = 24.dp, vertical = 16.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    listOfNotNull(leaving, to).forEach { page ->
+                        key(page) {
+                            Column(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .then(if (page == to) Modifier.graphicsLayer { alpha = t } else Modifier.leavingLayer(1f - t)),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
+                                when (page) {
+                                    WelcomeStep.WELCOME -> WelcomePage(dark, signedIn)
+                                    WelcomeStep.LOOK -> LookPage(dark) { WelcomeLook.choose(context, it) }
+                                    WelcomeStep.NAME -> NamePage(s, dark, onSave = { saveName() }, onReturn = { saveName(returned = true) })
+                                    WelcomeStep.PICTURE -> PicturePage(s, dark, signedIn, onPhoto = {
+                                        pickPhoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                                    })
+                                    WelcomeStep.DONE -> DonePage(s, dark)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Box(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 12.dp)) {
+            val leavingAction = leaving?.let { WelcomeFlow.action(it, dirty, staged) }
+            if (leavingAction != null && leavingAction != WelcomeFlow.action(to, dirty, staged)) {
+                Actions(leaving, Modifier.leavingLayer(1f - t))
+                Actions(to, Modifier.graphicsLayer { alpha = t })
+            } else {
+                Actions(to, Modifier)
+            }
+        }
+    }
 }
 
 @Composable
-private fun WelcomePage(dark: Boolean) {
+private fun WelcomePage(dark: Boolean, signedIn: Boolean) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(28.dp)) {
         Column(
             Modifier.clearAndSetSemantics { contentDescription = WelcomeCopy.WELCOME_TITLE; heading() },
@@ -1015,15 +1171,19 @@ private fun WelcomePage(dark: Boolean) {
         }
         WelcomeOrnament(dark)
         WelcomeLine(WelcomeCopy.WELCOME_LINE, dark)
+        // Fix wave I3: one place per row at the large text sizes, where a label outgrows its column.
+        val stacked = TextSize.stacks(LocalDensity.current.fontScale)
         Column(
             Modifier.padding(top = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(20.dp),
+            verticalArrangement = Arrangement.spacedBy(if (stacked) 14.dp else 20.dp),
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { for (i in 0 until 3) WelcomePlace(i, dark) }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { for (i in 3 until 5) WelcomePlace(i, dark) }
+            WelcomeFlow.placeRows(stacked).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { row.forEach { WelcomePlace(it, dark, stacked) } }
+            }
         }
-        Box(Modifier.padding(top = 8.dp)) { WelcomeDetail(WelcomeCopy.WELCOME_FOOT, dark) }
+        // Fix wave I2: only without an account (a signed-in replay's data does not stay on this phone).
+        WelcomeFlow.foot(WelcomeStep.WELCOME, signedIn)?.let { foot -> Box(Modifier.padding(top = 8.dp)) { WelcomeDetail(foot, dark) } }
     }
 }
 
@@ -1045,7 +1205,7 @@ private fun LookPage(dark: Boolean, onChoose: (AppTheme) -> Unit) {
 }
 
 @Composable
-private fun NamePage(s: WelcomeSession, dark: Boolean, onSave: () -> Unit) {
+private fun NamePage(s: WelcomeSession, dark: Boolean, onSave: () -> Unit, onReturn: () -> Unit) {
     val trimmed = NameRule.trimmed(s.name)
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(20.dp)) {
         WelcomeTitle(WelcomeCopy.NAME_TITLE, dark)
@@ -1058,7 +1218,7 @@ private fun NamePage(s: WelcomeSession, dark: Boolean, onSave: () -> Unit) {
                     s.name, { s.name = it; s.nameError = null }, WelcomeCopy.NAME_PLACEHOLDER, dark,
                     style = Type.body(dark).copy(fontSize = 17.sp, textAlign = TextAlign.Center),
                     keyboard = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Done),
-                    actions = KeyboardActions(onDone = { onSave() }),
+                    actions = KeyboardActions(onDone = { onReturn() }),
                     centred = true,
                 )
             }
@@ -1088,7 +1248,8 @@ private fun PicturePage(s: WelcomeSession, dark: Boolean, signedIn: Boolean, onP
                 }
                 SecondaryAction(WelcomeCopy.PHOTO, dark, onClick = onPhoto)
                 s.pictureError?.let { WelcomeDetail(it, dark, Tok.owed(dark)) }
-                WelcomeDetail(WelcomeCopy.PICTURE_FOOT, dark)
+                // Fix wave I2: only without an account, never under the signed-in groups line.
+                WelcomeFlow.foot(WelcomeStep.PICTURE, signedIn)?.let { WelcomeDetail(it, dark) }
             }
         }
     }

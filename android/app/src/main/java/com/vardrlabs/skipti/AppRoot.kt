@@ -475,6 +475,9 @@ fun AppRoot(
         // D-244 (ADR-0043): signed in, the account's settings the vault holds are applied, then (once per process) an
         // icon change still pending, at the front only, after the lock's decision above.
         SettingsSync.launched(context)
+        // Fix wave I1: a welcome that closed starts fresh (after an erase, the new vault's first run opens at W1 with an
+        // empty field); one still open (a re-made activity re-runs this launch) keeps its step.
+        if (welcomeShows) welcome.opening()
         welcomePending = welcomeShows
         kitLoaded = true
     }
@@ -566,6 +569,7 @@ fun AppRoot(
             if (welcomePending) {
                 WelcomeLayer(vaultPath, WelcomeMode.FIRST_RUN, welcome) { exit ->
                     welcomePending = false
+                    welcome.close()
                     scope.launch(Dispatchers.IO) {
                         WelcomeGate.closed(WelcomeMode.FIRST_RUN) { WelcomeGate.clear(LedgerStore(vaultPath)) }
                     }

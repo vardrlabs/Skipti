@@ -44,6 +44,16 @@ class WelcomeTest {
     /** `You` records that carry a name (a new vault's first read writes your id with no name). */
     private fun youRecords(store: LedgerStore) = ops(store) { it is GroupOpIn.You && !it.name.isNullOrEmpty() }
 
+    /** Fix wave M6: every string literal in Welcome.kt's `object WelcomeCopy`, read from the source (the table as
+     *  written, so a word added to it is scanned without a second list to keep). The iOS-name map is not words. */
+    private fun copyTableWords(): List<String> {
+        val source = src("Welcome.kt")
+        val start = source.indexOf("object WelcomeCopy {")
+        var body = source.substring(start, source.indexOf("\n}\n", start))
+        body = body.substringBefore("    val byIosName") + body.substringAfter("    val byIosName").substringAfter("\n    )", missingDelimiterValue = "")
+        return Regex(""""((?:[^"\\]|\\.)*)"""").findAll(body).map { it.groupValues[1] }.toList()
+    }
+
     /** The launch as AppRoot makes it: the vault's read (marking the welcome on a first launch), then the gate. */
     private fun launch(store: LedgerStore): Boolean {
         val opened = VaultRecovery.launch("app/launched", firstLaunch = { WelcomeGate.mark(it) }) { store } as VaultRecovery.Launch.Opened
@@ -152,7 +162,7 @@ class WelcomeTest {
         assertEquals(3.0, session.progressTo, 0.0)
         assertEquals(1_000L, session.progressStart)
         val source = src("Welcome.kt")
-        assertTrue(".clickable { s.step = previous }" in source)
+        assertTrue(".then(if (back != null) Modifier.clickable { s.step = back } else Modifier)" in source)
         assertTrue("semantics { contentDescription = WelcomeCopy.BACK; role = Role.Button }" in source)
         // System Back is the same step back.
         assertTrue("if (previous != null) session.step = previous else onClose(WelcomeExit.SKIPPED)" in source)
@@ -170,6 +180,12 @@ class WelcomeTest {
         assertTrue(NameRule.dirty("Sam", saved = null))
         assertFalse("the saved name, trimmed, is not a change", NameRule.dirty(" Sam ", saved = "Sam"))
         assertFalse("a blank field is not a change to save", NameRule.dirty("   ", saved = "Sam"))
+        // Decision 200 (kept): W3 hides Next while the field holds an unsaved name, valid or not; Skip and Back remain.
+        assertEquals("decision 200: no Next beside an unsaved name", WelcomeAction.SAVE_NAME,
+            WelcomeFlow.action(WelcomeStep.NAME, NameRule.dirty("a".repeat(61), saved = null), staged = false))
+        assertEquals(WelcomeAction.SAVE_NAME, WelcomeFlow.action(WelcomeStep.NAME, NameRule.dirty("Ann", saved = "Sam"), staged = false))
+        assertTrue(WelcomeFlow.skippable(WelcomeStep.NAME))
+        assertEquals(WelcomeStep.LOOK, WelcomeFlow.previous(WelcomeStep.NAME))
     }
 
     // ---- Decisions 192 and 197: the progress ----
@@ -314,7 +330,9 @@ class WelcomeTest {
         assertEquals("Show the welcome again", WelcomeCopy.REPLAY)
         assertEquals(AppearanceCopy.NORSE_ALWAYS_DARK, WelcomeCopy.NORSE_DARK)
         assertEquals(ProfileCopy.PHONE_ONLY, WelcomeCopy.PICTURE_FOOT)
-        for (w in WelcomeCopy.byIosName.values + WelcomeCopy.welcomeScreens) {
+        assertEquals("Could not save your name.", WelcomeCopy.NAME_NOT_SAVED)
+        assertEquals("Could not save your picture.", WelcomeCopy.PICTURE_NOT_SAVED)
+        for (w in WelcomeCopy.byIosName.values + copyTableWords()) {
             assertFalse("a dash: $w", '—' in w || '–' in w)
         }
     }
@@ -322,11 +340,21 @@ class WelcomeTest {
     /** Plan 1.6 (GUARANTEES #5): no welcome word names an account, sign-in, sync, the cloud, Google, Apple or joining. */
     @Test
     fun no_welcome_word_names_an_account() {
-        assertTrue(WelcomeCopy.welcomeScreens.size > 35)
-        assertEquals(emptyList<String>(), WelcomeCopy.g5Hits(WelcomeCopy.welcomeScreens))
+        // Fix wave M6: the whole table as written, plus the other tables the welcome draws from.
+        val words = copyTableWords() + listOf(DoneCopy.NAME_SAVED, DoneCopy.PICTURE_SAVED) + AppTheme.entries.map { it.label }
+        assertTrue(words.size > 40)
+        assertTrue("the parse reads the table", "Everything stays on this phone." in words)
+        assertTrue("templates too", "Step \$n of 4" in words)
+        assertFalse("not the iOS-name keys", "photoUnreadable" in words)
+        assertEquals(emptyList<String>(), WelcomeG5.hits(words))
         // Negative: the scan sees one, whatever its case.
-        assertEquals(listOf("SIGN in to Sync"), WelcomeCopy.g5Hits(listOf("Pick a look", "SIGN in to Sync")))
-        assertEquals(listOf("Join a group"), WelcomeCopy.g5Hits(listOf("Join a group")))
+        assertEquals(listOf("SIGN in to Sync"), WelcomeG5.hits(listOf("Pick a look", "SIGN in to Sync")))
+        assertEquals(listOf("Join a group"), WelcomeG5.hits(listOf("Join a group")))
+        // No word is drawn around the table: every Text and action in the welcome's screens and the confirm reads a name.
+        assertEquals(emptyList<String>(), literalsDrawn(src("Welcome.kt").substringAfter("// MARK: - The screens")))
+        assertEquals(emptyList<String>(), literalsDrawn(src("ProfileConfirm.kt")))
+        // Negative: the guard sees a literal, on its line or the next.
+        assertEquals(2, literalsDrawn("Text(\"Sign in\") PrimaryAction(\n    \"Join\", dark) Text(WelcomeCopy.NEXT)").size)
         // And no welcome screen routes to sign-in or Join.
         val source = src("Welcome.kt")
         for (banned in listOf("SignInScreen", "JoinScreen", "InviteCopy", "ImportScreen", "Account.signIn", "onJoin", "route = ")) {
@@ -403,37 +431,53 @@ class WelcomeTest {
         val field = src("ListRows.kt").substringAfter("fun HairlineField(").substringBefore("\n}\n")
         assertTrue("the hairline field passes its actions on", "keyboardActions = actions," in field)
         val profile = src("Profile.kt").substringAfter("fun ProfileScreen(")
-        assertTrue("actions = KeyboardActions(onDone = { saveName() })," in profile)
+        assertTrue("actions = KeyboardActions(onDone = { saveName(returned = true) })," in profile)
         assertTrue("imeAction = ImeAction.Done" in profile)
         val welcome = src("Welcome.kt")
-        assertTrue("actions = KeyboardActions(onDone = { onSave() })," in welcome)
-        assertTrue("WelcomeStep.NAME -> NamePage(s, dark, onSave = { saveName() })" in welcome)
-        // Negative: the field's default does nothing on Done.
+        assertTrue("actions = KeyboardActions(onDone = { onReturn() })," in welcome)
+        assertTrue("WelcomeStep.NAME -> NamePage(s, dark, onSave = { saveName() }, onReturn = { saveName(returned = true) })" in welcome)
+        // The field's own default stays inert: a caller opts in to Done (not a negative, a presence check).
         assertTrue("actions: KeyboardActions = KeyboardActions.Default," in field)
     }
 
     // ---- The picture (decision 161) ----
 
+    /** Fix wave M6: through the real seam ([ProfileSave.answer], which Profile's sheet and the welcome's Use call), with
+     *  a real vault: Not now writes, nudges and shares nothing and never opens the vault; Use writes once; a second Use
+     *  has nothing staged. */
     @Test
     fun a_tap_stages_and_only_use_writes_once() {
         val s = store()
+        var opened = 0
+        val vault = { opened++; s }
+        var shares = 0
+        var changes = 0
+        val spy = ProfileSave.Effects(changed = { changes++ }, share = { shares++ })
         var stage = PictureStage().choose(Avatar.Emoji("🦊")).choose(Avatar.Emoji("🐼"))
         assertEquals(Avatar.Emoji("🐼"), stage.staged)
-        assertEquals("taps write nothing", 0, avatarRecords(s))
-        stage = stage.notNow()
+        val notNow = ProfileSave.answer(PictureAnswer.NOT_NOW, stage, vault, spy)
+        stage = notNow.stage
+        assertNull(notNow.written)
         assertNull(stage.staged)
         assertNull(stage.done)
+        assertEquals("Not now never opens the vault", 0, opened)
         assertEquals("Not now writes nothing", 0, avatarRecords(s))
+        assertEquals("and nudges and shares nothing", 0, shares + changes)
         assertEquals(Avatar.None, s.loadAvatar())
 
-        var shares = 0
         stage = stage.choose(Avatar.Emoji("🦉"))
-        ProfileSave.picture(Avatar.Emoji("🦉"), s, ProfileSave.Effects(changed = {}, share = { shares++ }))
-        stage = stage.used(Avatar.Emoji("🦉"))
+        val use = ProfileSave.answer(PictureAnswer.USE, stage, vault, spy)
+        stage = use.stage
+        assertEquals(Avatar.Emoji("🦉"), use.written)
         assertEquals("one record", 1, avatarRecords(s))
         assertEquals("one share request", 1, shares)
+        assertEquals(1, changes)
         assertEquals(Avatar.Emoji("🦉"), s.loadAvatar())
         assertEquals(DoneCopy.PICTURE_SAVED, stage.done)
+        // Negative: a second Use finds nothing staged and writes nothing.
+        assertNull(ProfileSave.answer(PictureAnswer.USE, stage, vault, spy).written)
+        assertEquals(1, avatarRecords(s))
+        assertEquals(1, shares)
         assertEquals(DoneCopy.PICTURE_REMOVED, stage.used(Avatar.None).done)
 
         // Profile's grid and picker stage; the one write is ProfileSave's.
@@ -444,6 +488,10 @@ class WelcomeTest {
         assertFalse("the old save-on-tap is gone", "setAvatar(" in profile)
         assertFalse("no write of its own", ".saveAvatar(" in screen)
         assertTrue("confirming?.let { staged ->" in screen)
+        // The sheet's two answers (and Remove picture) are the seam above, and nothing else.
+        assertTrue("onUse = { confirm(PictureAnswer.USE) },\n            onNotNow = { confirm(PictureAnswer.NOT_NOW) }," in screen)
+        assertEquals(2, screen.split("ProfileSave.answer(answer, ").size - 1)
+        assertFalse("no picture write but the answer", "ProfileSave.picture(" in screen)
         assertEquals(1, src("ProfileConfirm.kt").split("store.saveAvatar(").size - 1)
         assertFalse(".saveAvatar(" in src("Welcome.kt"))
     }
@@ -478,5 +526,219 @@ class WelcomeTest {
         assertFalse("never in a release build", ProofArgs.welcome("--welcome", debuggable = false))
         assertFalse(ProofArgs.welcome("--emulators", debuggable = true))
         assertNull("not a proof: the lock and the gate run", ProofArgs.proof("--welcome", debuggable = true))
+    }
+
+    // ---- Fix wave ----
+
+    /** Fix wave M6: a string literal drawn straight into a view, which the copy table scan cannot see. */
+    private fun literalsDrawn(source: String): List<String> =
+        Regex("""\b(Text|PrimaryAction|SecondaryAction|WelcomeDetail|WelcomeLine|WelcomeTitle)\(\s*"""").findAll(source).map { it.value }.toList()
+
+    /** Fix wave I1: the welcome starts fresh every time it is shown. A session that closed (first run's exit, kept by the
+     *  saver) opens at W1 with nothing in it, as after an erase; one still open (a re-made activity re-runs the launch)
+     *  keeps its place. */
+    @Test
+    fun the_welcome_starts_fresh_every_time_it_is_shown() {
+        val s = WelcomeSession().apply {
+            step = WelcomeStep.DONE
+            name = "Sam"
+            savedName = "Sam"
+            nameDoneFor = "Sam"
+            saved = Avatar.Emoji("🦊")
+            stage = PictureStage().used(Avatar.Emoji("🦊"))
+            loaded = true
+            advance(4, now = 1_000L)
+        }
+        // Negative: still open (an activity re-made mid-welcome), the launch's opening keeps everything.
+        s.opening()
+        assertEquals(WelcomeStep.DONE, s.step)
+        assertEquals("Sam", s.name)
+        assertEquals(4.0, s.progressTo, 0.0)
+        // Closed (first run's exit), then shown again (an erase made a new first run): fresh.
+        s.close()
+        val scope = androidx.compose.runtime.saveable.SaverScope { true }
+        val restored = WelcomeSession.Saver.restore(with(WelcomeSession.Saver) { scope.save(s) }!!)!!
+        for (x in listOf(s, restored)) {
+            x.opening()
+            assertEquals(WelcomeStep.WELCOME, x.step)
+            assertEquals("", x.name)
+            assertNull(x.savedName)
+            assertEquals(Avatar.None, x.saved)
+            assertNull(x.nameDoneFor)
+            assertEquals(PictureStage(), x.stage)
+            assertEquals(0.0, x.progressTo, 0.0)
+            assertFalse("the new vault's name is read again", x.loaded)
+            assertEquals(WelcomeAction.NEXT, x.action)
+        }
+        // Wired: the launch opens it, the first-run exit closes it.
+        val root = src("AppRoot.kt")
+        val goOn = root.substringAfter("fun goOn(opened: VaultRecovery.Launch.Opened, welcomeShows: Boolean) {").substringBefore("\n    }\n")
+        assertTrue("if (welcomeShows) welcome.opening()" in goOn)
+        assertTrue(goOn.indexOf("welcome.opening()") < goOn.indexOf("welcomePending = welcomeShows"))
+        assertTrue("welcome) { exit ->\n                    welcomePending = false\n                    welcome.close()" in root)
+    }
+
+    /** Fix wave I2: "Everything stays on this phone." (W1) and "Your name and picture stay on this phone." (W4) show only
+     *  without an account, as Profile's footnotes do; a signed-in replay shows neither. */
+    @Test
+    fun the_phone_only_lines_show_only_without_an_account() {
+        assertEquals(WelcomeCopy.WELCOME_FOOT, WelcomeFlow.foot(WelcomeStep.WELCOME, signedIn = false))
+        assertEquals(WelcomeCopy.PICTURE_FOOT, WelcomeFlow.foot(WelcomeStep.PICTURE, signedIn = false))
+        assertEquals("signed in: no foot on any step", List(5) { null }, WelcomeStep.entries.map { WelcomeFlow.foot(it, signedIn = true) })
+        assertFalse("Profile's own rule", WelcomeCopy.PICTURE_FOOT in ProfileCopy.footnotes(true))
+        val source = src("Welcome.kt")
+        assertTrue("WelcomeFlow.foot(WelcomeStep.WELCOME, signedIn)?.let" in source)
+        assertTrue("WelcomeFlow.foot(WelcomeStep.PICTURE, signedIn)?.let" in source)
+        assertTrue("WelcomeStep.WELCOME -> WelcomePage(dark, signedIn)" in source)
+        // Negative: neither line is drawn by its name any more.
+        assertFalse("WelcomeDetail(WelcomeCopy.WELCOME_FOOT" in source)
+        assertFalse("WelcomeDetail(WelcomeCopy.PICTURE_FOOT" in source)
+    }
+
+    /** Fix wave I3: at the largest font scale the bar grows (never a fixed 44), a place label wraps to two lines, and at
+     *  the large sizes the places stack one per row. */
+    @Test
+    fun the_largest_text_grows_and_nothing_clips() {
+        assertEquals(listOf(listOf(0, 1, 2), listOf(3, 4)), WelcomeFlow.placeRows(stacked = false))
+        assertEquals((0 until 5).map { listOf(it) }, WelcomeFlow.placeRows(stacked = true))
+        assertTrue(TextSize.stacks(2.0f))
+        assertFalse(TextSize.stacks(1.0f))
+        val source = src("Welcome.kt")
+        val screen = source.substringAfter("fun WelcomeScreen(").substringBefore("\n}\n")
+        assertTrue("Modifier.fillMaxWidth().heightIn(min = 44.dp).padding(horizontal = 12.dp)" in screen)
+        assertFalse("a fixed height clips Skip at the largest size", ".height(44.dp)" in screen)
+        val place = source.substringAfter("private fun WelcomePlace(").substringBefore("\n}\n")
+        assertTrue("maxLines = 2," in place)
+        assertFalse("one line cut Settle up", "maxLines = 1," in place)
+        assertTrue("val stacked = TextSize.stacks(LocalDensity.current.fontScale)" in source)
+        assertTrue("WelcomeFlow.placeRows(stacked).forEach { row ->" in source)
+        // W4: "More" takes its own row at the large sizes (a seventh of the row cut it).
+        val choices = src("ProfileConfirm.kt").substringAfter("fun EmojiChoices(")
+        assertTrue("val stacked = TextSize.stacks(LocalDensity.current.fontScale)" in choices)
+        assertTrue("if (!stacked) more(Modifier.weight(1f))" in choices)
+        assertTrue("if (stacked) more(Modifier.fillMaxWidth())" in choices)
+    }
+
+    /** Fix wave M1: Done on the keyboard saves through the same seam, but never the saved name again (nothing written,
+     *  nudged or shared); an empty field still says "Add a name first.". */
+    @Test
+    fun done_does_not_save_an_unchanged_name_again() {
+        val s = store()
+        var shares = 0
+        var changes = 0
+        val spy = ProfileSave.Effects(changed = { changes++ }, share = { shares++ })
+        assertEquals(ProfileSave.NameOutcome.Saved("Sam"), ProfileSave.returned("Sam", null, s, spy))
+        assertEquals(1, youRecords(s))
+        // Negative: the same name (trimmed) on Done writes nothing.
+        assertNull(ProfileSave.returned(" Sam ", "Sam", s, spy))
+        assertEquals("no second record", 1, youRecords(s))
+        assertEquals(1, shares)
+        assertEquals(1, changes)
+        assertEquals(ProfileSave.NameOutcome.Refused(WelcomeCopy.ERR_EMPTY), ProfileSave.returned("  ", "Sam", s, spy))
+        assertEquals(ProfileSave.NameOutcome.Saved("Ann"), ProfileSave.returned("Ann", "Sam", s, spy))
+        assertEquals(2, youRecords(s))
+        for (file in listOf("Welcome.kt", "Profile.kt")) {
+            assertTrue(file, "if (returned) ProfileSave.returned(typed, saved, store, effects) else ProfileSave.name(typed, store, effects)" in src(file))
+        }
+    }
+
+    /** Fix wave M2: the saves run on IO, so one at a time: a second tap while one is in flight does nothing. */
+    @Test
+    fun a_quick_double_tap_saves_once() {
+        val latch = SaveLatch() // D-235's
+        assertTrue(latch.begin())
+        assertTrue(latch.busy)
+        assertFalse("a second tap while the first save runs", latch.begin())
+        latch.release()
+        assertFalse(latch.busy)
+        assertTrue("the next save after it", latch.begin())
+        // Every save in the welcome and on Profile takes the latch first and lets it go however it ends.
+        val welcome = src("Welcome.kt").substringAfter("fun WelcomeScreen(")
+        assertEquals(2, welcome.split("if (!s.saving.begin()) return").size - 1)
+        assertEquals(2, welcome.split("} finally {\n                s.saving.release()").size - 1)
+        val profile = src("Profile.kt").substringAfter("fun ProfileScreen(")
+        assertEquals(2, profile.split("if (!saving.begin()) return").size - 1)
+        assertEquals(2, profile.split("} finally {\n                saving.release()").size - 1)
+    }
+
+    /** Fix wave M4: a vault failure is said in words, never the raw error, in the welcome and the picture saves. */
+    @Test
+    fun failures_are_said_in_words() {
+        val welcome = src("Welcome.kt")
+        val confirm = src("ProfileConfirm.kt")
+        for ((file, source) in listOf("Welcome.kt" to welcome, "ProfileConfirm.kt" to confirm)) {
+            assertFalse(file, "failure.message" in source)
+            assertFalse(file, "error.message" in source)
+            assertFalse(file, "e.message" in source)
+        }
+        assertTrue(".onFailure { s.pictureError = WelcomeCopy.PICTURE_NOT_SAVED }" in welcome)
+        assertTrue("NameOutcome.Refused(WelcomeCopy.NAME_NOT_SAVED)" in confirm)
+        val profile = src("Profile.kt").substringAfter("fun confirm(answer: PictureAnswer) {").substringBefore("\n    }\n")
+        assertTrue("error = WelcomeCopy.PICTURE_NOT_SAVED" in profile)
+        assertFalse("failure.message" in profile)
+    }
+
+    /** Fix wave M7: no dead code left behind (the flow's unused step count). */
+    @Test
+    fun no_dead_code() {
+        val flow = src("Welcome.kt").substringAfter("object WelcomeFlow {").substringBefore("\n}\n")
+        assertFalse("const val STEPS" in flow)
+        assertFalse("welcomeScreens" in src("Welcome.kt"))
+    }
+
+    /** Fix wave M8: the page change is spoken, "Step n of 4, <title>" (W5 its title alone), by a polite live region on
+     *  the progress; iOS posts the same words. */
+    @Test
+    fun the_step_change_is_spoken() {
+        assertEquals(
+            listOf("Step 1 of 4, Welcome to SKIPTI", "Step 2 of 4, Pick a look", "Step 3 of 4, Your name", "Step 4 of 4, Your picture", "Nice to meet you, Sam"),
+            WelcomeStep.entries.map { WelcomeFlow.announcement(it, "Sam") },
+        )
+        assertEquals("You're set", WelcomeFlow.announcement(WelcomeStep.DONE, null))
+        val source = src("Welcome.kt")
+        assertTrue("Modifier.clearAndSetSemantics { contentDescription = spoken; liveRegion = LiveRegionMode.Polite }" in source)
+        assertTrue("WelcomeProgressBar(s.progressFrom, s.progressTo, s.progressStart, WelcomeFlow.announcement(to, s.savedName), dark)" in source)
+        assertTrue("iOS posts the same", "AccessibilityNotification.Announcement(WelcomeFlow.announcement(new, name: savedName)).post()" in swift)
+    }
+
+    /** Fix wave (twins): the step change is ONE crossfade of iOS's length and curve; a control both steps draw stays,
+     *  one only the arriving step draws fades in, one only the leaving step draws fades out; the chrome reads the drawn
+     *  step, never the session's step ahead of it. */
+    @Test
+    fun the_step_change_is_ones_crossfade_like_ios() {
+        assertTrue("iOS's 0.25 s ease-in-out", ".animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: step)" in swift)
+        assertEquals(250, WelcomeFade.MILLIS)
+        assertEquals(androidx.compose.animation.core.CubicBezierEasing(0.42f, 0f, 0.58f, 1f), WelcomeFade.EASING)
+        assertEquals("no change yet: the drawn page is whole", 1f, WelcomeFade.progress(fade = 0f, turn = 0), 0f)
+        assertEquals("a change starts from the leaving page", 0f, WelcomeFade.progress(fade = 2f, turn = 3), 0f)
+        assertEquals(0.5f, WelcomeFade.progress(fade = 2.5f, turn = 3), 0f)
+        assertEquals(1f, WelcomeFade.progress(fade = 3f, turn = 3), 0f)
+        assertEquals("Skip on W1 and W2 stays put", 1f, WelcomeFade.slot(leaving = true, arriving = true, t = 0.3f), 0f)
+        assertEquals("Back arriving on W2 fades in", 0.3f, WelcomeFade.slot(leaving = false, arriving = true, t = 0.3f), 0f)
+        assertEquals("Skip leaving on W5 fades out", 0.7f, WelcomeFade.slot(leaving = true, arriving = false, t = 0.3f), 0.0001f)
+        assertEquals(0f, WelcomeFade.slot(leaving = false, arriving = false, t = 0.3f), 0f)
+        val screen = src("Welcome.kt").substringAfter("fun WelcomeScreen(").substringBefore("\n}\n")
+        assertTrue("one gated animation", "if (reduce) snap() else tween(WelcomeFade.MILLIS, easing = WelcomeFade.EASING)" in screen)
+        assertTrue("both pages drawn at once", "listOfNotNull(leaving, to).forEach { page ->" in screen)
+        // Negative: nothing in the chrome or the bottom reads the session's step (it changes before the fade starts).
+        val chrome = screen.substringAfter("Column(Modifier.fillMaxSize().auroraBackground(dark)) {")
+        for (early in listOf("WelcomeFlow.previous(s.step)", "WelcomeFlow.skippable(s.step)", "s.action")) assertFalse(early, early in chrome)
+        assertTrue("WelcomeFlow.previous(to)" in chrome)
+        assertTrue("WelcomeFlow.skippable(to)" in chrome)
+        assertFalse("the old out-then-in fade is gone", "finishedListener" in screen)
+    }
+
+    /** Fix wave (twins): the picture sheet's ground is the theme's page art, as iOS's sheet draws `.auroraBackground()`,
+     *  edge to edge of the sheet: its drag handle on the art and the navigation bar's inset inside it. */
+    @Test
+    fun the_picture_sheet_stands_on_the_page_art_like_ios() {
+        assertTrue(".auroraBackground()\n            .navigationTitle(WelcomeCopy.sheetTitle)" in File("../../ios/Skipti/App/ProfileConfirm.swift").readText())
+        val sheet = src("ProfileConfirm.kt").substringAfter("fun PictureConfirmSheet(").substringBefore("\n}\n")
+        assertTrue("Column(Modifier.fillMaxWidth().auroraBackground(inDark).navigationBarsPadding()) {" in sheet)
+        assertTrue("dragHandle = null," in sheet)
+        assertTrue("BottomSheetDefaults.DragHandle(" in sheet)
+        assertTrue("contentWindowInsets = { androidx.compose.foundation.layout.WindowInsets(0) }," in sheet)
+        // Negative: the old surface ground is gone.
+        assertFalse("containerColor = Tok.surface(dark)" in sheet)
     }
 }

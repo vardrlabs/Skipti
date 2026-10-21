@@ -63,23 +63,20 @@ enum WelcomeCopy {
     // About
     static let replay = "Show the welcome again"
 
-    /// A name the vault could not store (not a rule: the rules are the three words above). New group's words.
-    static func nameNotSaved(_ error: Error) -> String { "Could not save your name. \(String(describing: error))" }
+    /// A name or a picture the vault could not store (not a rule: the rules are the three words above). Fixed words,
+    /// never the raw error (fix wave M4): New group's opening words.
+    static let nameNotSaved = "Could not save your name."
+    static let pictureNotSaved = "Could not save your picture."
+}
 
-    /// Every fixed word the five welcome screens show (the G5 scan reads these; the done title with a sample name).
-    static var welcomeScreens: [String] {
-        [next, skip, back, step(1), welcomeTitle, welcomeLead, wordmark, welcomeLine] + places + [welcomeFoot,
-         lookTitle, lookLine, norseDark, nameTitle, nameLine, namePlaceholder, nameCaption("Sam"), saveName,
-         pictureTitle, pictureLine, more, photo, use, pictureFoot, doneTitle("Sam"), doneTitleNoName, doneLine,
-         startGroup, lookAround, errEmpty, errLong, errChar, photoUnreadable, DoneCopy.nameSaved, DoneCopy.pictureSaved]
-            + AppTheme.allCases.map(\.label)
-    }
-
-    /// GUARANTEES #5 (plan 1.6): words the welcome never shows, case-insensitive.
+/// GUARANTEES #5 (plan 1.6): the words the welcome never shows. Kept out of `WelcomeCopy`, so a scan of that whole table
+/// (fix wave M6: the table as written, not a list kept beside it) reads only the welcome's words.
+enum WelcomeG5 {
+    /// Case-insensitive.
     static let forbidden = ["account", "sign", "sync", "cloud", "google", "apple", "join"]
 
     /// The forbidden words a list of strings contains (empty when clean).
-    static func g5Hits(_ strings: [String]) -> [String] {
+    static func hits(_ strings: [String]) -> [String] {
         strings.filter { s in forbidden.contains { s.lowercased().contains($0) } }
     }
 }
@@ -104,10 +101,9 @@ enum WelcomeAction: Equatable {
 }
 
 /// D-245: the flow, pure. W1 to W4 carry Skip; the bottom carries one action at a time (the page: Save name while the
-/// field holds an unsaved name, Use this picture while one is staged, else Next); W5 finishes.
+/// field holds an unsaved name, Use this picture while one is staged, else Next); W5 finishes. Decision 200: W3 hides
+/// Next while the field holds an unsaved name (one action at a time, as mock v2 drew); Skip and Back remain.
 enum WelcomeFlow {
-    static let steps = 4
-
     static func next(after step: WelcomeStep) -> WelcomeStep? { WelcomeStep(rawValue: step.rawValue + 1) }
 
     static func skippable(_ step: WelcomeStep) -> Bool { step != .done }
@@ -125,6 +121,42 @@ enum WelcomeFlow {
 
     /// What VoiceOver says for the progress ("Step 2 of 4").
     static func spoken(_ step: WelcomeStep) -> String? { number(step).map(WelcomeCopy.step) }
+
+    /// Each step's title (W5's carries the saved name).
+    static func title(_ step: WelcomeStep, name: String?) -> String {
+        switch step {
+        case .welcome: return WelcomeCopy.welcomeTitle
+        case .look: return WelcomeCopy.lookTitle
+        case .name: return WelcomeCopy.nameTitle
+        case .picture: return WelcomeCopy.pictureTitle
+        case .done: return doneTitle(name: name)
+        }
+    }
+
+    /// Fix wave M8: what VoiceOver says when the page changes, and the progress's label: "Step 2 of 4, Pick a look";
+    /// W5 is its title alone.
+    static func announcement(_ step: WelcomeStep, name: String?) -> String {
+        guard let spoken = spoken(step) else { return title(step, name: name) }
+        return "\(spoken), \(title(step, name: name))"
+    }
+
+    /// Fix wave I2: W1's and W4's quiet foot says the data stays on this phone, so it shows only WITHOUT an account
+    /// (Profile's `ProfileCopy.footnotes(signedIn:)` rule); a signed-in replay shows none.
+    static func foot(_ step: WelcomeStep, signedIn: Bool) -> String? {
+        guard !signedIn else { return nil }
+        switch step {
+        case .welcome: return WelcomeCopy.welcomeFoot
+        case .picture: return WelcomeCopy.pictureFoot
+        case .look, .name, .done: return nil
+        }
+    }
+
+    /// Fix wave I3: W1's five places, as rows of indices: three then two, or one per row at the accessibility text
+    /// sizes (the app's `isAccessibilityCategory` switch; Android's `TextSize.stacks`), where a label is wider than a
+    /// column.
+    static func placeRows(stacked: Bool) -> [[Int]] {
+        stacked ? (0..<5).map { [$0] } : [[0, 1, 2], [3, 4]]
+    }
 
     static func doneTitle(name: String?) -> String {
         guard let name = name.map(NameRule.trimmed), !name.isEmpty else { return WelcomeCopy.doneTitleNoName }
@@ -438,12 +470,13 @@ enum RuneInk {
     }
 }
 
-/// Decisions 192 and 197: the progress, drawn in the theme's language. Spoken as "Step n of 4".
+/// Decisions 192 and 197: the progress, drawn in the theme's language. Spoken as the step's announcement ("Step n of 4,
+/// <title>", fix wave M8).
 struct WelcomeProgressBar: View {
     let from: Double
     let to: Double
     let startedAt: Double
-    let spoken: String?
+    let spoken: String
 
     @Environment(\.motionReduced) private var reduceMotion
     @Environment(\.scenePhase) private var phase
@@ -461,8 +494,7 @@ struct WelcomeProgressBar: View {
         }
         .allowsHitTesting(false)
         .accessibilityElement()
-        .accessibilityLabel(Text(verbatim: spoken ?? ""))
-        .accessibilityHidden(spoken == nil)
+        .accessibilityLabel(Text(verbatim: spoken))
         .task(id: startedAt) {
             try? await Task.sleep(for: .seconds(max(0, startedAt + WelcomeProgress.settles - Date().timeIntervalSinceReferenceDate)))
             guard !Task.isCancelled else { return }
@@ -612,9 +644,12 @@ struct NorseRunes: View {
 // MARK: - The screens
 
 /// W1's five places: the real bar's glyphs in the current theme (Norse runes, Lucide elsewhere), the + on the accent,
-/// You as the person glyph, each in the theme's person tile (Aurora circle, Norse diamond, Vardr Labs square).
+/// You as the person glyph, each in the theme's person tile (Aurora circle, Norse diamond, Vardr Labs square). Fix wave
+/// I3: a label wraps to two lines in its column; at the accessibility sizes (`stacked`) the place is a row, its tile
+/// then its label, which wraps as far as it needs.
 private struct WelcomePlace: View {
     let index: Int
+    let stacked: Bool
 
     var body: some View {
         let theme = AppearanceState.shared.theme
@@ -623,22 +658,38 @@ private struct WelcomePlace: View {
         let shape = TileClip.shape(kind, size: side)
         let drawn = TileClip.drawnSide(kind, size: side)
         let add = index == 2
-        VStack(spacing: 10) {
-            glyph(theme)
-                .foregroundStyle(add ? Tokens.onAccent : (index == 4 ? Tokens.accent : Tokens.ring))
-                .frame(width: drawn, height: drawn)
-                .background(add ? Tokens.accent : Tokens.accentSoft, in: shape)
-                .clipShape(shape)
-                .overlay { TileClip.edge(kind) }
-                .tileFootprint(kind, size: side)
-                .accessibilityHidden(true)
-            Text(verbatim: WelcomeCopy.places[index])
-                .font(TypeRole.name(TypeScale.detail))
-                .foregroundStyle(Tokens.text)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
+        let tile = glyph(theme)
+            .foregroundStyle(add ? Tokens.onAccent : (index == 4 ? Tokens.accent : Tokens.ring))
+            .frame(width: drawn, height: drawn)
+            .background(add ? Tokens.accent : Tokens.accentSoft, in: shape)
+            .clipShape(shape)
+            .overlay { TileClip.edge(kind) }
+            .tileFootprint(kind, size: side)
+            .accessibilityHidden(true)
+        let label = Text(verbatim: WelcomeCopy.places[index])
+            .font(TypeRole.name(TypeScale.detail))
+            .foregroundStyle(Tokens.text)
+        Group {
+            if stacked {
+                HStack(spacing: 14) {
+                    tile
+                    label
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                VStack(spacing: 10) {
+                    tile
+                    label
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.8)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(width: 92)
+            }
         }
-        .frame(width: 92)
         .accessibilityElement(children: .combine)
     }
 
@@ -697,7 +748,8 @@ struct WelcomeView: View {
     var body: some View {
         VStack(spacing: 0) {
             topBar
-            WelcomeProgressBar(from: progressFrom, to: progressTo, startedAt: progressStart, spoken: WelcomeFlow.spoken(step))
+            WelcomeProgressBar(from: progressFrom, to: progressTo, startedAt: progressStart,
+                               spoken: WelcomeFlow.announcement(step, name: savedName))
                 .padding(.top, 4)
                 .padding(.bottom, 8)
             GeometryReader { geo in
@@ -724,6 +776,10 @@ struct WelcomeView: View {
         .auroraBackground()
         .task { load() }
         .onChange(of: completed) { _, new in advance(to: new) }
+        // Fix wave M8: the page changed; VoiceOver says which ("Step 2 of 4, Pick a look").
+        .onChange(of: step) { _, new in
+            AccessibilityNotification.Announcement(WelcomeFlow.announcement(new, name: savedName)).post()
+        }
         .onChange(of: name) { _, _ in nameError = nil }
         .onChange(of: photoItem) { _, item in
             guard let item else { return }
@@ -769,7 +825,8 @@ struct WelcomeView: View {
                 .buttonStyle(.plain)
             }
         }
-        .frame(height: 44)
+        // Fix wave I3: at least 44 high, taller when Skip grows with the text size (never clipped or overlapping).
+        .frame(minHeight: 44)
         .padding(.horizontal, 12)
     }
 
@@ -854,16 +911,22 @@ struct WelcomeView: View {
             .accessibilityAddTraits(.isHeader)
             ornament
             line(WelcomeCopy.welcomeLine)
-            VStack(spacing: 20) {
-                HStack(spacing: 8) { ForEach(0..<3, id: \.self) { WelcomePlace(index: $0) } }
-                HStack(spacing: 8) { ForEach(3..<5, id: \.self) { WelcomePlace(index: $0) } }
+            // Fix wave I3: one place per row at the accessibility sizes, where a label outgrows its column.
+            let stacked = AppearanceState.shared.contentSizeCategory.isAccessibilityCategory
+            VStack(spacing: stacked ? 14 : 20) {
+                ForEach(WelcomeFlow.placeRows(stacked: stacked), id: \.self) { row in
+                    HStack(spacing: 8) { ForEach(row, id: \.self) { WelcomePlace(index: $0, stacked: stacked) } }
+                }
             }
             .padding(.top, 8)
-            Text(verbatim: WelcomeCopy.welcomeFoot)
-                .font(TypeRole.body(TypeScale.detail))
-                .foregroundStyle(Tokens.textDim)
-                .multilineTextAlignment(.center)
-                .padding(.top, 8)
+            // Fix wave I2: only without an account (a signed-in replay's data does not stay on this phone).
+            if let foot = WelcomeFlow.foot(.welcome, signedIn: account.isSignedIn) {
+                Text(verbatim: foot)
+                    .font(TypeRole.body(TypeScale.detail))
+                    .foregroundStyle(Tokens.textDim)
+                    .multilineTextAlignment(.center)
+                    .padding(.top, 8)
+            }
         }
     }
 
@@ -899,7 +962,7 @@ struct WelcomeView: View {
             }
             .multilineTextAlignment(.center)
             .submitLabel(.done)
-            .onSubmit { saveName() }
+            .onSubmit { saveName(returned: true) }
             if !trimmed.isEmpty {
                 Text(verbatim: WelcomeCopy.nameCaption(trimmed))
                     .font(TypeRole.body(TypeScale.detail))
@@ -921,7 +984,7 @@ struct WelcomeView: View {
         VStack(spacing: 20) {
             title(WelcomeCopy.pictureTitle)
             line(WelcomeCopy.pictureLine)
-            PictureConfirm(presentation: .page, avatar: stage.staged ?? saved, name: savedName,
+            PictureConfirm(avatar: stage.staged ?? saved, name: savedName,
                            signedIn: account.isSignedIn, done: stage.done) {
                 VStack(spacing: 12) {
                     EmojiChoices(chosen: stage.staged ?? saved, open: moreOpen, onMore: { moreOpen = true }) { e in
@@ -939,10 +1002,13 @@ struct WelcomeView: View {
                             .foregroundStyle(Tokens.owed)
                             .multilineTextAlignment(.center)
                     }
-                    Text(verbatim: WelcomeCopy.pictureFoot)
-                        .font(TypeRole.body(TypeScale.detail))
-                        .foregroundStyle(Tokens.textDim)
-                        .multilineTextAlignment(.center)
+                    // Fix wave I2: only without an account, under the signed-in groups line never.
+                    if let foot = WelcomeFlow.foot(.picture, signedIn: account.isSignedIn) {
+                        Text(verbatim: foot)
+                            .font(TypeRole.body(TypeScale.detail))
+                            .foregroundStyle(Tokens.textDim)
+                            .multilineTextAlignment(.center)
+                    }
                 }
             }
         }
@@ -970,29 +1036,34 @@ struct WelcomeView: View {
         step = next
     }
 
-    private func saveName() {
+    /// `returned`: the keyboard's Return, which never saves an unchanged name again (fix wave M1).
+    private func saveName(returned: Bool = false) {
         // Decision 199: the done row is the done state here; the success haptic plays, no toast.
-        switch ProfileSave.name(name, store: store, feedback: .haptic) {
-        case .saved(let stored):
+        let outcome = returned
+            ? ProfileSave.returned(name, saved: savedName, store: store, feedback: .haptic)
+            : ProfileSave.name(name, store: store, feedback: .haptic)
+        switch outcome {
+        case nil:
+            endEditing()
+        case .saved(let stored)?:
             savedName = stored
             name = stored
             nameError = nil
             endEditing()
             nameDoneFor = stored
-        case .refused(let words):
+        case .refused(let words)?:
             nameError = words
         }
     }
 
     private func usePicture() {
-        guard let picked = stage.staged else { return }
         do {
-            try ProfileSave.picture(picked, store: store, feedback: .haptic)
-            saved = picked
-            stage.used(picked)
+            guard let written = try ProfileSave.answer(.use, stage: &stage, store: store, feedback: .haptic) else { return }
+            saved = written
             moreOpen = false
         } catch {
-            pictureError = String(describing: error)
+            // Fix wave M4: in words, never the raw error.
+            pictureError = WelcomeCopy.pictureNotSaved
         }
     }
 

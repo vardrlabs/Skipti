@@ -508,6 +508,8 @@ fun ProfileScreen(vaultPath: String, onBack: () -> Unit) {
     // picture". The done row under the picture says what the last confirm wrote.
     var stage by remember { mutableStateOf(PictureStage()) }
     var confirming by remember { mutableStateOf<Avatar?>(null) }
+    // Fix wave M2: one name or picture save at a time (the saves run on IO; a quick double tap wrote twice).
+    val saving = remember { SaveLatch() }
     // D-211: the footnotes follow the account live, as the hub does: read again
     // when a sign-out happens while this screen is open.
     var signedIn by remember { mutableStateOf(runCatching { Account.isSignedIn() }.getOrDefault(false)) }
@@ -532,35 +534,59 @@ fun ProfileScreen(vaultPath: String, onBack: () -> Unit) {
         confirming = new
     }
 
-    /** The confirmed picture (or the removal): written once (D-211: one record, one share request; D-224's toast). */
-    fun usePicture(new: Avatar) {
+    /** The sheet's answer (fix wave M6: through [ProfileSave.answer], the one seam): Use writes the staged picture once
+     *  (D-211: one record, one share request; D-224's toast), on IO, one save at a time (M2); Not now writes nothing and
+     *  never opens the vault. A failure is said in words (M4). Remove picture answers Use for `None` (no sheet). */
+    fun confirm(answer: PictureAnswer) {
         error = null
         confirming = null
+        if (answer == PictureAnswer.NOT_NOW) {
+            stage = ProfileSave.answer(answer, stage, { LedgerStore(vaultPath) }, ProfileSave.Effects.live(vaultPath)).stage
+            return
+        }
+        if (!saving.begin()) return
+        val before = stage
         scope.launch {
-            val failure = withContext(Dispatchers.IO) {
-                runCatching { ProfileSave.picture(new, LedgerStore(vaultPath), ProfileSave.Effects.live(vaultPath)) }.exceptionOrNull()
+            val result = try {
+                withContext(Dispatchers.IO) {
+                    runCatching { ProfileSave.answer(answer, before, { LedgerStore(vaultPath) }, ProfileSave.Effects.live(vaultPath)) }
+                }
+            } finally {
+                saving.release()
             }
-            if (failure == null) {
-                avatar = new
-                stage = stage.used(new)
-                ProfileSave.done(ProfileSave.pictureMoment(new), ProfileSave.Feedback.TOAST)
-            } else {
+            result.onSuccess { answered ->
+                stage = answered.stage
+                answered.written?.let {
+                    avatar = it
+                    ProfileSave.done(ProfileSave.pictureMoment(it), ProfileSave.Feedback.TOAST)
+                }
+            }.onFailure {
                 stage = stage.notNow()
-                error = failure.message ?: failure.toString()
+                error = WelcomeCopy.PICTURE_NOT_SAVED
             }
         }
     }
 
     /** D-245 (decision 179): the rules in words, then the one save (D-211: your other phones and your groups; D-224's
-     *  toast). */
-    fun saveName() {
+     *  toast). [returned]: the keyboard's Done, which never saves an unchanged name again (fix wave M1); one save at a
+     *  time (M2). */
+    fun saveName(returned: Boolean = false) {
         error = null
+        if (!saving.begin()) return
         val typed = name
+        val saved = savedName
         scope.launch {
-            val outcome = withContext(Dispatchers.IO) {
-                ProfileSave.name(typed, LedgerStore(vaultPath), ProfileSave.Effects.live(vaultPath))
+            val outcome = try {
+                withContext(Dispatchers.IO) {
+                    val store = LedgerStore(vaultPath)
+                    val effects = ProfileSave.Effects.live(vaultPath)
+                    if (returned) ProfileSave.returned(typed, saved, store, effects) else ProfileSave.name(typed, store, effects)
+                }
+            } finally {
+                saving.release()
             }
             when (outcome) {
+                null -> Unit
                 is ProfileSave.NameOutcome.Saved -> {
                     savedName = outcome.name
                     name = outcome.name
@@ -597,7 +623,7 @@ fun ProfileScreen(vaultPath: String, onBack: () -> Unit) {
                 name, { name = it; error = null }, "Your name", dark,
                 style = Type.body(dark).copy(fontSize = ProfileLayout.NAME_FIELD_SIZE.sp),
                 keyboard = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Done),
-                actions = KeyboardActions(onDone = { saveName() }),
+                actions = KeyboardActions(onDone = { saveName(returned = true) }),
             )
             // D-245 (U17): signed in, who sees the name.
             if (signedIn) Text(WelcomeCopy.GROUPS_NAME, style = Type.bodyDim(dark).copy(fontSize = TypeScale.detail.sp))
@@ -656,7 +682,11 @@ fun ProfileScreen(vaultPath: String, onBack: () -> Unit) {
             SecondaryAction("Choose a photo", dark) { pickPhoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
             if (avatar != Avatar.None) {
                 // D-245: removing keeps today's flow (no confirm), through the one save.
-                SecondaryAction("Remove picture", dark) { usePicture(Avatar.None) }
+                // Fix wave: through the same answer as the sheet's Use, staged and used at once (no sheet).
+                SecondaryAction("Remove picture", dark) {
+                    stage = stage.choose(Avatar.None)
+                    confirm(PictureAnswer.USE)
+                }
             }
         }
 
@@ -673,11 +703,8 @@ fun ProfileScreen(vaultPath: String, onBack: () -> Unit) {
     confirming?.let { staged ->
         PictureConfirmSheet(
             staged, savedName, signedIn,
-            onUse = { usePicture(staged) },
-            onNotNow = {
-                stage = stage.notNow()
-                confirming = null
-            },
+            onUse = { confirm(PictureAnswer.USE) },
+            onNotNow = { confirm(PictureAnswer.NOT_NOW) },
         )
     }
 }

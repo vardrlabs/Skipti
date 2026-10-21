@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -75,7 +76,14 @@ object NameRule {
 
     /** What a typed name shows under the field while it is dirty: the problem in words, or nothing. */
     fun liveProblem(raw: String, saved: String?): NameProblem? = if (dirty(raw, saved)) check(raw) else null
+
+    /** Fix wave M1: the keyboard's Done asks for a save unless the field holds the saved name (an empty field still
+     *  asks, so it says "Add a name first."). The twin of iOS's `returnSaves`. */
+    fun returnSaves(raw: String, saved: String?): Boolean = trimmed(raw).isEmpty() || dirty(raw, saved)
 }
+
+/** The picture confirm's two answers. */
+enum class PictureAnswer { USE, NOT_NOW }
 
 /** D-245: the one way a name or a picture is saved from Profile and the welcome. Each confirm writes once: one vault
  *  write (`setYourName` / `saveAvatar`), one sync nudge, one profile share request, one toast (or, in the welcome, the
@@ -125,9 +133,15 @@ object ProfileSave {
             effects.share()
             NameOutcome.Saved(me.name ?: NameRule.trimmed(raw))
         } catch (e: Exception) {
-            NameOutcome.Refused(WelcomeCopy.nameNotSaved(e))
+            // Fix wave M4: in words, never the raw error.
+            NameOutcome.Refused(WelcomeCopy.NAME_NOT_SAVED)
         }
     }
+
+    /** Fix wave M1: the keyboard's Done. The same save, except that the saved name is not saved again: null, and
+     *  nothing is written, nudged or shared. The twin of iOS's `returned`. */
+    fun returned(raw: String, saved: String?, store: LedgerStore, effects: Effects): NameOutcome? =
+        if (NameRule.returnSaves(raw, saved)) name(raw, store, effects) else null
 
     val nameMoment: DoneMoment get() = DoneMoments.line(DoneCopy.NAME_SAVED)
 
@@ -141,6 +155,27 @@ object ProfileSave {
 
     fun pictureMoment(avatar: Avatar): DoneMoment =
         DoneMoments.line(if (avatar == Avatar.None) DoneCopy.PICTURE_REMOVED else DoneCopy.PICTURE_SAVED)
+
+    /** The stage after an answer, and what was written (null: nothing). */
+    data class Answered(val stage: PictureStage, val written: Avatar?)
+
+    /** Fix wave M6: the confirm's answer, the one way Profile's sheet and the welcome's Use reach the vault. Use writes
+     *  the staged picture once ([picture]) and records it in the stage; Not now drops the stage and never opens the vault
+     *  ([store] is not called). A Use with nothing staged writes nothing. Throws what [picture] throws. Call a Use off the
+     *  main thread, then [done] with [pictureMoment] on it. The twin of iOS's `answer`. */
+    fun answer(answer: PictureAnswer, stage: PictureStage, store: () -> LedgerStore, effects: Effects): Answered =
+        when (answer) {
+            PictureAnswer.NOT_NOW -> Answered(stage.notNow(), null)
+            PictureAnswer.USE -> {
+                val picked = stage.staged
+                if (picked == null) {
+                    Answered(stage, null)
+                } else {
+                    picture(picked, store(), effects)
+                    Answered(stage.used(picked), picked)
+                }
+            }
+        }
 }
 
 /** D-245 (decision 161): a picture tapped or picked waits here until it is confirmed. [choose] only stages (nothing is
@@ -200,7 +235,9 @@ fun PictureConfirm(avatar: Avatar, name: String?, signedIn: Boolean, dark: Boole
 
 /** D-245 (decision 161): You's picture sheet. "Use this picture" writes once and closes it; "Not now" writes nothing.
  *  A bottom sheet in the app's window style (the person sheet's), its title the bar's, no corner button (iOS's
- *  inline title). */
+ *  inline title). Fix wave (twins): the theme's page art fills the sheet behind its content, as iOS's sheet draws
+ *  `.auroraBackground()`: the art is the sheet's whole ground, its drag handle drawn on the art and the navigation bar's
+ *  inset inside it (the sheet's own container would otherwise show `surface` above and below the art). */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun PictureConfirmSheet(avatar: Avatar, name: String?, signedIn: Boolean, onUse: () -> Unit, onNotNow: () -> Unit) {
@@ -208,11 +245,14 @@ fun PictureConfirmSheet(avatar: Avatar, name: String?, signedIn: Boolean, onUse:
     androidx.compose.material3.ModalBottomSheet(
         onDismissRequest = onNotNow,
         sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = Tok.surface(dark),
+        containerColor = Tok.bg(dark),
+        dragHandle = null,
+        contentWindowInsets = { androidx.compose.foundation.layout.WindowInsets(0) },
     ) {
         SkiptiWindowLocals {
             val inDark = androidx.compose.foundation.isSystemInDarkTheme()
-            Column(Modifier.fillMaxWidth()) {
+            Column(Modifier.fillMaxWidth().auroraBackground(inDark).navigationBarsPadding()) {
+                androidx.compose.material3.BottomSheetDefaults.DragHandle(Modifier.align(Alignment.CenterHorizontally))
                 PushedBar(WelcomeCopy.SHEET_TITLE, onBack = null, underStatusBar = false)
                 Column(
                     Modifier.fillMaxWidth().padding(20.dp),
@@ -251,13 +291,11 @@ fun EmojiChoices(chosen: Avatar?, open: Boolean, dark: Boolean, onMore: () -> Un
             }
         }
     } else {
-        Row(horizontalArrangement = Arrangement.spacedBy(gap), verticalAlignment = Alignment.CenterVertically) {
-            ProfileRules.EMOJI_CHOICES.take(EmojiChoicesLayout.FIRST_ROW).forEach { e ->
-                EmojiChoiceCell(e, chosen == Avatar.Emoji(e), dark, Modifier.weight(1f)) { onTap(e) }
-            }
+        // Fix wave I3: at the large text sizes "More" outgrows a seventh of the row; it takes its own row (iOS's twin).
+        val stacked = TextSize.stacks(LocalDensity.current.fontScale)
+        val more: @Composable (Modifier) -> Unit = { modifier ->
             Box(
-                Modifier
-                    .weight(1f)
+                modifier
                     .heightIn(min = 44.dp)
                     .clickable(onClick = onMore),
                 contentAlignment = Alignment.Center,
@@ -269,6 +307,15 @@ fun EmojiChoices(chosen: Avatar?, open: Boolean, dark: Boolean, onMore: () -> Un
                     softWrap = false,
                 )
             }
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(gap)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(gap), verticalAlignment = Alignment.CenterVertically) {
+                ProfileRules.EMOJI_CHOICES.take(EmojiChoicesLayout.FIRST_ROW).forEach { e ->
+                    EmojiChoiceCell(e, chosen == Avatar.Emoji(e), dark, Modifier.weight(1f)) { onTap(e) }
+                }
+                if (!stacked) more(Modifier.weight(1f))
+            }
+            if (stacked) more(Modifier.fillMaxWidth())
         }
     }
 }

@@ -342,7 +342,7 @@ struct ProfileScreen: View {
                         .font(TypeRole.body(17))
                         .textContentType(.name)
                         .submitLabel(.done)
-                        .onSubmit { saveName() }
+                        .onSubmit { saveName(returned: true) }
                         .hairlineField()
                     // D-245 (U17): signed in, who sees the name.
                     if account.isSignedIn {
@@ -385,7 +385,8 @@ struct ProfileScreen: View {
                     .buttonStyle(SecondaryButtonStyle())
                     if avatar != .none {
                         // D-245: removing keeps today's flow (no confirm), through the one save.
-                        Button { usePicture(.none) } label: { Text("Remove picture").font(TypeRole.label()) }
+                        // Fix wave: through the same answer as the sheet's Use, staged and used at once (no sheet).
+                        Button { stage.choose(.none); confirm(.use) } label: { Text("Remove picture").font(TypeRole.label()) }
                             .buttonStyle(SecondaryButtonStyle())
                     }
                 }
@@ -414,7 +415,7 @@ struct ProfileScreen: View {
         // D-245 (decision 161; CLAUDE.md 10.1): the confirm hangs on the always-present scroll view.
         .sheet(item: $confirming) { staged in
             PictureConfirmSheet(avatar: staged.avatar, name: savedName, signedIn: account.isSignedIn,
-                                onUse: { usePicture(staged.avatar) }, onNotNow: { stage.notNow(); confirming = nil })
+                                onUse: { confirm(.use) }, onNotNow: { confirm(.notNow) })
         }
         .task { load() }
         .onChange(of: photoItem) { _, item in
@@ -490,14 +491,18 @@ struct ProfileScreen: View {
 
     /// D-245 (decision 179): the rules in words, then the one save (D-211: your other phones and your groups; D-224's
     /// toast).
-    private func saveName() {
+    /// `returned`: the keyboard's Return, which never saves an unchanged name again (fix wave M1).
+    private func saveName(returned: Bool = false) {
         error = nil
-        switch ProfileSave.name(name, store: store) {
-        case .saved(let stored):
+        let outcome = returned ? ProfileSave.returned(name, saved: savedName, store: store) : ProfileSave.name(name, store: store)
+        switch outcome {
+        case nil:
+            break
+        case .saved(let stored)?:
             savedName = stored
             name = stored
             nameDoneFor = stored
-        case .refused(let words):
+        case .refused(let words)?:
             error = words
         }
     }
@@ -509,19 +514,20 @@ struct ProfileScreen: View {
         confirming = StagedPicture(avatar: new)
     }
 
-    /// The confirmed picture (or the removal): written once (D-211: one record, one share request; D-224's toast).
-    private func usePicture(_ new: Avatar) {
+    /// The sheet's answer (fix wave M6: through `ProfileSave.answer`, the one seam): Use writes the staged picture once
+    /// (D-211: one record, one share request; D-224's toast), Not now writes nothing. Remove picture answers Use for
+    /// `.none` (no sheet).
+    private func confirm(_ answer: PictureAnswer) {
         error = nil
         confirming = nil
         do {
-            try ProfileSave.picture(new, store: store)
-            avatar = new
-            stage.used(new)
+            if let written = try ProfileSave.answer(answer, stage: &stage, store: store) { avatar = written }
         } catch {
             stage.notNow()
-            self.error = "\(error)"
+            self.error = WelcomeCopy.pictureNotSaved
         }
     }
+
 
     private func micro(_ text: String) -> some View {
         Text(verbatim: text)

@@ -48,6 +48,17 @@ enum NameRule {
         guard dirty(raw, saved: saved) else { return nil }
         return check(raw)
     }
+
+    /// Fix wave M1: Return asks for a save unless the field holds the saved name (an empty field still asks, so it says
+    /// "Add a name first.").
+    static func returnSaves(_ raw: String, saved: String?) -> Bool {
+        trimmed(raw).isEmpty || dirty(raw, saved: saved)
+    }
+}
+
+/// The picture confirm's two answers.
+enum PictureAnswer: Equatable {
+    case use, notNow
 }
 
 /// D-245: the one way a name or a picture is saved from Profile and the welcome. Each confirm writes once: one vault
@@ -103,8 +114,17 @@ enum ProfileSave {
             done(DoneMoments.line(DoneCopy.nameSaved), feedback, center: center)
             return .saved(me.name ?? NameRule.trimmed(raw))
         } catch {
-            return .refused(WelcomeCopy.nameNotSaved(error))
+            // Fix wave M4: in words, never the raw error.
+            return .refused(WelcomeCopy.nameNotSaved)
         }
+    }
+
+    /// Fix wave M1: the keyboard's Return. The same save, except that the saved name is not saved again: nil, and
+    /// nothing is written, nudged or shared.
+    static func returned(_ raw: String, saved: String?, store: LedgerStore, effects: Effects = .live,
+                         feedback: Feedback = .toast, center: DoneCenter = .shared) -> NameOutcome? {
+        guard NameRule.returnSaves(raw, saved: saved) else { return nil }
+        return name(raw, store: store, effects: effects, feedback: feedback, center: center)
     }
 
     /// A confirmed picture (or the removal, `.none`): one `Avatar` record, one share request. Throws what the vault or
@@ -116,6 +136,25 @@ enum ProfileSave {
         effects.changed()
         effects.share()
         done(DoneMoments.line(avatar == .none ? DoneCopy.pictureRemoved : DoneCopy.pictureSaved), feedback, center: center)
+    }
+
+    /// Fix wave M6: the confirm's answer, the one way Profile's sheet and the welcome's Use reach the vault. Use writes
+    /// the staged picture once (`picture`) and records it in the stage; Not now drops the stage and writes nothing.
+    /// Returns what was written (nil: nothing, including a Use with nothing staged). Throws what `picture` throws; the
+    /// stage is unchanged then.
+    @discardableResult
+    static func answer(_ answer: PictureAnswer, stage: inout PictureStage, store: LedgerStore, effects: Effects = .live,
+                       feedback: Feedback = .toast, center: DoneCenter = .shared) throws -> Avatar? {
+        switch answer {
+        case .notNow:
+            stage.notNow()
+            return nil
+        case .use:
+            guard let picked = stage.staged else { return nil }
+            try picture(picked, store: store, effects: effects, feedback: feedback, center: center)
+            stage.used(picked)
+            return picked
+        }
     }
 }
 
@@ -167,18 +206,12 @@ struct DoneRow: View {
 }
 
 /// D-245 (decisions 161, 178): the confirm's content: the big preview of the picture (staged or saved), its done row, and
-/// signed in only the line that the groups see a small copy. Two presentations, one view: You's sheet (`.sheet`, with
-/// its two buttons around it in `PictureConfirmSheet`) and the welcome's Your picture page (`.page`, with the choices
-/// under it and the step's own bottom action).
+/// signed in only the line that the groups see a small copy. One view in two places: You's sheet (with its two buttons
+/// around it in `PictureConfirmSheet`) and the welcome's Your picture page (with the choices under it and the step's
+/// own bottom action).
 struct PictureConfirm<Choices: View>: View {
-    enum Presentation: Equatable {
-        case sheet
-        case page
-    }
-
     static var previewSize: CGFloat { 104 }
 
-    let presentation: Presentation
     let avatar: Avatar
     let name: String?
     let signedIn: Bool
@@ -214,7 +247,7 @@ struct PictureConfirmSheet: View {
         NavigationStack {
             VStack(spacing: 20) {
                 Spacer(minLength: 0)
-                PictureConfirm(presentation: .sheet, avatar: avatar, name: name, signedIn: signedIn) { EmptyView() }
+                PictureConfirm(avatar: avatar, name: name, signedIn: signedIn) { EmptyView() }
                 Spacer(minLength: 0)
                 VStack(spacing: 10) {
                     Button(action: onUse) { Text(verbatim: WelcomeCopy.use) }
@@ -259,22 +292,34 @@ struct EmojiChoices: View {
                     }
                 }
             }
+        } else if AppearanceState.shared.contentSizeCategory.isAccessibilityCategory {
+            // Fix wave I3: at the accessibility sizes "More" outgrows a seventh of the row; it takes its own row.
+            VStack(spacing: gap) {
+                HStack(spacing: gap) {
+                    ForEach(Array(ProfileRules.emojiChoices.prefix(Self.firstRow)), id: \.self) { cell($0) }
+                }
+                more
+            }
         } else {
             HStack(spacing: gap) {
                 ForEach(Array(ProfileRules.emojiChoices.prefix(Self.firstRow)), id: \.self) { cell($0) }
-                Button(action: onMore) {
-                    Text(verbatim: WelcomeCopy.more)
-                        .font(TypeRole.label(TypeScale.detail))
-                        .foregroundStyle(Tokens.accent)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .frame(maxWidth: .infinity)
+                more
             }
         }
+    }
+
+    private var more: some View {
+        Button(action: onMore) {
+            Text(verbatim: WelcomeCopy.more)
+                .font(TypeRole.label(TypeScale.detail))
+                .foregroundStyle(Tokens.accent)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity)
     }
 
     private func cell(_ e: String) -> some View {

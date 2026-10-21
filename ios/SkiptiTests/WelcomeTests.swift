@@ -40,6 +40,28 @@ final class WelcomeTests: XCTestCase {
         try records(store) { if case .you(_, let name?) = $0 { return !name.isEmpty }; return false }
     }
 
+    /// Fix wave M6: every string literal in Welcome.swift's `enum WelcomeCopy`, read from the source (the table as written,
+    /// so a word added to it is scanned without a second list to keep).
+    private func copyTableWords() throws -> [String] {
+        let source = try appSource("Welcome.swift")
+        let start = try XCTUnwrap(source.range(of: "enum WelcomeCopy {"))
+        let end = try XCTUnwrap(source.range(of: "\n}\n", range: start.upperBound..<source.endIndex))
+        let body = String(source[start.upperBound..<end.lowerBound])
+        let literal = try NSRegularExpression(pattern: #""((?:[^"\\]|\\.)*)""#)
+        return literal.matches(in: body, range: NSRange(body.startIndex..., in: body)).compactMap {
+            Range($0.range(at: 1), in: body).map { String(body[$0]) }
+        }
+    }
+
+    /// Fix wave M6: a string literal drawn straight into a view (`Text("...")`, `Text(verbatim: "...")`, `Button("...")`,
+    /// `GreedyText("...")`), which the copy table scan cannot see.
+    static func literalsDrawn(_ source: String) -> [String] {
+        let pattern = try! NSRegularExpression(pattern: #"\b(Text|Button|GreedyText)\((verbatim: )?""#)
+        return pattern.matches(in: source, range: NSRange(source.startIndex..., in: source)).compactMap {
+            Range($0.range, in: source).map { String(source[$0]) }
+        }
+    }
+
     /// The launch as SkiptiApp makes it: the vault's read, then whether the welcome shows.
     private func launch(_ store: LedgerStore) throws -> Bool {
         guard case .opened(let before) = VaultRecovery.launch(store) else { throw XCTSkip("the vault did not open") }
@@ -121,6 +143,58 @@ final class WelcomeTests: XCTestCase {
         XCTAssertEqual(WelcomeFlow.doneTitle(name: "   "), "You're set", "a blank name is no name")
     }
 
+    /// Fix wave M8: the page change is spoken, "Step n of 4, <title>" (W5 its title alone); the progress says the same.
+    func testTheStepChangeIsSpoken() throws {
+        XCTAssertEqual(WelcomeStep.allCases.map { WelcomeFlow.announcement($0, name: "Sam") },
+                       ["Step 1 of 4, Welcome to SKIPTI", "Step 2 of 4, Pick a look", "Step 3 of 4, Your name",
+                        "Step 4 of 4, Your picture", "Nice to meet you, Sam"])
+        XCTAssertEqual(WelcomeFlow.announcement(.done, name: nil), "You're set")
+        let source = try appSource("Welcome.swift")
+        XCTAssertTrue(source.contains(".onChange(of: step) { _, new in\n            AccessibilityNotification.Announcement(WelcomeFlow.announcement(new, name: savedName)).post()"))
+        XCTAssertTrue(source.contains("spoken: WelcomeFlow.announcement(step, name: savedName))"))
+        // Negative: the progress is no longer hidden on W5.
+        XCTAssertFalse(source.contains(".accessibilityHidden(spoken == nil)"))
+    }
+
+    /// Fix wave I2: "Everything stays on this phone." (W1) and "Your name and picture stay on this phone." (W4) show only
+    /// without an account, as Profile's footnotes do; a signed-in replay shows neither.
+    func testThePhoneOnlyLinesShowOnlyWithoutAnAccount() throws {
+        XCTAssertEqual(WelcomeFlow.foot(.welcome, signedIn: false), WelcomeCopy.welcomeFoot)
+        XCTAssertEqual(WelcomeFlow.foot(.picture, signedIn: false), WelcomeCopy.pictureFoot)
+        XCTAssertEqual(WelcomeStep.allCases.map { WelcomeFlow.foot($0, signedIn: true) }, [nil, nil, nil, nil, nil],
+                       "signed in: no foot on any step")
+        XCTAssertEqual(ProfileCopy.footnotes(signedIn: true).contains(WelcomeCopy.pictureFoot), false, "Profile's own rule")
+        let source = try appSource("Welcome.swift")
+        XCTAssertTrue(source.contains("if let foot = WelcomeFlow.foot(.welcome, signedIn: account.isSignedIn) {"))
+        XCTAssertTrue(source.contains("if let foot = WelcomeFlow.foot(.picture, signedIn: account.isSignedIn) {"))
+        // Negative: neither line is drawn by its name any more.
+        XCTAssertFalse(source.contains("Text(verbatim: WelcomeCopy.welcomeFoot)"))
+        XCTAssertFalse(source.contains("Text(verbatim: WelcomeCopy.pictureFoot)"))
+    }
+
+    /// Fix wave I3: at the largest text the bar grows (never a fixed 44), a place label wraps to two lines, and at the
+    /// accessibility sizes the places stack one per row.
+    func testTheLargestTextGrowsAndNothingClips() throws {
+        XCTAssertEqual(WelcomeFlow.placeRows(stacked: false), [[0, 1, 2], [3, 4]])
+        XCTAssertEqual(WelcomeFlow.placeRows(stacked: true), [[0], [1], [2], [3], [4]])
+        XCTAssertEqual(WelcomeFlow.placeRows(stacked: true).flatMap { $0 }, Array(0..<5), "every place, in order")
+        let source = try appSource("Welcome.swift")
+        let bar = try XCTUnwrap(source.components(separatedBy: "private var topBar: some View {").last?
+            .components(separatedBy: "private var bottom").first)
+        XCTAssertTrue(bar.contains(".frame(minHeight: 44)"))
+        XCTAssertFalse(bar.contains(".frame(height: 44)"), "a fixed height clips Skip at the largest size")
+        let place = try XCTUnwrap(source.components(separatedBy: "private struct WelcomePlace: View {").last?
+            .components(separatedBy: "\n}\n").first)
+        XCTAssertTrue(place.contains(".lineLimit(2)"))
+        XCTAssertFalse(place.contains(".lineLimit(1)"), "one line cut Settle up")
+        XCTAssertTrue(source.contains("let stacked = AppearanceState.shared.contentSizeCategory.isAccessibilityCategory"))
+        XCTAssertTrue(source.contains("ForEach(WelcomeFlow.placeRows(stacked: stacked), id: \\.self) { row in"))
+        // W4: "More" takes its own row at the accessibility sizes (a seventh of the row cut it to an ellipsis).
+        let choices = try XCTUnwrap(try appSource("ProfileConfirm.swift").components(separatedBy: "struct EmojiChoices: View {").last)
+        XCTAssertTrue(choices.contains("} else if AppearanceState.shared.contentSizeCategory.isAccessibilityCategory {\n            // Fix wave I3"))
+        XCTAssertEqual(choices.components(separatedBy: "                more\n").count - 1, 2, "under the six, or seventh in the row")
+    }
+
     /// Decision 198: back on W2 to W4 only, one step, and the progress keeps what is done.
     func testBackGoesOneStepAndTheProgressKeepsWhatIsDone() throws {
         XCTAssertEqual(WelcomeStep.allCases.map { WelcomeFlow.previous(before: $0) }, [nil, .welcome, .look, .name, nil])
@@ -153,7 +227,8 @@ final class WelcomeTests: XCTestCase {
         XCTAssertEqual(profile.current, DoneMoments.line(DoneCopy.pictureSaved), "Profile's toast")
         let welcome = try appSource("Welcome.swift")
         XCTAssertTrue(welcome.contains("ProfileSave.name(name, store: store, feedback: .haptic)"))
-        XCTAssertTrue(welcome.contains("ProfileSave.picture(picked, store: store, feedback: .haptic)"))
+        XCTAssertTrue(welcome.contains("ProfileSave.returned(name, saved: savedName, store: store, feedback: .haptic)"))
+        XCTAssertTrue(welcome.contains("ProfileSave.answer(.use, stage: &stage, store: store, feedback: .haptic)"))
         XCTAssertFalse(welcome.contains("DoneToastHost"), "no toast host in the welcome")
         let profileSource = try appSource("Profile.swift")
         XCTAssertFalse(profileSource.contains("feedback: .haptic"), "Profile keeps its toast")
@@ -182,6 +257,13 @@ final class WelcomeTests: XCTestCase {
         XCTAssertTrue(NameRule.dirty("Sam", saved: nil))
         XCTAssertFalse(NameRule.dirty(" Sam ", saved: "Sam"), "the saved name, trimmed, is not a change")
         XCTAssertFalse(NameRule.dirty("   ", saved: "Sam"), "a blank field is not a change to save")
+        // Decision 200 (kept): W3 hides Next while the field holds an unsaved name, valid or not; Skip and Back remain.
+        let tooLong = String(repeating: "a", count: 61)
+        XCTAssertEqual(WelcomeFlow.action(.name, nameDirty: NameRule.dirty(tooLong, saved: nil), staged: false), .saveName,
+                       "decision 200: no Next beside an unsaved name")
+        XCTAssertEqual(WelcomeFlow.action(.name, nameDirty: NameRule.dirty("Ann", saved: "Sam"), staged: false), .saveName)
+        XCTAssertTrue(WelcomeFlow.skippable(.name))
+        XCTAssertEqual(WelcomeFlow.previous(before: .name), .look)
     }
 
     // MARK: - Decision 192: the progress
@@ -367,7 +449,7 @@ final class WelcomeTests: XCTestCase {
 
     // MARK: - Words
 
-    func testTheWordsArePinned() {
+    func testTheWordsArePinned() throws {
         let pinned: [(String, String)] = [
             (WelcomeCopy.next, "Next"), (WelcomeCopy.skip, "Skip"), (WelcomeCopy.step(3), "Step 3 of 4"),
             (WelcomeCopy.welcomeTitle, "Welcome to SKIPTI"), (WelcomeCopy.welcomeLine, "Split costs. See who owes whom."),
@@ -394,18 +476,30 @@ final class WelcomeTests: XCTestCase {
         XCTAssertEqual(WelcomeCopy.welcomeLead + " " + WelcomeCopy.wordmark, WelcomeCopy.welcomeTitle)
         XCTAssertEqual(StepCopy.why(.name), WelcomeCopy.nameLine, "the ring's why, reused")
         XCTAssertEqual(StepCopy.why(.picture), WelcomeCopy.pictureLine)
-        for word in pinned.map(\.0) + WelcomeCopy.welcomeScreens {
+        XCTAssertEqual(WelcomeCopy.nameNotSaved, "Could not save your name.")
+        XCTAssertEqual(WelcomeCopy.pictureNotSaved, "Could not save your picture.")
+        for word in try pinned.map(\.0) + copyTableWords() {
             XCTAssertFalse(word.contains("\u{2014}") || word.contains("\u{2013}"), "a dash: \(word)")
         }
     }
 
     /// Plan 1.6 (GUARANTEES #5): no welcome word names an account, sign-in, sync, the cloud, Google, Apple or joining.
     func testNoWelcomeWordNamesAnAccount() throws {
-        XCTAssertGreaterThan(WelcomeCopy.welcomeScreens.count, 35)
-        XCTAssertEqual(WelcomeCopy.g5Hits(WelcomeCopy.welcomeScreens), [])
+        // Fix wave M6: the whole table as written, plus the other tables the welcome draws from.
+        let words = try copyTableWords() + [DoneCopy.nameSaved, DoneCopy.pictureSaved] + AppTheme.allCases.map(\.label)
+        XCTAssertGreaterThan(words.count, 40)
+        XCTAssertTrue(words.contains("Everything stays on this phone."), "the parse reads the table")
+        XCTAssertTrue(words.contains("Step \\(n) of 4"), "templates too")
+        XCTAssertEqual(WelcomeG5.hits(words), [])
         // Negative: the scan sees one, whatever its case.
-        XCTAssertEqual(WelcomeCopy.g5Hits(["Pick a look", "SIGN in to Sync"]), ["SIGN in to Sync"])
-        XCTAssertEqual(WelcomeCopy.g5Hits(["Join a group"]), ["Join a group"])
+        XCTAssertEqual(WelcomeG5.hits(["Pick a look", "SIGN in to Sync"]), ["SIGN in to Sync"])
+        XCTAssertEqual(WelcomeG5.hits(["Join a group"]), ["Join a group"])
+        // No word is drawn around the table: every Text and Button in the welcome's views and the confirm reads a name.
+        let screens = try XCTUnwrap(try appSource("Welcome.swift").components(separatedBy: "// MARK: - The screens").last)
+        XCTAssertEqual(Self.literalsDrawn(screens), [])
+        XCTAssertEqual(Self.literalsDrawn(try appSource("ProfileConfirm.swift")), [])
+        // Negative: the guard sees a literal.
+        XCTAssertEqual(Self.literalsDrawn(#"Text(verbatim: "Sign in") Button("Join") Text(WelcomeCopy.next)"#).count, 2)
         // And no welcome screen routes to sign-in or Join.
         let source = try appSource("Welcome.swift")
         for banned in ["SignInScreen", "JoinScreen", "JoinPasteScreen", "InviteCopy", "ImportFlowScreen", "signIn("] {
@@ -470,28 +564,37 @@ final class WelcomeTests: XCTestCase {
 
     // MARK: - The picture (decision 161)
 
+    /// Fix wave M6: through the real seam (`ProfileSave.answer`, which Profile's sheet and the welcome's Use call), with a
+    /// real vault: Not now writes, nudges and shares nothing; Use writes once; a second Use has nothing staged.
     @MainActor
     func testATapStagesAndOnlyUseWritesOnce() throws {
         let store = tempStore()
+        var shares = 0, changes = 0, bumps = 0
+        let spy = ProfileSave.Effects(changed: { changes += 1 }, share: { shares += 1 }, bump: { bumps += 1 })
+        let center = DoneCenter(gate: SuccessGate(), haptic: { _, _ in }, announce: { _ in })
         var stage = PictureStage()
         stage.choose(.emoji("🦊"))
         stage.choose(.emoji("🐼"))
         XCTAssertEqual(stage.staged, .emoji("🐼"))
-        XCTAssertEqual(try avatarRecords(store), 0, "taps write nothing")
-        stage.notNow()
+        XCTAssertNil(try ProfileSave.answer(.notNow, stage: &stage, store: store, effects: spy, center: center))
         XCTAssertNil(stage.staged)
         XCTAssertNil(stage.done)
         XCTAssertEqual(try avatarRecords(store), 0, "Not now writes nothing")
+        XCTAssertEqual(shares + changes + bumps, 0, "and nudges, shares and re-reads nothing")
+        XCTAssertNil(center.current, "no toast")
         XCTAssertEqual(try store.loadAvatar(), .none)
 
-        var shares = 0
         stage.choose(.emoji("🦉"))
-        try ProfileSave.picture(.emoji("🦉"), store: store, effects: .init(changed: {}, share: { shares += 1 }, bump: {}))
-        stage.used(.emoji("🦉"))
+        XCTAssertEqual(try ProfileSave.answer(.use, stage: &stage, store: store, effects: spy, center: center), .emoji("🦉"))
         XCTAssertEqual(try avatarRecords(store), 1, "one record")
         XCTAssertEqual(shares, 1, "one share request")
+        XCTAssertEqual(changes, 1)
         XCTAssertEqual(try store.loadAvatar(), .emoji("🦉"))
         XCTAssertEqual(stage.done, DoneCopy.pictureSaved)
+        // Negative: a second Use (a quick double tap) finds nothing staged and writes nothing.
+        XCTAssertNil(try ProfileSave.answer(.use, stage: &stage, store: store, effects: spy, center: center))
+        XCTAssertEqual(try avatarRecords(store), 1)
+        XCTAssertEqual(shares, 1)
         stage.used(.none)
         XCTAssertEqual(stage.done, DoneCopy.pictureRemoved)
 
@@ -501,8 +604,62 @@ final class WelcomeTests: XCTestCase {
         XCTAssertTrue(profile.contains("stagePicture(.photo(stored))"))
         XCTAssertFalse(profile.contains("setAvatar("), "the old save-on-tap is gone")
         XCTAssertTrue(profile.contains(".sheet(item: $confirming)"))
+        // The sheet's two answers are the seam above, and nothing else.
+        XCTAssertTrue(profile.contains("onUse: { confirm(.use) }, onNotNow: { confirm(.notNow) })"))
+        XCTAssertTrue(profile.contains("if let written = try ProfileSave.answer(answer, stage: &stage, store: store) { avatar = written }"))
         XCTAssertEqual(profile.components(separatedBy: "store.saveAvatar(").count - 1, 0)
         XCTAssertEqual(try appSource("ProfileConfirm.swift").components(separatedBy: "try store.saveAvatar(").count - 1, 1)
         XCTAssertEqual(try appSource("Welcome.swift").components(separatedBy: "saveAvatar(").count - 1, 0)
+    }
+
+    // MARK: - Fix wave
+
+    /// Fix wave M1: Return saves through the same seam, but never the saved name again (nothing written, nudged or
+    /// shared); an empty field still says "Add a name first.".
+    @MainActor
+    func testReturnDoesNotSaveAnUnchangedNameAgain() throws {
+        let store = tempStore()
+        var shares = 0, changes = 0
+        let spy = ProfileSave.Effects(changed: { changes += 1 }, share: { shares += 1 }, bump: {})
+        XCTAssertEqual(ProfileSave.returned("Sam", saved: nil, store: store, effects: spy), .saved("Sam"))
+        XCTAssertEqual(try youRecords(store), 1)
+        // Negative: the same name (trimmed) on Return writes nothing.
+        XCTAssertNil(ProfileSave.returned(" Sam ", saved: "Sam", store: store, effects: spy))
+        XCTAssertEqual(try youRecords(store), 1, "no second record")
+        XCTAssertEqual(shares, 1)
+        XCTAssertEqual(changes, 1)
+        XCTAssertEqual(ProfileSave.returned("  ", saved: "Sam", store: store, effects: spy), .refused(WelcomeCopy.errEmpty))
+        XCTAssertEqual(ProfileSave.returned("Ann", saved: "Sam", store: store, effects: spy), .saved("Ann"))
+        XCTAssertEqual(try youRecords(store), 2)
+        for file in ["Welcome.swift", "Profile.swift"] {
+            XCTAssertTrue(try appSource(file).contains(".onSubmit { saveName(returned: true) }"), file)
+        }
+    }
+
+    /// Fix wave M4: a vault failure is said in words, never the raw error, in the welcome and the picture saves.
+    func testFailuresAreSaidInWords() throws {
+        let welcome = try appSource("Welcome.swift")
+        let confirm = try appSource("ProfileConfirm.swift")
+        for (file, source) in [("Welcome.swift", welcome), ("ProfileConfirm.swift", confirm)] {
+            XCTAssertFalse(source.contains("String(describing: error)"), file)
+            XCTAssertFalse(source.contains("\\(error)"), file)
+        }
+        XCTAssertTrue(welcome.contains("pictureError = WelcomeCopy.pictureNotSaved"))
+        XCTAssertTrue(confirm.contains("return .refused(WelcomeCopy.nameNotSaved)"))
+        let profile = try appSource("Profile.swift")
+        let saves = try XCTUnwrap(profile.components(separatedBy: "private func confirm(_ answer: PictureAnswer) {").last?
+            .components(separatedBy: "private func micro").first)
+        XCTAssertEqual(saves.components(separatedBy: "self.error = WelcomeCopy.pictureNotSaved").count - 1, 1)
+        XCTAssertFalse(saves.contains("\\(error)"), "no raw error in Profile's picture saves")
+    }
+
+    /// Fix wave M7: no dead code left behind (the confirm's unread presentation, the flow's unused step count).
+    func testNoDeadCode() throws {
+        let confirm = try appSource("ProfileConfirm.swift")
+        XCTAssertFalse(confirm.contains("enum Presentation"))
+        XCTAssertFalse(confirm.contains("presentation:"))
+        let welcome = try appSource("Welcome.swift")
+        let flow = try XCTUnwrap(welcome.components(separatedBy: "enum WelcomeFlow {").last?.components(separatedBy: "\n}\n").first)
+        XCTAssertFalse(flow.contains("static let steps"))
     }
 }
