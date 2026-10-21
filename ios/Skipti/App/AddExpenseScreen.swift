@@ -690,7 +690,7 @@ struct AddExpenseScreen: View {
     }
 
     /// The kind's own fields as rows of the split card, one per person in the split, with today's placeholders and
-    /// keyboards; D-253: each row keeps the person's name before its field once a number is typed (`FieldRowShows`). Itemised's lines follow the card (`itemisedCards`).
+    /// keyboards; D-253: each row shows the person's name before its field, typed into or not (`FieldRow`'s label). Itemised's lines follow the card (`itemisedCards`).
     @ViewBuilder
     private var kindFields: some View {
         switch kind {

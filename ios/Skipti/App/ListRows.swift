@@ -289,9 +289,6 @@ struct FieldFocus {
 /// "Amount for Meera"), and VoiceOver still hears the whole placeholder. A row with no label is today's. Android's twin
 /// is `FieldRowShows` in ListRows.kt.
 enum FieldRowShows {
-    /// The label drawn before the field: the row's label, typed into or not.
-    static func label(_ label: String?, text: String) -> String? { label }
-
     /// The prompt in the field: the placeholder, or for a labelled row the words before " for ".
     static func prompt(_ placeholder: String, label: String?) -> String {
         guard label != nil, let cut = placeholder.range(of: " for ") else { return placeholder }
@@ -301,7 +298,7 @@ enum FieldRowShows {
 
 struct FieldRow<Trailing: View>: View {
     let placeholder: String
-    /// D-253: the person's name before the field (`FieldRowShows`); nil for an unlabelled row.
+    /// D-253: the person's name before the field, drawn whatever is typed; nil for an unlabelled row.
     var label: String? = nil
     @Binding var text: String
     var keyboard: UIKeyboardType = .default
@@ -310,6 +307,8 @@ struct FieldRow<Trailing: View>: View {
     var form: FieldFocus? = nil
     let trailing: Trailing
     @FocusState private var focused: Bool
+    /// D-253 review (I1): the alignment the row is placed in (Welcome's name card asks for `.center`).
+    @Environment(\.multilineTextAlignment) private var inherited
 
     init(_ placeholder: String, label: String? = nil, text: Binding<String>, keyboard: UIKeyboardType = .default,
          font: Font = TypeRole.body(), spoken: String? = nil, form: FieldFocus? = nil, @ViewBuilder trailing: () -> Trailing) {
@@ -323,30 +322,34 @@ struct FieldRow<Trailing: View>: View {
         self.trailing = trailing()
     }
 
-    /// D-253: a labelled row's field sits at the row's end, its words flush with it.
-    private var fieldAlignment: TextAlignment { label == nil ? .leading : .trailing }
+    /// D-253: a labelled row's field sits at the row's end, its words flush with it; an unlabelled row keeps the
+    /// alignment it is placed in (review I1: Welcome's name is centred, as on Android).
+    private var fieldAlignment: TextAlignment { label == nil ? inherited : .trailing }
 
     var body: some View {
         HStack(spacing: ThemeArt.m("rowGap")) {
-            // D-253: the person's name, as a list row's title (`TypeRole.name(16)`), sharing the row half and half with
-            // the field (a value row's layout); VoiceOver hears the field's whole name instead.
-            if let shown = FieldRowShows.label(label, text: text) {
-                Text(verbatim: shown).font(TypeRole.name(16)).foregroundStyle(Tokens.text).lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .accessibilityHidden(true)
+            // D-253 review (M3): the name and the field are one tap area; the clear cross after them keeps its own taps.
+            HStack(spacing: ThemeArt.m("rowGap")) {
+                // D-253: the person's name, as a list row's title (`TypeRole.name(16)`), sharing the row half and half with
+                // the field (a value row's layout), typed into or not; VoiceOver hears the field's whole name instead.
+                if let label {
+                    Text(verbatim: label).font(TypeRole.name(16)).foregroundStyle(Tokens.text).lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityHidden(true)
+                }
+                TextField(text: $text, prompt: Text(verbatim: FieldRowShows.prompt(placeholder, label: label)).foregroundStyle(Tokens.textFaint)) {
+                    Text(verbatim: placeholder)
+                }
+                .multilineTextAlignment(fieldAlignment)
+                .font(font)
+                .foregroundStyle(Tokens.text)
+                .tint(Tokens.accent)
+                .keyboardType(keyboard)
+                .accessibilityLabel(Text(verbatim: spoken ?? placeholder))
+                .modifier(FieldFocusing(local: $focused, form: form))
+                .padding(.vertical, ThemeArt.m("rowPadV"))
+                .frame(maxWidth: .infinity, minHeight: ThemeArt.m("touchTarget"), alignment: .leading)
             }
-            TextField(text: $text, prompt: Text(verbatim: FieldRowShows.prompt(placeholder, label: label)).foregroundStyle(Tokens.textFaint)) {
-                Text(verbatim: placeholder)
-            }
-            .multilineTextAlignment(fieldAlignment)
-            .font(font)
-            .foregroundStyle(Tokens.text)
-            .tint(Tokens.accent)
-            .keyboardType(keyboard)
-            .accessibilityLabel(Text(verbatim: spoken ?? placeholder))
-            .modifier(FieldFocusing(local: $focused, form: form))
-            .padding(.vertical, ThemeArt.m("rowPadV"))
-            .frame(maxWidth: .infinity, minHeight: ThemeArt.m("touchTarget"), alignment: .leading)
             .contentShape(Rectangle())
             .simultaneousGesture(TapGesture().onEnded {
                 if let form { form.focus.wrappedValue = form.id } else { focused = true }

@@ -1122,7 +1122,7 @@ private fun SplitSection(
 private fun rememberCategoryTree(): CategoryTree =
     androidx.compose.runtime.remember { ffiCategoryTreeDefault() }
 
-/** D-253: each row keeps the person's name before its field once a number is typed ([FieldRowShows]).
+/** D-253: each row shows the person's name before its field, typed into or not ([FieldRow]'s label).
  *  §5.4's per-kind entry fields as rows of the split card, mirroring iOS's kindFields: one field row per person in the
  *  split, in the group's order as the switch rows above (iOS's `ForEach(members)`; the draft is keyed by id, so the
  *  order is display only), with today's placeholders and keyboards. D-225 T7 (Design 11). */

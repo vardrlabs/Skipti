@@ -1564,38 +1564,50 @@ final class AppearanceTests: XCTestCase {
     /// D-225 T2 review (Important): a tap anywhere in a field row's field part (its `rowPadV` padding and the 48 minimum
     /// included) focuses the field, as Android's twin does; the padding and the minimum sit INSIDE the tap area, and the
     /// trailing piece (the clear cross) keeps its own taps, outside it. The tap is simultaneous, so the field's own taps
-    /// (the caret, selection) still reach it.
+    /// (the caret, selection) still reach it. D-253 review (M3): a labelled row's name is inside the same tap area (an
+    /// inner HStack holding the name and the field carries the content shape and the tap), so a tap on "Meera" focuses
+    /// her field. A source assertion: a unit test cannot deliver a touch to a hosted view; Android's twin is
+    /// ThemeArtTest.the_whole_field_row_name_included_focuses_its_field.
     func testTheWholeFieldRowFocusesItsField() throws {
         let field = try between(try appFile("ListRows.swift"), from: "struct FieldRow<Trailing: View>: View {", to: "\n}\n")
         XCTAssertTrue(field.contains("@FocusState private var focused: Bool"), field)
         let body = try between(field, from: "var body: some View {", to: "\n    }\n")
         // D-248 (U29.2): the row's own focus, or its form's (`FieldFocusing`); a tap focuses whichever it has.
-        let order = [".modifier(FieldFocusing(local: $focused, form: form))", ".padding(.vertical, ThemeArt.m(\"rowPadV\"))",
-                     ".frame(maxWidth: .infinity, minHeight: ThemeArt.m(\"touchTarget\"), alignment: .leading)",
-                     ".contentShape(Rectangle())", ".simultaneousGesture(TapGesture().onEnded {", "trailing"]
+        let order = ["HStack(spacing: ThemeArt.m(\"rowGap\")) {\n            // D-253 review (M3)", "\n            HStack(spacing: ThemeArt.m(\"rowGap\")) {\n",
+                     "if let label {", "TextField(",
+                     ".modifier(FieldFocusing(local: $focused, form: form))", ".padding(.vertical, ThemeArt.m(\"rowPadV\"))",
+                     ".frame(maxWidth: .infinity, minHeight: ThemeArt.m(\"touchTarget\"), alignment: .leading)\n            }\n",
+                     "            .contentShape(Rectangle())", ".simultaneousGesture(TapGesture().onEnded {", "trailing"]
         XCTAssertTrue(body.contains("if let form { form.focus.wrappedValue = form.id } else { focused = true }"))
         let at = try order.map { try XCTUnwrap(body.range(of: $0), "FieldRow: \($0)").lowerBound }
-        XCTAssertEqual(at, at.sorted(), "the field, its padding and minimum, the tap area, the focusing tap, then the trailing piece")
+        XCTAssertEqual(at, at.sorted(), "the name and the field (its padding and minimum) in the tap area, the focusing tap, then the trailing piece")
+        XCTAssertEqual(occurrences(body, ".contentShape(Rectangle())"), 1, "one tap area, the inner HStack's")
         XCTAssertEqual(occurrences(body, "trailing"), 1, "the trailing piece outside the tap area")
         XCTAssertFalse(body.contains(".onTapGesture"), "a plain tap would take the field's own taps")
     }
 
     /// D-253 (the store look, shot 4: Exact's rows read "1500", "1200", "900" with nobody named): a split kind's person
-    /// row keeps the person's name before its field once a number is typed, the field at the row's end and its prompt the
+    /// row shows the person's name before its field, typed into or not, the field at the row's end and its prompt the
     /// placeholder's first words; VoiceOver still hears the whole placeholder. An unlabelled row is today's (the
-    /// negative). Android's twin is AddExpenseTest.a_split_row_keeps_its_name_with_a_value_typed.
+    /// negative). What proves the name is DRAWN with a value typed is testALabelledRowDrawsItsNameWithAValueTyped (the
+    /// row hosted and its pixels read). Android's twin is AddExpenseTest.a_split_row_keeps_its_name_with_a_value_typed.
     func testASplitRowKeepsItsNameWithAValueTyped() throws {
-        XCTAssertEqual(FieldRowShows.label("Meera", text: ""), "Meera")
-        XCTAssertEqual(FieldRowShows.label("Meera", text: "1500"), "Meera", "the name stays with a value typed")
-        XCTAssertNil(FieldRowShows.label(nil, text: "1500"), "an unlabelled row draws no name")
-        XCTAssertNil(FieldRowShows.label(nil, text: ""))
         XCTAssertEqual(FieldRowShows.prompt("Amount for Meera", label: "Meera"), "Amount")
         XCTAssertEqual(FieldRowShows.prompt("Adjustment for Meera", label: "Meera"), "Adjustment")
         XCTAssertEqual(FieldRowShows.prompt("Amount for Meera", label: nil), "Amount for Meera", "an unlabelled prompt is whole")
         XCTAssertEqual(FieldRowShows.prompt("Tax", label: "Meera"), "Tax")
         // The row draws through it, and every kind's person row passes the person's name.
         let field = try between(try appFile("ListRows.swift"), from: "struct FieldRow<Trailing: View>: View {", to: "\n}\n")
-        XCTAssertTrue(field.contains("if let shown = FieldRowShows.label(label, text: text) {"), field)
+        // The name is drawn on the label alone, never on what is typed (D-253 review M1: the condition is the label).
+        XCTAssertTrue(field.contains("""
+                        // the field (a value row's layout), typed into or not; VoiceOver hears the field's whole name instead.
+                        if let label {
+                            Text(verbatim: label).font(TypeRole.name(16))
+        """), field)
+        let name = try between(field, from: "if let label {", to: "TextField(")
+        for typed in ["$text", "text.", "text ==", "text !=", "text:"] {
+            XCTAssertFalse(name.contains(typed), "the name does not depend on the typed text (\(typed)): \(name)")
+        }
         XCTAssertTrue(field.contains("prompt: Text(verbatim: FieldRowShows.prompt(placeholder, label: label))"), field)
         XCTAssertTrue(field.contains(".accessibilityLabel(Text(verbatim: spoken ?? placeholder))"), field)
         XCTAssertTrue(field.contains(".multilineTextAlignment(fieldAlignment)"), field)
@@ -1603,6 +1615,92 @@ final class AppearanceTests: XCTestCase {
         for kind in ["Amount", "Percent", "Shares", "Adjustment"] {
             XCTAssertEqual(occurrences(add, "FieldRow(\"\(kind) for \\(m.name)\", label: m.name, text:"), 1, kind)
         }
+    }
+
+    /// Hosts `content` in a 375 pt window and returns the drawn hierarchy and the first text field UIKit backs the
+    /// SwiftUI field with.
+    @MainActor
+    private func hostedField(_ content: some View) throws -> (field: UITextField, image: UIImage, window: UIWindow) {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 375, height: 200)
+        window.overrideUserInterfaceStyle = .light
+        window.rootViewController = UIHostingController(rootView: content.padding(16).frame(maxWidth: .infinity, maxHeight: .infinity).background(Color.white))
+        window.isHidden = false
+        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+        window.layoutIfNeeded()
+        var fields: [UITextField] = []
+        func walk(_ view: UIView) {
+            if let f = view as? UITextField { fields.append(f) }
+            for sub in view.subviews { walk(sub) }
+        }
+        walk(window)
+        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        return (try XCTUnwrap(fields.first, "no text field drawn"), image, window)
+    }
+
+    /// The pixels of `rect` (points) in `image` that are not the white ground.
+    private func inkPixels(_ image: UIImage, in rect: CGRect) -> Int {
+        guard let cg = image.cgImage else { return -1 }
+        let scale = image.scale
+        let w = cg.width, h = cg.height
+        var data = [UInt8](repeating: 0, count: w * h * 4)
+        let ctx = CGContext(data: &data, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+        var ink = 0
+        for y in Int(rect.minY * scale)..<min(h, Int(rect.maxY * scale)) {
+            for x in Int(rect.minX * scale)..<min(w, Int(rect.maxX * scale)) {
+                let i = (y * w + x) * 4
+                if Int(data[i]) + Int(data[i + 1]) + Int(data[i + 2]) < 600 { ink += 1 }
+            }
+        }
+        return ink
+    }
+
+    /// D-253 review (I1): an UNLABELLED field row keeps the alignment it is placed in: Welcome's name card asks for
+    /// `.center` (W3, Android's `centred = true`), and the field UIKit draws is centred. A labelled row's field trails
+    /// whatever it is placed in (the negative: the inherited alignment does not reach a split row), and an unlabelled
+    /// row placed nowhere in particular stays at the start. The row hosted, the drawn field's alignment read.
+    @MainActor
+    func testAnUnlabelledFieldRowKeepsTheAlignmentItIsPlacedIn() throws {
+        var name = "Ada"
+        var amount = "1500"
+        let nameBinding = Binding(get: { name }, set: { name = $0 })
+        let amountBinding = Binding(get: { amount }, set: { amount = $0 })
+        // As Welcome's namePage places it: a ListCard holding the row, centred on the card.
+        let welcome = try hostedField(ListCard { FieldRow(WelcomeCopy.namePlaceholder, text: nameBinding, font: TypeRole.body(17)) }
+            .multilineTextAlignment(.center))
+        XCTAssertEqual(welcome.field.textAlignment, .center, "W3's name is centred, as on Android")
+        welcome.window.isHidden = true
+        let plain = try hostedField(FieldRow("Tax", text: amountBinding))
+        XCTAssertNotEqual(plain.field.textAlignment, .center, "an unlabelled row placed nowhere in particular is not centred")
+        XCTAssertNotEqual(plain.field.textAlignment, .right)
+        plain.window.isHidden = true
+        let split = try hostedField(FieldRow("Amount for Meera", label: "Meera", text: amountBinding).multilineTextAlignment(.center))
+        XCTAssertEqual(split.field.textAlignment, .right, "a labelled row's field trails even inside a centred card")
+        split.window.isHidden = true
+    }
+
+    /// D-253 review (M1): a labelled row DRAWS its name with a value typed. The row hosted with "1500" typed: the part of
+    /// the row before the field (where the name sits) carries ink. The negative: the same row with an empty name draws
+    /// nothing there, so the harness sees a missing name (a row that dropped the name once a value is typed reads as that).
+    @MainActor
+    func testALabelledRowDrawsItsNameWithAValueTyped() throws {
+        var amount = "1500"
+        let binding = Binding(get: { amount }, set: { amount = $0 })
+        func nameInk(_ label: String) throws -> Int {
+            let hosted = try hostedField(FieldRow("Amount for Meera", label: label, text: binding))
+            defer { hosted.window.isHidden = true }
+            let field = hosted.field.convert(hosted.field.bounds, to: nil)
+            XCTAssertEqual(hosted.field.text, "1500")
+            XCTAssertGreaterThan(field.minX, 375 / 3, "the field takes the row's end half")
+            return inkPixels(hosted.image, in: CGRect(x: 0, y: field.minY, width: field.minX - 1, height: field.height))
+        }
+        XCTAssertGreaterThan(try nameInk("Meera"), 50, "the name is drawn with a value typed")
+        XCTAssertEqual(try nameInk(""), 0, "the harness sees an empty name: nothing drawn before the field")
     }
 
     // ---- D-216 Task 2: the app icon's decisions, names and copy (Design 3 to 5; Android's AppearanceTest pins the same

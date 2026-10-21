@@ -88,23 +88,29 @@ class AddExpenseTest {
     }
 
     /** D-253 (the store look, shot 4: Exact's rows read "1500", "1200", "900" with nobody named): the twin of iOS's
-     *  testASplitRowKeepsItsNameWithAValueTyped. A split kind's person row keeps the person's name before its field once
-     *  a number is typed, the field at the row's end and its prompt the placeholder's first words; TalkBack still hears
-     *  the whole placeholder. An unlabelled row is today's (the negative). */
+     *  testASplitRowKeepsItsNameWithAValueTyped. A split kind's person row shows the person's name before its field,
+     *  typed into or not, the field at the row's end and its prompt the placeholder's first words; TalkBack still hears
+     *  the whole placeholder. An unlabelled row is today's (the negative). What proves the name is drawn with a value
+     *  typed is a source assertion (this suite has no Compose UI test harness): the name's Text is drawn on the label
+     *  alone, no condition on the typed value, and the store look's pairs show it; iOS's twin draws the row and reads
+     *  its pixels (testALabelledRowDrawsItsNameWithAValueTyped). */
     @Test
     fun a_split_row_keeps_its_name_with_a_value_typed() {
-        assertEquals("Meera", FieldRowShows.label("Meera", ""))
-        assertEquals("the name stays with a value typed", "Meera", FieldRowShows.label("Meera", "1500"))
-        assertEquals("an unlabelled row draws no name", null, FieldRowShows.label(null, "1500"))
-        assertEquals(null, FieldRowShows.label(null, ""))
         assertEquals("Amount", FieldRowShows.prompt("Amount for Meera", "Meera"))
         assertEquals("Adjustment", FieldRowShows.prompt("Adjustment for Meera", "Meera"))
         assertEquals("an unlabelled prompt is whole", "Amount for Meera", FieldRowShows.prompt("Amount for Meera", null))
         assertEquals("Tax", FieldRowShows.prompt("Tax", "Meera"))
         // The row draws through it, and every kind's person row passes the person's name.
         val row = src("ListRows.kt").substringAfter("fun FieldRow(").substringBefore("\n}\n")
+        // D-253 review (M1): the name is drawn on the label alone: the block holding it names neither the typed value nor
+        // a condition, and it is the inner Row's first child.
+        assertTrue("the name first in the tap area, on the label alone", Regex(
+            """verticalAlignment = Alignment\.CenterVertically,\n\s*\) \{\n(\s*//[^\n]*\n)*\s*label\?\.let \{ shown ->\n\s*Text\(\n\s*shown, """,
+        ).containsMatchIn(row))
+        val name = row.substringAfter("label?.let { shown ->").substringBefore("BasicTextField(")
+        for (typed in listOf("value", "if (", "takeIf", "when")) assertFalse("the name does not depend on the typed text ($typed): $name", typed in name)
         for (s in listOf(
-            "FieldRowShows.label(label, value)?.let { shown ->", "val prompt = FieldRowShows.prompt(placeholder, label)",
+            "val prompt = FieldRowShows.prompt(placeholder, label)",
             "if (value.isEmpty()) Text(prompt,", "semantics { contentDescription = spoken }",
             "textStyle = if (trails) style.copy(textAlign = TextAlign.End) else style",
         )) assertTrue("FieldRow: $s", s in row)

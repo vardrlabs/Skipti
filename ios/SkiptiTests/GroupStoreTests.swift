@@ -250,7 +250,7 @@ final class GroupStoreTests: XCTestCase {
         XCTAssertFalse(sheets.contains("withAnimation"), "no ungated animation on New group")
         // FieldRow speaks its `spoken` name when given ("Person 2"), else its placeholder (Android's `FieldRow(spoken:)`).
         let rows = try String(contentsOf: url.deletingLastPathComponent().appendingPathComponent("ListRows.swift"), encoding: .utf8)
-        XCTAssertTrue(rows.contains(".keyboardType(keyboard)\n            .accessibilityLabel(Text(verbatim: spoken ?? placeholder))"))
+        XCTAssertTrue(rows.contains(".keyboardType(keyboard)\n                .accessibilityLabel(Text(verbatim: spoken ?? placeholder))"))
     }
 
     /// D-227 (a): every tab stays alive on iOS (D-180), so a group made on Balance, or a name set there, reaches the
