@@ -68,6 +68,16 @@ then ONE round of pop-ups for every call of his, then build in his order with de
   and 198-200, CLAUDE.md 10 guarantee 5). Merging.** Next: the rune glyph glow unit (`.drafts/runeglow/plan.md`), then
   U29-U31 (`.drafts/d246/plan.md`: settle + ring, then small fixes), then U10 (`.drafts/d248/plan.md`, core stage done
   in worktree /private/tmp/skipti-d248-core), then D-249 fluidity, then U32/U33.
+- **D-245 MERGED 0408097, pushed (main and branch), no Actions run.** Cleanup: d245-look sim and AVD deleted
+  (avdmanager needs `zsh -lic` for JAVA_HOME), AFAF4221 poster cache (1.3 GB) deleted. Sent him two Norse shots.
+- **D-246 the rune glyph glow, branch d246-rune-glow from 0408097:** stage 1 (motion.py + iOS) implementer dispatched
+  (report `.drafts/d246/stage1-report.md`); then stage 2 Android, review, sabotage, gate, records, merge.
+  NOTE: the plan folder `.drafts/d246/plan.md` holds the settle/small-fixes plan (written before the glow unit was
+  added): those units become D-247 (settle + ring) and D-248 (small fixes); U10 becomes D-249 (its plan and core
+  stage live in `.drafts/d248/` and worktree branch `d248-just-me`), the fluidity sweep D-250. Folder names stay.
+- **D-246:** stage 1 6e35618 (iOS + motion.py), stage 2 f03b0a7 (Android), review Needs fixes (I1 page cap from the
+  measured receiving ink), fix wave 233dfba (page glow 0.120); gate 23/23 (4m13s); RECORDED (decision 196). Merging.
+  NEXT: D-247 settle + ring (`.drafts/d246/plan.md` section "D-246: Settle up and the ring": read it as D-247).
 
 ## SESSION 10 (closed): 2026-10-20 (Opus; opener `.drafts/stop/fable-opener-3.md`'s successor): FINISH D-239, THEN 0.5.1 U27, U26, U24, U25
 
