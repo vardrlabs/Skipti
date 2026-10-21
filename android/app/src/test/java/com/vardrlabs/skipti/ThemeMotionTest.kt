@@ -1094,7 +1094,9 @@ class ThemeMotionTest {
         // D-223 fix wave (decision 21): 4, "See all" sits on the card's surface and takes `Tok.accent`, as every in-card
         // link does ("People in X").
         // D-225 T5: 3, People's "Invite X" rows are list rows in a card (iOS's twin draws them in `text` with a chevron).
-        assertEquals(3, count("Tok.groundAccent("))
+        // D-245: the welcome's Skip, its back chevron (decision 198) and its "Welcome to" lead sit on the ground: + 3
+        // (iOS's twin went 2 to 5).
+        assertEquals(6, count("Tok.groundAccent("))
     }
 
     @Test
@@ -1417,7 +1419,8 @@ class ThemeMotionTest {
         // TabBar.kt's two scales, the bolt's turn and the re-tap scroll; SkiptiBar.kt's three fades; ListRows.kt's switch and push.
         // D-234 (A2): + ListRows.kt's disclosure turn and AccountHubScreen.kt's App icon rows and caption.
         // D-234 (L4): + SheetPage's large-title rest.
-        assertEquals("the guard saw every gated animation", 13, seen)
+        // D-245: + the welcome's step fade (Welcome.kt).
+        assertEquals("the guard saw every gated animation", 14, seen)
     }
 
     /** Fix wave I1 (final review): the tab bar holds still under reduced motion (the phone's remove animations OR Less

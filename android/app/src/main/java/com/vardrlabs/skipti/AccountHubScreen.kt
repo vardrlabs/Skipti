@@ -1121,7 +1121,7 @@ private fun SettingsTile(glyphName: String, dark: Boolean) {
 /** D-222 (L60, Design 5): one theme's card: the CURRENT theme's control shape with a 2 dp border (the accent when
  *  chosen, the hairline when not), the theme's own swatch, then its name. A radio button to TalkBack. */
 @Composable
-private fun ThemeCard(theme: AppTheme, selected: Boolean, dark: Boolean, modifier: Modifier, onClick: () -> Unit) {
+internal fun ThemeCard(theme: AppTheme, selected: Boolean, dark: Boolean, modifier: Modifier, onClick: () -> Unit) {
     val shape = ThemeArt.controlShape(Appearance.theme)
     Column(
         modifier

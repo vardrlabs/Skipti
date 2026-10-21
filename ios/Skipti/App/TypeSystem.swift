@@ -315,6 +315,8 @@ enum TypeScale {
     static let footnote: CGFloat = 13
     static let lockTitle: CGFloat = 28
     static let wordmark: CGFloat = 32
+    /// D-245: the welcome's "SKIPTI" under "Welcome to" (W1).
+    static let welcomeMark: CGFloat = 52
 
     /// Every constant by its name, in the order above (the test walks it against the agreed table).
     static let all: [(String, CGFloat)] = [
@@ -325,6 +327,7 @@ enum TypeScale {
         ("segment", segment), ("sample", sample), ("rangeSmall", rangeSmall), ("rangeLarge", rangeLarge),
         ("ledgerName", ledgerName), ("feedLine", feedLine), ("emptyTitle", emptyTitle), ("toast", toast),
         ("prose", prose), ("footnote", footnote), ("lockTitle", lockTitle), ("wordmark", wordmark),
+        ("welcomeMark", welcomeMark),
     ]
 }
 

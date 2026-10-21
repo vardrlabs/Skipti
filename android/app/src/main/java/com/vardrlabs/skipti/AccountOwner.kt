@@ -396,10 +396,15 @@ object VaultRecovery {
 
     /** Reads D-175's flag through [open] (and sets it on a first launch); a thrown Exception is [Launch.Unavailable].
      *  An Error (out of memory, a missing native library) is not a ledger that will not open, so it is not caught. */
-    fun launch(key: String, open: () -> LedgerStore): Launch = try {
+    fun launch(key: String, firstLaunch: (LedgerStore) -> Unit = {}, open: () -> LedgerStore): Launch = try {
         val store = open()
         val before = store.rawKvGet(key)?.isNotEmpty() == true
-        if (!before) store.rawKvSet(key, byteArrayOf(1))
+        // D-245 (decision 177): a first launch marks what it owes ([firstLaunch]: the welcome's pending flag) BEFORE it
+        // marks the phone launched, so a launch killed between the two is a first launch again.
+        if (!before) {
+            firstLaunch(store)
+            store.rawKvSet(key, byteArrayOf(1))
+        }
         Launch.Opened(before)
     } catch (e: Exception) {
         Launch.Unavailable(VaultRecoveryCopy.reason(e))

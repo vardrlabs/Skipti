@@ -406,6 +406,8 @@ class TypeThemeTest {
                 "toast" to 15f,
                 // D-225 (art.py sections 41 to 44): About's prose, a licence's text, the lock screen's title, the wordmark.
                 "prose" to 15f, "footnote" to 13f, "lockTitle" to 28f, "wordmark" to 32f,
+                // D-245: the welcome's wordmark (W1), iOS's `welcomeMark`.
+                "welcomeMark" to 52f,
             ),
             TypeScale.all,
         )
@@ -552,7 +554,8 @@ class TypeThemeTest {
             "CardCaption(\"Add people by name. They do not need SKIPTI; linking a name to their phone comes later.\")",
             "CardCaption(\"You see yourself as \\\"Name (You)\\\". Others in the group see only the name.\")",
         )) assertTrue(line, sheets.contains(line))
-        assertTrue(ios("Profile.swift").contains("Text(\"Shown as “\\(shown) (You)” in your groups.\")\n                            .font(TypeRole.body(14))"))
+        // D-245 (U17): iOS's Profile caption names the scale's detail (14) instead of the literal (stage 1's change).
+        assertTrue(ios("Profile.swift").contains("Text(\"Shown as “\\(shown) (You)” in your groups.\")\n                            .font(TypeRole.body(TypeScale.detail))"))
         // D-225 T4: the privacy detail is the privacy row's summary and the currency detail a card caption, both at
         // TypeScale.detail (14, above) through ListRows.swift; the jailbreak warning is its own card at the same size.
         val lock = ios("AppLock.swift")

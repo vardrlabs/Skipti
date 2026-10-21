@@ -616,7 +616,7 @@ edit — ADR-0013):
 3. No feature is gated behind payment.
 4. Data is exportable in full, in an open format, at any time, in one tap.
 5. Your own ledger is fully functional offline and with no account; an account
-   is never created, implied or nudged for; groups need an account; sync is on
+   is never created, implied or nudged for; sharing a group with other people's phones needs an account (decision 171); sync is on
    once you have an account and off in one tap.
 6. No third-party network origin except SKIPTI's cloud (Firebase), the sign-in
    provider the user taps, and Apple's/Google's push service — no CDN, fonts,

@@ -50,6 +50,8 @@
 		A10147 /* Invites.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10160 /* Invites.swift */; };
 		A10149 /* Push.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10161 /* Push.swift */; };
 		A10150 /* People.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10162 /* People.swift */; };
+		A10246 /* Welcome.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10246 /* Welcome.swift */; };
+		A10245 /* ProfileConfirm.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10245 /* ProfileConfirm.swift */; };
 		A10222 /* SettingsSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10222 /* SettingsSync.swift */; };
 		A10220 /* ListRows.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10220 /* ListRows.swift */; };
 		A10216 /* HomeParts.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10216 /* HomeParts.swift */; };
@@ -110,6 +112,7 @@
 		A10206 /* ThemeMotionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10206 /* ThemeMotionTests.swift */; };
 		A10215 /* SettledTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10215 /* SettledTests.swift */; };
 		A10214 /* YouProgressTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10214 /* YouProgressTests.swift */; };
+		A10247 /* WelcomeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10247 /* WelcomeTests.swift */; };
 		A10110 /* Profile.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10125 /* Profile.swift */; };
 		A10111 /* ProfileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10126 /* ProfileTests.swift */; };
 		A10112 /* About.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10127 /* About.swift */; };
@@ -196,6 +199,8 @@
 		B10160 /* Invites.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Invites.swift; sourceTree = "<group>"; };
 		B10161 /* Push.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Push.swift; sourceTree = "<group>"; };
 		B10162 /* People.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = People.swift; sourceTree = "<group>"; };
+		B10246 /* Welcome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Welcome.swift; sourceTree = "<group>"; };
+		B10245 /* ProfileConfirm.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileConfirm.swift; sourceTree = "<group>"; };
 		B10222 /* SettingsSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsSync.swift; sourceTree = "<group>"; };
 		B10220 /* ListRows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListRows.swift; sourceTree = "<group>"; };
 		B10216 /* HomeParts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeParts.swift; sourceTree = "<group>"; };
@@ -243,6 +248,7 @@
 		B10206 /* ThemeMotionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeMotionTests.swift; sourceTree = "<group>"; };
 		B10215 /* SettledTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettledTests.swift; sourceTree = "<group>"; };
 		B10214 /* YouProgressTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YouProgressTests.swift; sourceTree = "<group>"; };
+		B10247 /* WelcomeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeTests.swift; sourceTree = "<group>"; };
 		B10125 /* Profile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Profile.swift; sourceTree = "<group>"; };
 		B10126 /* ProfileTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileTests.swift; sourceTree = "<group>"; };
 		B10127 /* About.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = About.swift; sourceTree = "<group>"; };
@@ -351,6 +357,8 @@
 				B10160 /* Invites.swift */,
 				B10161 /* Push.swift */,
 				B10162 /* People.swift */,
+				B10246 /* Welcome.swift */,
+				B10245 /* ProfileConfirm.swift */,
 				B10222 /* SettingsSync.swift */,
 				B10220 /* ListRows.swift */,
 				B10216 /* HomeParts.swift */,
@@ -399,6 +407,7 @@
 				B10206 /* ThemeMotionTests.swift */,
 				B10215 /* SettledTests.swift */,
 				B10214 /* YouProgressTests.swift */,
+				B10247 /* WelcomeTests.swift */,
 				B10126 /* ProfileTests.swift */,
 				B10128 /* AboutTests.swift */,
 				B10132 /* ProjectionBytesTests.swift */,
@@ -631,6 +640,8 @@
 				A10147 /* Invites.swift in Sources */,
 				A10149 /* Push.swift in Sources */,
 				A10150 /* People.swift in Sources */,
+				A10246 /* Welcome.swift in Sources */,
+				A10245 /* ProfileConfirm.swift in Sources */,
 				A10222 /* SettingsSync.swift in Sources */,
 				A10220 /* ListRows.swift in Sources */,
 				A10216 /* HomeParts.swift in Sources */,
@@ -677,6 +688,7 @@
 				A10206 /* ThemeMotionTests.swift in Sources */,
 				A10215 /* SettledTests.swift in Sources */,
 				A10214 /* YouProgressTests.swift in Sources */,
+				A10247 /* WelcomeTests.swift in Sources */,
 				A10111 /* ProfileTests.swift in Sources */,
 				A10113 /* AboutTests.swift in Sources */,
 				A10117 /* ProjectionBytesTests.swift in Sources */,

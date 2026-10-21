@@ -84,6 +84,11 @@ class CardPaddingParityTest {
             Site("ListRows.swift", "_VariadicView.Tree(ListCardRows()) { content }", Side.AFTER),
             Site("ListRows.kt", "val rows = ListCardScope().apply(build).rows", Side.AFTER),
         ),
+        Pair(
+            "the welcome's emoji choices (D-245 W4)",
+            Site("Welcome.swift", "EmojiChoices(chosen: stage.staged ?? saved, open: moreOpen, onMore: { moreOpen = true }) { e in", Side.AFTER),
+            Site("Welcome.kt", "EmojiChoices(s.stage.staged ?: s.saved, s.moreOpen, dark, onMore = { s.moreOpen = true }) { e ->", Side.BEFORE),
+        ),
     )
 
     /** iOS's padded cards whose Android twin is not a glass card: People's search field and Add person's fields are
@@ -139,7 +144,8 @@ class CardPaddingParityTest {
     @Test
     fun the_ios_reader_reads_the_swift_values() {
         assertEquals(
-            listOf(14, 14, 14, 14, 14, 14, 12, 14, 10, 14, 12, 0),
+            // D-245: + the welcome's emoji choices, 10.
+            listOf(14, 14, 14, 14, 14, 14, 12, 14, 10, 14, 12, 0, 10),
             pairs.map { iosPadding(it.ios) },
         )
     }

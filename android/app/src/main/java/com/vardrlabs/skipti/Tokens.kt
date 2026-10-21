@@ -165,6 +165,8 @@ object TypeScale {
     const val footnote = 13f
     const val lockTitle = 28f
     const val wordmark = 32f
+    // D-245: the welcome's "SKIPTI" under "Welcome to" (W1).
+    const val welcomeMark = 52f
 
     /** Every constant by its name, in the order above. */
     val all: List<Pair<String, Float>> = listOf(
@@ -175,6 +177,7 @@ object TypeScale {
         "segment" to segment, "sample" to sample, "rangeSmall" to rangeSmall, "rangeLarge" to rangeLarge,
         "ledgerName" to ledgerName, "feedLine" to feedLine, "emptyTitle" to emptyTitle, "toast" to toast,
         "prose" to prose, "footnote" to footnote, "lockTitle" to lockTitle, "wordmark" to wordmark,
+        "welcomeMark" to welcomeMark,
     )
 }
 

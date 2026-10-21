@@ -101,8 +101,10 @@ class AppearanceTest {
     /** A private composable's body in AccountHubScreen.kt, up to its closing brace at the start of a line. */
     private fun fn(name: String): String {
         val src = hub()
-        assertTrue("$name exists", "private fun $name(" in src)
-        return src.substringAfter("private fun $name(").substringBefore("\n}\n")
+        // D-245: ThemeCard is internal (the welcome's Pick a look draws the same tile), the others private.
+        val head = listOf("private fun $name(", "internal fun $name(").firstOrNull { it in src }
+        assertTrue("$name exists", head != null)
+        return src.substringAfter(head!!).substringBefore("\n}\n")
     }
 
     /** One item of the Appearance page's `when`, from its arm to the next. */
@@ -1712,7 +1714,14 @@ class AppearanceTest {
             assertTrue("every write keeps the app running: $args", args.trim().endsWith("PackageManager.DONT_KILL_APP"))
         }
         val calls = files.flatMap { (name, text) -> Regex("""AppIconSwitcher\.applyIfNeeded\(""").findAll(text).map { name }.toList() }
-        assertEquals("one call, in the Appearance route", listOf("AccountHubScreen.kt"), calls)
+        // D-245 (U9, plan 1.3 W2): the welcome's close is Appearance's close: a second named site, `WelcomeLook.closed`,
+        // the only call in Welcome.kt (it runs once the welcome has gone, first run or replay; iOS's twin amended alike).
+        assertEquals("the Appearance route and the welcome's close", listOf("AccountHubScreen.kt", "Welcome.kt"), calls)
+        assertTrue(
+            "the welcome's close is Appearance's",
+            "fun closed(context: Context) = closed(applyIcon = { AppIconSwitcher.applyIfNeeded(context) }, pageClosed = { SettingsSync.pageClosed(context) })" in
+                files.getValue("Welcome.kt"),
+        )
         assertTrue(
             "the call is the Appearance route's onDispose, skipped on a configuration change",
             Regex(
@@ -1729,11 +1738,13 @@ class AppearanceTest {
         // calls only SettingsSync's front hook, never the switcher. The twin of iOS's amended guard.
         val arrived = files.flatMap { (name, text) -> Regex("""AppIconSwitcher\.applyArrived\(""").findAll(text).map { name }.toList() }
         assertEquals("the arrival's one call", listOf("SettingsSync.kt"), arrived)
+        // D-245: + the welcome's close (`WelcomeLook.closed`, above), one call in Welcome.kt.
         assertEquals(
-            "the Appearance route and the front moment",
-            listOf("AccountHubScreen.kt", "SettingsSync.kt"),
+            "the Appearance route, the front moment and the welcome's close",
+            listOf("AccountHubScreen.kt", "SettingsSync.kt", "Welcome.kt"),
             files.filterValues { "AppIconSwitcher." in it }.keys.sorted(),
         )
+        assertEquals("one call in the welcome", 1, files.getValue("Welcome.kt").split("AppIconSwitcher.").size - 1)
         val sync = files.getValue("SettingsSync.kt")
         assertEquals("one call in SettingsSync", 1, sync.split("AppIconSwitcher.").size - 1)
         val pending = sync.substringAfter("private fun changeIfPending(app: Context, store: LedgerStore) {").substringBefore("\n    }\n")
@@ -1873,7 +1884,8 @@ class AppearanceTest {
         assertTrue(
             "ProofArgs.proof in a debuggable build only",
             "private fun proofArg(): String? = ProofArgs.proof(intent?.getStringExtra(\"args\"), debuggable())" in root &&
-                "if (!debuggable || tokens(trimmed).first() == \"--emulators\") return null" in root,
+                // D-245: `--welcome` is the ordinary app (the welcome forced, a look's tool), not a proof, as `--emulators`.
+                "if (!debuggable || tokens(trimmed).first() == \"--emulators\" || tokens(trimmed).first() == \"--welcome\") return null" in root,
         )
         assertTrue("headless is the proof's first word", "val headless: String? = rememberOnce { args.firstOrNull()?.removePrefix(\"--\") }" in root)
     }

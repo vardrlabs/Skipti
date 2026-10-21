@@ -29,6 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -93,7 +94,7 @@ object AboutInfo {
         "No limit on logging expenses: no caps, meters or waiting.",
         "No feature is behind a payment. There is no paid tier.",
         "Export all your data, in an open format, any time, in one tap.",
-        "Your own ledger works fully offline and without an account. You are never pushed to make one; groups need one.",
+        "Your own ledger works fully offline and without an account. You are never pushed to make one; sharing a group with others needs one.",
         "The app talks only to SKIPTI's cloud, which runs on Google Firebase, and to Apple or Google to sign you in and deliver notifications.",
         "Only you can read your ledger, and only a group's members can read the group. It is not end-to-end encrypted.",
     )
@@ -241,82 +242,106 @@ object Licences {
 // --- Screens -----------------------------------------------------------------
 
 @Composable
-fun AboutScreen(onBack: () -> Unit, onOpenLicences: () -> Unit) {
+fun AboutScreen(vaultPath: String, onBack: () -> Unit, onOpenLicences: () -> Unit) {
     val dark = isSystemInDarkTheme()
     val context = LocalContext.current
     val version = remember { AboutInfo.current(context) }
     var mailError by remember { mutableStateOf(false) }
+    // D-245 (decision 162): the welcome again, without touching its first-run flag; saved, so a re-made activity (a
+    // theme tap in it) keeps it open where it was.
+    var replaying by rememberSaveable { mutableStateOf(false) }
+    val replay = rememberSaveable(saver = WelcomeSession.Saver) { WelcomeSession() }
 
-    PushedPage("About", dark, onBack, side = BarDecisions.PAGE_SIDE_WIDE.dp) {
-        AboutCard(dark) {
-            Text("SKIPTI", style = Type.display(dark).copy(fontSize = TypeScale.wordmark.sp))
-            Text(AboutInfo.MAKER, style = Type.body(dark))
-            Text(AboutInfo.versionLine(version.first, version.second), style = Type.numeric(14, FontWeight.Normal, dark).copy(color = Tok.textDim(dark)))
-            Text(AboutInfo.coreLine(skiptiCoreVersion()), style = Type.numeric(14, FontWeight.Normal, dark).copy(color = Tok.textDim(dark)))
-        }
+    Box(Modifier.fillMaxSize()) {
+        PushedPage("About", dark, onBack, side = BarDecisions.PAGE_SIDE_WIDE.dp) {
+            AboutCard(dark) {
+                Text("SKIPTI", style = Type.display(dark).copy(fontSize = TypeScale.wordmark.sp))
+                Text(AboutInfo.MAKER, style = Type.body(dark))
+                Text(AboutInfo.versionLine(version.first, version.second), style = Type.numeric(14, FontWeight.Normal, dark).copy(color = Tok.textDim(dark)))
+                Text(AboutInfo.coreLine(skiptiCoreVersion()), style = Type.numeric(14, FontWeight.Normal, dark).copy(color = Tok.textDim(dark)))
+            }
 
-        // D-176: which certificate signs this install (for Google sign-in).
-        val certs = remember { SigningCert.history(context) }
-        if (certs.isNotEmpty()) {
-            AboutSection("App signature", dark)
-            // Android's own card (no twin): its keys 12 apart, each label right over its fingerprints.
-            AboutCard(dark, spacing = 12.dp) {
-                certs.asReversed().forEachIndexed { index, der ->
-                    Column {
-                        SectionLabel(if (index == 0) "Signing this install" else "Earlier key", dark)
-                        SelectionContainer {
-                            Column {
-                                Text("SHA-1  " + SigningCert.fingerprint(der, "SHA-1"), style = Type.numeric(12, FontWeight.Normal, dark))
-                                Text("SHA-256  " + SigningCert.fingerprint(der, "SHA-256"), style = Type.numeric(12, FontWeight.Normal, dark).copy(color = Tok.textDim(dark)))
+            // D-245 (decision 162): one row under the version card; no summary (the settings width tables untouched). iOS's
+            // page stacks its cards 16 apart (the card's own top margin: About adds no spacers).
+            ListCard(dark, Modifier.padding(top = 16.dp)) {
+                row {
+                    ListRow(WelcomeCopy.REPLAY, dark, trailing = RowTrailing.Chevron) {
+                        replay.reset()
+                        replaying = true
+                    }
+                }
+            }
+
+            // D-176: which certificate signs this install (for Google sign-in).
+            val certs = remember { SigningCert.history(context) }
+            if (certs.isNotEmpty()) {
+                AboutSection("App signature", dark)
+                // Android's own card (no twin): its keys 12 apart, each label right over its fingerprints.
+                AboutCard(dark, spacing = 12.dp) {
+                    certs.asReversed().forEachIndexed { index, der ->
+                        Column {
+                            SectionLabel(if (index == 0) "Signing this install" else "Earlier key", dark)
+                            SelectionContainer {
+                                Column {
+                                    Text("SHA-1  " + SigningCert.fingerprint(der, "SHA-1"), style = Type.numeric(12, FontWeight.Normal, dark))
+                                    Text("SHA-256  " + SigningCert.fingerprint(der, "SHA-256"), style = Type.numeric(12, FontWeight.Normal, dark).copy(color = Tok.textDim(dark)))
+                                }
                             }
                         }
                     }
                 }
             }
-        }
 
-        AboutSection("Promises", dark)
-        AboutCard(dark) {
-            AboutInfo.PROMISES.forEachIndexed { index, promise ->
-                Row {
-                    Text(
-                        "${index + 1}",
-                        style = Type.numeric(14, FontWeight.Normal, dark).copy(color = Tok.textDim(dark)),
-                        modifier = Modifier.widthIn(min = 22.dp),
-                    )
-                    Text(promise, style = Type.body(dark).copy(fontSize = TypeScale.prose.sp))
+            AboutSection("Promises", dark)
+            AboutCard(dark) {
+                AboutInfo.PROMISES.forEachIndexed { index, promise ->
+                    Row {
+                        Text(
+                            "${index + 1}",
+                            style = Type.numeric(14, FontWeight.Normal, dark).copy(color = Tok.textDim(dark)),
+                            modifier = Modifier.widthIn(min = 22.dp),
+                        )
+                        Text(promise, style = Type.body(dark).copy(fontSize = TypeScale.prose.sp))
+                    }
                 }
             }
-        }
 
-        AboutSection("Privacy", dark)
-        AboutCard(dark) {
-            AboutInfo.PRIVACY.forEach { line ->
-                Text(line, style = Type.body(dark).copy(fontSize = TypeScale.prose.sp))
+            AboutSection("Privacy", dark)
+            AboutCard(dark) {
+                AboutInfo.PRIVACY.forEach { line ->
+                    Text(line, style = Type.body(dark).copy(fontSize = TypeScale.prose.sp))
+                }
+            }
+
+            AboutSection("Security", dark)
+            AboutCard(dark) {
+                Text(AboutInfo.SECURITY_NOTE, style = Type.body(dark).copy(fontSize = TypeScale.prose.sp))
+                SelectionContainer {
+                    Text(AboutInfo.SECURITY_EMAIL, style = Type.numeric(14, FontWeight.Normal, dark).copy(color = Tok.textDim(dark)))
+                }
+                SecondaryAction("Report a security problem", dark) {
+                    mailError = !openMail(context)
+                }
+                if (mailError) {
+                    Text(
+                        "No email app is set up on this phone. Write to ${AboutInfo.SECURITY_EMAIL}.",
+                        style = Type.bodyDim(dark).copy(color = Tok.owed(dark)),
+                    )
+                }
+            }
+
+            AboutSection("Legal", dark)
+            AboutCard(dark) {
+                Text(AboutInfo.DISCLAIMER, style = Type.body(dark).copy(fontSize = TypeScale.prose.sp))
+                SecondaryAction("Licences", dark, onOpenLicences)
             }
         }
-
-        AboutSection("Security", dark)
-        AboutCard(dark) {
-            Text(AboutInfo.SECURITY_NOTE, style = Type.body(dark).copy(fontSize = TypeScale.prose.sp))
-            SelectionContainer {
-                Text(AboutInfo.SECURITY_EMAIL, style = Type.numeric(14, FontWeight.Normal, dark).copy(color = Tok.textDim(dark)))
+        if (replaying) {
+            WelcomeLayer(vaultPath, WelcomeMode.REPLAY, replay) { exit ->
+                WelcomeGate.closed(WelcomeMode.REPLAY) { WelcomeGate.clear(LedgerStore(vaultPath)) }
+                replaying = false
+                WelcomeLook.after(context, exit)
             }
-            SecondaryAction("Report a security problem", dark) {
-                mailError = !openMail(context)
-            }
-            if (mailError) {
-                Text(
-                    "No email app is set up on this phone. Write to ${AboutInfo.SECURITY_EMAIL}.",
-                    style = Type.bodyDim(dark).copy(color = Tok.owed(dark)),
-                )
-            }
-        }
-
-        AboutSection("Legal", dark)
-        AboutCard(dark) {
-            Text(AboutInfo.DISCLAIMER, style = Type.body(dark).copy(fontSize = TypeScale.prose.sp))
-            SecondaryAction("Licences", dark, onOpenLicences)
         }
     }
 }

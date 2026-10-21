@@ -27,6 +27,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -53,6 +55,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
@@ -484,7 +488,10 @@ fun HomeGreeting(vaultPath: String, dark: Boolean) {
     }
 }
 
-/** Settings → Profile (route "profile"). */
+/** Settings → Profile (route "profile"). D-245 (U17, decisions 161, 179): a tapped emoji or a picked photo is staged and
+ *  confirmed in a sheet ([PictureConfirmSheet]); "Use this picture" writes it once, "Not now" writes nothing; the name
+ *  is checked in words, saved by the primary "Save name" or the keyboard's Done, and confirmed by a done row that stays
+ *  until the field changes. The twin of iOS's `ProfileScreen`. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ProfileScreen(vaultPath: String, onBack: () -> Unit) {
@@ -495,6 +502,14 @@ fun ProfileScreen(vaultPath: String, onBack: () -> Unit) {
     var savedName by remember { mutableStateOf<String?>(null) }
     var avatar by remember { mutableStateOf<Avatar>(Avatar.None) }
     var error by remember { mutableStateOf<String?>(null) }
+    // D-245 (U17): the name the done row confirms; the row shows while the field still holds it.
+    var nameDoneFor by remember { mutableStateOf<String?>(null) }
+    // D-245 (decision 161): a tapped emoji or picked photo waits in the sheet; nothing is written before "Use this
+    // picture". The done row under the picture says what the last confirm wrote.
+    var stage by remember { mutableStateOf(PictureStage()) }
+    var confirming by remember { mutableStateOf<Avatar?>(null) }
+    // Fix wave M2: one name or picture save at a time (the saves run on IO; a quick double tap wrote twice).
+    val saving = remember { SaveLatch() }
     // D-211: the footnotes follow the account live, as the hub does: read again
     // when a sign-out happens while this screen is open.
     var signedIn by remember { mutableStateOf(runCatching { Account.isSignedIn() }.getOrDefault(false)) }
@@ -512,47 +527,74 @@ fun ProfileScreen(vaultPath: String, onBack: () -> Unit) {
         }
     }
 
-    fun setAvatar(new: Avatar) {
+    /** D-245 (decision 161): a tap or a pick only stages the picture and opens the confirm. */
+    fun stagePicture(new: Avatar) {
         error = null
+        stage = stage.choose(new)
+        confirming = new
+    }
+
+    /** The sheet's answer (fix wave M6: through [ProfileSave.answer], the one seam): Use writes the staged picture once
+     *  (D-211: one record, one share request; D-224's toast), on IO, one save at a time (M2); Not now writes nothing and
+     *  never opens the vault. A failure is said in words (M4). Remove picture answers Use for `None` (no sheet). */
+    fun confirm(answer: PictureAnswer) {
+        error = null
+        confirming = null
+        if (answer == PictureAnswer.NOT_NOW) {
+            stage = ProfileSave.answer(answer, stage, { LedgerStore(vaultPath) }, ProfileSave.Effects.live(vaultPath)).stage
+            return
+        }
+        if (!saving.begin()) return
+        val before = stage
         scope.launch {
-            val failure = withContext(Dispatchers.IO) {
-                runCatching { LedgerStore(vaultPath).saveAvatar(new) }.exceptionOrNull()
-            }
-            if (failure == null) {
-                avatar = new
-                ProfileState.revision++
-                // D-224 (Design 7): the toast says it.
-                DoneCenter.post(DoneMoments.line(if (new == Avatar.None) DoneCopy.PICTURE_REMOVED else DoneCopy.PICTURE_SAVED))
-                // D-211: the picture reaches your other phones; your groups get a preview.
-                scope.launch(Dispatchers.IO) {
-                    CloudSync.ledgerChanged(vaultPath)
-                    ProfileShare.request(LedgerStore(vaultPath))
+            val result = try {
+                withContext(Dispatchers.IO) {
+                    runCatching { ProfileSave.answer(answer, before, { LedgerStore(vaultPath) }, ProfileSave.Effects.live(vaultPath)) }
                 }
-            } else {
-                error = failure.message ?: failure.toString()
+            } finally {
+                saving.release()
+            }
+            result.onSuccess { answered ->
+                stage = answered.stage
+                answered.written?.let {
+                    avatar = it
+                    ProfileSave.done(ProfileSave.pictureMoment(it), ProfileSave.Feedback.TOAST)
+                }
+            }.onFailure {
+                stage = stage.notNow()
+                error = WelcomeCopy.PICTURE_NOT_SAVED
             }
         }
     }
 
-    fun saveName() {
+    /** D-245 (decision 179): the rules in words, then the one save (D-211: your other phones and your groups; D-224's
+     *  toast). [returned]: the keyboard's Done, which never saves an unchanged name again (fix wave M1); one save at a
+     *  time (M2). */
+    fun saveName(returned: Boolean = false) {
         error = null
+        if (!saving.begin()) return
+        val typed = name
+        val saved = savedName
         scope.launch {
-            val result = withContext(Dispatchers.IO) { runCatching { LedgerStore(vaultPath).setYourName(name) } }
-            result.fold(
-                onSuccess = { me ->
-                    savedName = me.name
-                    name = me.name ?: name
-                    ProfileState.revision++
-                    // D-224 (Design 8): the toast says it; the button no longer reads "Saved" (it never reset).
-                    DoneCenter.post(DoneMoments.line(DoneCopy.NAME_SAVED))
-                    // D-211: the name reaches your other phones and your groups.
-                    scope.launch(Dispatchers.IO) {
-                        CloudSync.ledgerChanged(vaultPath)
-                        ProfileShare.request(LedgerStore(vaultPath))
-                    }
-                },
-                onFailure = { error = "That name cannot be used: ${it.message ?: it}" },
-            )
+            val outcome = try {
+                withContext(Dispatchers.IO) {
+                    val store = LedgerStore(vaultPath)
+                    val effects = ProfileSave.Effects.live(vaultPath)
+                    if (returned) ProfileSave.returned(typed, saved, store, effects) else ProfileSave.name(typed, store, effects)
+                }
+            } finally {
+                saving.release()
+            }
+            when (outcome) {
+                null -> Unit
+                is ProfileSave.NameOutcome.Saved -> {
+                    savedName = outcome.name
+                    name = outcome.name
+                    nameDoneFor = outcome.name
+                    ProfileSave.done(ProfileSave.nameMoment, ProfileSave.Feedback.TOAST)
+                }
+                is ProfileSave.NameOutcome.Refused -> error = outcome.words
+            }
         }
     }
 
@@ -560,13 +602,14 @@ fun ProfileScreen(vaultPath: String, onBack: () -> Unit) {
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
             val stored = withContext(Dispatchers.IO) { ProfileRules.storedPhoto(context, uri) }
-            if (stored != null) setAvatar(Avatar.Photo(stored)) else error = "That photo could not be read."
+            if (stored != null) stagePicture(Avatar.Photo(stored)) else error = WelcomeCopy.PHOTO_UNREADABLE
         }
     }
 
     PushedPage("Profile", dark, onBack, spacing = 16.dp, side = BarDecisions.PAGE_SIDE_WIDE.dp) {
-        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
             AvatarView(avatar, savedName, 96.dp, dark)
+            stage.done?.let { DoneRow(it, dark) }
         }
 
         Column(
@@ -574,13 +617,29 @@ fun ProfileScreen(vaultPath: String, onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(ProfileLayout.CARD_SPACING.dp),
         ) {
             SectionLabel("Your name", dark)
-            // D-225 (Design 9): iOS's hairline field, no outline.
-            HairlineField(name, { name = it }, "Your name", dark, style = Type.body(dark).copy(fontSize = ProfileLayout.NAME_FIELD_SIZE.sp))
+            // D-225 (Design 9): iOS's hairline field, no outline. D-245: the keyboard's Done saves (iOS's Return did; the
+            // brief's twin defect).
+            HairlineField(
+                name, { name = it; error = null }, "Your name", dark,
+                style = Type.body(dark).copy(fontSize = ProfileLayout.NAME_FIELD_SIZE.sp),
+                keyboard = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Done),
+                actions = KeyboardActions(onDone = { saveName(returned = true) }),
+            )
+            // D-245 (U17): signed in, who sees the name.
+            if (signedIn) Text(WelcomeCopy.GROUPS_NAME, style = Type.bodyDim(dark).copy(fontSize = TypeScale.detail.sp))
             savedName?.let { Text("Shown as “$it (You)” in your groups.", style = Type.bodyDim(dark).copy(fontSize = TypeScale.detail.sp)) }
-            val canSave = name.isNotBlank() && name != savedName
-            // D-213 (fix wave 2): iOS's SecondaryButtonStyle; nothing to save reads as nothing to save (it dims).
-            // D-220: full width, as iOS's style is.
-            SecondaryAction("Save name", dark, enabled = canSave) { saveName() }
+            // D-245 (U17, decision 179): the rules in words, as the field is typed.
+            NameRule.liveProblem(name, savedName)?.let { Text(it.message, style = Type.bodyDim(dark).copy(fontSize = TypeScale.detail.sp, color = Tok.owed(dark))) }
+            // D-224 (Design 8): the toast says it; D-245 (U17): and the done row, until the field changes.
+            if (nameDoneFor != null && nameDoneFor == NameRule.trimmed(name)) DoneRow(DoneCopy.NAME_SAVED, dark)
+            // D-245 (U17): the primary style when there is a name to save; the secondary, dimmed, when not (D-220: full
+            // width, as iOS's styles are).
+            val savable = NameRule.dirty(name, savedName) && NameRule.check(name) == null
+            if (savable) {
+                PrimaryAction(WelcomeCopy.SAVE_NAME, dark) { saveName() }
+            } else {
+                SecondaryAction(WelcomeCopy.SAVE_NAME, dark, enabled = false) { saveName() }
+            }
         }
 
         Column(
@@ -609,7 +668,8 @@ fun ProfileScreen(vaultPath: String, onBack: () -> Unit) {
                                     .clip(cell)
                                     // D-225 follow-up (R6): ONE node, the emoji with its chosen state and its tap (the
                                     // emoji's own Text made a second node with the same bounds), as the list rows are.
-                                    .clickable { setAvatar(Avatar.Emoji(e)) }
+                                    // D-245 (decision 161): a tap stages the picture and opens the confirm.
+                                    .clickable { stagePicture(Avatar.Emoji(e)) }
                                     .clearAndSetSemantics { contentDescription = e; selected = chosen },
                                 contentAlignment = Alignment.Center,
                             ) { Text(e, fontSize = glyph) }
@@ -621,7 +681,12 @@ fun ProfileScreen(vaultPath: String, onBack: () -> Unit) {
             }
             SecondaryAction("Choose a photo", dark) { pickPhoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
             if (avatar != Avatar.None) {
-                SecondaryAction("Remove picture", dark) { setAvatar(Avatar.None) }
+                // D-245: removing keeps today's flow (no confirm), through the one save.
+                // Fix wave: through the same answer as the sheet's Use, staged and used at once (no sheet).
+                SecondaryAction("Remove picture", dark) {
+                    stage = stage.choose(Avatar.None)
+                    confirm(PictureAnswer.USE)
+                }
             }
         }
 
@@ -632,5 +697,14 @@ fun ProfileScreen(vaultPath: String, onBack: () -> Unit) {
             ProfileCopy.footnotes(signedIn).forEach { line -> Text(line, style = Type.bodyDim(dark)) }
         }
         Spacer(Modifier.height(8.dp))
+    }
+
+    // D-245 (decision 161): the confirm, shown while a picture is staged; dismissing it is "Not now".
+    confirming?.let { staged ->
+        PictureConfirmSheet(
+            staged, savedName, signedIn,
+            onUse = { confirm(PictureAnswer.USE) },
+            onNotNow = { confirm(PictureAnswer.NOT_NOW) },
+        )
     }
 }

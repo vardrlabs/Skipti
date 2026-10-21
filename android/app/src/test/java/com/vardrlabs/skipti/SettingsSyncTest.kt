@@ -777,9 +777,12 @@ class SettingsSyncTest {
         assertEquals(mapOf("CloudSync.kt" to 1), callers("SettingsSync.received("))
         assertEquals(mapOf("AppRoot.kt" to 1), callers("SettingsSync.launched("))
         assertEquals("the return and the unlock", mapOf("AppRoot.kt" to 1, "AppLock.kt" to 1), callers("SettingsSync.frontMoment("))
-        assertEquals(mapOf("AccountHubScreen.kt" to 1), callers("SettingsSync.pageClosed("))
+        // D-245 (U9, decision 160): the welcome's close is Appearance's close (`WelcomeLook.closed`), one site.
+        assertEquals(mapOf("AccountHubScreen.kt" to 1, "Welcome.kt" to 1), callers("SettingsSync.pageClosed("))
         val root = files.getValue("AppRoot.kt")
-        val goOn = root.substringAfter("fun goOn(opened: VaultRecovery.Launch.Opened) {").substringBefore("\n    }\n")
+        // D-245: goOn also takes whether the welcome shows.
+        val goOn = root.substringAfter("fun goOn(opened: VaultRecovery.Launch.Opened, welcomeShows: Boolean) {").substringBefore("\n    }\n")
+        assertTrue("goOn found", "kitLoaded = true" in goOn)
         val lock = goOn.indexOf("if (opened.launchedBefore) AppLock.launch(context)")
         val launched = goOn.indexOf("SettingsSync.launched(context)")
         assertTrue("after the lock's decision: $lock $launched", lock in 0 until launched)
