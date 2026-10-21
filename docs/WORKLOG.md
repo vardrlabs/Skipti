@@ -78,6 +78,15 @@ then ONE round of pop-ups for every call of his, then build in his order with de
 - **D-246:** stage 1 6e35618 (iOS + motion.py), stage 2 f03b0a7 (Android), review Needs fixes (I1 page cap from the
   measured receiving ink), fix wave 233dfba (page glow 0.120); gate 23/23 (4m13s); RECORDED (decision 196). Merging.
   NEXT: D-247 settle + ring (`.drafts/d246/plan.md` section "D-246: Settle up and the ring": read it as D-247).
+- **D-246 MERGED 41bba08 + record e37efb9** (the merge went out without its BUILD-LOG row: recorder refused on cached
+  JVM XML and a piped && chain carried on; fixed with --jvm-carried-forward; memory saved). d246-look sim/AVD deleted,
+  poster cache deleted.
+- **D-247 (settle + ring), branch d247-settle from e37efb9:** stage 1 iOS dispatched (report `.drafts/d247/stage1-report.md`). Stage 1 DONE 8c0b415 (iOS 926/0; look shots
+  `.drafts/d247/look/ios/` via DEBUG `--settle-look`; 15 calls in the report). Stage 2 Android dispatched.
+  Stage 2 0dabec6 (JVM 1113); review not ready (I1 one check before the hold, I2 removal lands the hold); fix wave
+  7db9acf (iOS 932, JVM 1120; decision 201); sabotage 33 rows + 4 pins 95e6224; gate 23/23 (4m25s); RECORDED (182,
+  183, 201). Merging. NEXT: D-248 small fixes (`.drafts/d246/plan.md` section "D-247: the small bugs" = D-248; add
+  PlaceLost's twin words, D-247 residue e).
 
 ## SESSION 10 (closed): 2026-10-20 (Opus; opener `.drafts/stop/fable-opener-3.md`'s successor): FINISH D-239, THEN 0.5.1 U27, U26, U24, U25
 

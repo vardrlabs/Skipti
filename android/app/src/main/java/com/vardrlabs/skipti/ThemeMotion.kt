@@ -921,14 +921,16 @@ object ToastMotion {
     /** Opacity 0 to 1, and how far below its rest place it sits, in points. */
     data class Pose(val opacity: Double, val dy: Double)
 
-    fun pose(elapsed: Double, still: Boolean): Pose? {
-        if (elapsed < 0 || elapsed >= TOTAL) return null
+    /** D-247: [total], a toast's whole time (a toast that offers an action stays [DoneCenter.ACTION_SECONDS]); the
+     *  fades are the same. The twin of iOS's `pose(elapsed:still:total:)`. */
+    fun pose(elapsed: Double, still: Boolean, total: Double = TOTAL): Pose? {
+        if (elapsed < 0 || elapsed >= total) return null
         if (still) return Pose(1.0, 0.0)
         if (elapsed < FADE_IN) {
             val p = Bezier.y(elapsed / FADE_IN, EASE)
             return Pose(p, RISE * (1 - p))
         }
-        if (elapsed > TOTAL - FADE_OUT) return Pose((TOTAL - elapsed) / FADE_OUT, 0.0)
+        if (elapsed > total - FADE_OUT) return Pose((total - elapsed) / FADE_OUT, 0.0)
         return Pose(1.0, 0.0)
     }
 }

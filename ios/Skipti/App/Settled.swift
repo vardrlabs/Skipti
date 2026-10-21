@@ -10,8 +10,8 @@ enum SettledCopy {
     static let hundred = "100 expenses together"
     static let year = "A year together"
     static func since(_ date: String) -> String { "Since \(date). Rare, and only once." }
-    static let lastOne = "The last one"
-    static func paymentsToGo(_ n: Int) -> String { "\(n) payments to go" }
+    /// D-247 (decision 168): the fewest-payments plan's length, "1 payment to go" at one.
+    static func paymentsToGo(_ n: Int) -> String { n == 1 ? "1 payment to go" : "\(n) payments to go" }
     static let settle = "Settle"
     static let settling = "Settling"
 }
@@ -58,33 +58,13 @@ enum GroupNext {
         }
     }
 
-    /// D-221 (S2, WORKLOG decision 17): the group's open payments in the model the pick and Settle up read, the
-    /// pairwise view after D-218's loop cancelling. `frames` holds each person's own lines (core's `ffiBalanceLine` with
-    /// that person as viewer); a debt shows in both people's frames with opposite signs, so each nonzero entry is
-    /// counted once per (currency, the pair). Never the plan's payments: they are another model.
-    static func remaining(frames: [String: [BalanceLineOut]]) -> Int {
-        var open = Set<[String]>()
-        for (viewer, lines) in frames {
-            for line in lines {
-                for entry in line.entries where entry.minorUnits != 0 {
-                    open.insert([line.currencyCode, min(viewer, entry.id), max(viewer, entry.id)])
-                }
-            }
-        }
-        return open.count
-    }
+    /// D-247 (decision 168, D-221 b; overturns D-221 S2's pairwise count): the payments still to go are the
+    /// fewest-payments plan Settle up shows (core's `transfers`, section 5.8's plan), one list per currency. Counting the
+    /// plan's items is not money arithmetic: every amount stays core's. Android's `GroupNext.planCount` is the same.
+    static func planCount(lines: [BalanceLineOut]) -> Int { lines.flatMap(\.transfers).count }
 
-    /// The group's open payments, read through core once per distinct person: every member and every removed person
-    /// (D-210 keeps one who still holds a balance in the pairwise view, so a debt between two removed people is still
-    /// open). `lines` is that person's frame. Android's `GroupNext.remaining` is the same.
-    static func remaining(members: [String], removed: [String], lines: (String) throws -> [BalanceLineOut]) rethrows -> Int {
-        var frames: [String: [BalanceLineOut]] = [:]
-        for viewer in Set(members + removed) { frames[viewer] = try lines(viewer) }
-        return remaining(frames: frames)
-    }
-
-    /// The muted line under the sentence: "The last one" exactly at one, else "N payments to go".
-    static func remainingLine(_ n: Int) -> String { n == 1 ? SettledCopy.lastOne : SettledCopy.paymentsToGo(n) }
+    /// The muted line under the sentence: "1 payment to go", or "N payments to go".
+    static func remainingLine(_ n: Int) -> String { SettledCopy.paymentsToGo(n) }
 }
 
 /// D-221 (S4, SPEC 11.7: explicit accessibility labels on every money view): what VoiceOver reads for a Settled block
@@ -355,8 +335,8 @@ struct MilestoneCard: View {
 }
 
 /// D-221 (L41, Q17 a, Design 8): the group's next card: the viewer's largest open payment ("Sam pays you ₹560.00"),
-/// the muted count of the group's open payments (`GroupNext.remaining`), section 11.6's sentence, and "Settle" ("Settling" while it records). It records
-/// through Settle up's own function (`SettleAll.record`), then the page reloads. The latch keeps "Settling" until the
+/// the muted count of the plan's payments (`GroupNext.planCount`, D-247), section 11.6's sentence, and "Settle" ("Settling" while it records). It records
+/// through Settle up's own hold (`SettleHold`, D-247: written after the Undo window), then the page reloads. The latch keeps "Settling" until the
 /// reloaded page picks another payment, so a second tap never records twice. Never shown for a read-only copy (the
 /// page decides). Android's twin is `GroupNextCard`.
 struct GroupNextCard: View {
@@ -405,17 +385,14 @@ struct GroupNextCard: View {
                 remaining: GroupNext.remainingLine(remaining))))
             Button {
                 guard latch.begin(pick) else { return }
-                let (store, pick, named) = (store, pick, named)
-                DispatchQueue.global(qos: .userInitiated).async {
-                    do {
-                        try SettleAll.record(store: store, entry: pick.entry, currency: pick.currencyCode, named: named)
-                        DispatchQueue.main.async { onRecorded() }
-                    } catch {
-                        DispatchQueue.main.async {
-                            latch.failed()
-                            onError("Could not record the settlement. \(String(describing: error))")
-                        }
-                    }
+                // D-247 (decision 182): held for Undo, as Settle up's cards are (`SettleHold`, the one write path).
+                do {
+                    try SettleHold.shared.hold(SettleAll.settlement(for: pick.entry, currency: pick.currencyCode, in: named),
+                                               other: other, store: store)
+                    onRecorded()
+                } catch {
+                    latch.failed()
+                    onError("Could not record the settlement. \(String(describing: error))")
                 }
             } label: {
                 Text(verbatim: settling ? SettledCopy.settling : SettledCopy.settle)
@@ -536,7 +513,8 @@ struct CelebrationOverlay: View {
         // D-224 (Design 9): as it starts, a settle toast posted a moment before gives way, and the success plays through
         // the app's gate (the settle's own success, a moment before, keeps it to one).
         .onAppear {
-            DoneCenter.shared.clear()
+            // D-247: a toast that carries an action (a held settle's Undo) stays reachable.
+            DoneCenter.shared.giveWay()
             DoneCenter.shared.success()
             Celebration.announce(groupName)
         }

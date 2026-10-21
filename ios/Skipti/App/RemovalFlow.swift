@@ -65,6 +65,27 @@ enum Removal {
             removed: try store.removedIds(group: group), viewer: member, group: group)
     }
 
+    /// D-247 fix wave (review I2): every write path other than the hold lands the hold first. The removal's balance,
+    /// read after a settle held for Undo (`SettleHold`) has landed, so Settle first never records that debt again.
+    /// Android's twin is the flow's load (`SettleHold.shared.commit()` before its read).
+    @MainActor
+    static func linesLandingHeld(store: LedgerStore, group: String, member: String,
+                                 hold: SettleHold? = nil) throws -> [BalanceLineOut] {
+        (hold ?? .shared).commit()
+        return try lines(store: store, group: group, member: member)
+    }
+
+    /// D-247 fix wave (review I2): Settle first's payments as they are recorded: the held settle lands first; when one
+    /// did (and no payment of this Settle first is in yet, `started`), the payments are worked out again from the
+    /// vault, so the debt it paid is never recorded twice. Otherwise the payments the screen showed. Android's twin is
+    /// `Removal.settleFirstLanding`.
+    @MainActor
+    static func settleFirstLanding(store: LedgerStore, shown: [LedgerStore.SettlementDTO], member: String, group: String,
+                                   started: Bool, hold: SettleHold? = nil) throws -> [LedgerStore.SettlementDTO] {
+        guard (hold ?? .shared).commit(), !started else { return shown }
+        return settleFirst(lines: try lines(store: store, group: group, member: member), member: member, group: group)
+    }
+
     /// Every participant's net per currency in the group (core's): old
     /// balances for the redistribution's rows.
     static func nets(store: LedgerStore, group: String) throws -> [String: [String: Int64]] {
@@ -368,17 +389,22 @@ enum PeopleRoles {
         return listed.contains(picked) ? picked : first
     }
 
+    /// D-247 (decision 170): `createdHere`, this phone wrote the group's create record (`LedgerStore.Sync.createdHere`).
+    /// Until the cloud's roles for the group are known (`roles` nil), such a group shows the viewer as its owner, with
+    /// the owner's options (never "Ask to be removed"). Display only: every action still goes to the Functions, which
+    /// decide; no rule changes. The cloud's answer, once cached, always wins.
     static func rows(
         members: [MemberWire], selfId: String, viewerYou: String?, claims: [String: String], roles: RoleRules.Roles?,
-        yourPlaces: [String]? = nil, otherYouIds: [String] = [], readOnly: Bool = false
+        yourPlaces: [String]? = nil, otherYouIds: [String] = [], readOnly: Bool = false, createdHere: Bool = false
     ) -> [PersonRow] {
         let known = roles ?? RoleRules.Roles(owner: nil, admins: [])
+        let creatorFallBack = CreatorFallBack.applies(roles: roles, createdHere: createdHere)
         func you(_ id: String) -> String? { id == selfId ? (viewerYou ?? claims[id]) : claims[id] }
         // D-227 (Design 6): the viewer's own place, from the cloud when it said, else from every id of the account.
         let mine = selfPlace(yourPlaces: yourPlaces, selfId: selfId, yous: (viewerYou.map { [$0] } ?? []) + otherYouIds,
                              claims: claims)
         func place(_ id: String) -> String { id == selfId ? mine : id }
-        let viewer = RoleRules.role(of: viewerYou, place: mine, in: known)
+        let viewer = creatorFallBack ? .owner : RoleRules.role(of: viewerYou, place: mine, in: known)
         return members.map { m in
             let isSelf = m.id == selfId
             // A copy of a group (removed from, or deleted): the roles shown
@@ -387,7 +413,7 @@ enum PeopleRoles {
                 let none = RoleRules.Offer(remove: false, ask: false, askSelf: false, makeAdmin: false, removeAdmin: false, makeOwner: false)
                 return PersonRow(member: m, you: you(m.id), role: .member, isSelf: isSelf, offer: none, place: place(m.id))
             }
-            let role = RoleRules.role(of: you(m.id), place: place(m.id), in: known)
+            let role = isSelf && creatorFallBack ? .owner : RoleRules.role(of: you(m.id), place: place(m.id), in: known)
             var offer = RoleRules.offer(viewer: viewer, target: role, isSelf: isSelf)
             // D-227 fix wave (M-f): a role call names the person's account (`you`). A row in a role list by place with
             // no claim on this phone has none to name (the server takes the place itself only from its creator), so it
@@ -406,6 +432,13 @@ enum PeopleRoles {
     }
 }
 
+/// D-247 (decision 170, D-210 residue (o)): the display-only "this phone made this group" fall-back. Android's twin is
+/// `CreatorFallBack` in RemovalFlow.kt.
+enum CreatorFallBack {
+    /// Only while the cloud's roles for the group are unknown, and only for a group this phone created.
+    static func applies(roles: RoleRules.Roles?, createdHere: Bool) -> Bool { roles == nil && createdHere }
+}
+
 // MARK: - What this phone knows about a group's people
 
 /// What the People screen and a group's page need beyond the named group: is
@@ -419,6 +452,8 @@ struct GroupPeople: Equatable {
     /// D-227: the account's other ids (the places it claimed, the ids its other phones wrote).
     var otherYouIds: [String] = []
     var readOnly: LedgerStore.ReadOnly?
+    /// D-247 (decision 170): this phone wrote the group's create record (the creator fall-back's input).
+    var createdHere = false
 
     static func load(store: LedgerStore, groupID: String) throws -> GroupPeople {
         let projection = try LedgerStore.Sync.projectGroups(store)
@@ -428,7 +463,8 @@ struct GroupPeople: Equatable {
             viewerYou: projection.you?.id,
             claims: Dictionary(claims.map { ($0.memberId, $0.youId) }, uniquingKeysWith: { a, _ in a }),
             otherYouIds: projection.otherYouIds,
-            readOnly: try store.readOnlyChecked()[groupID]
+            readOnly: try store.readOnlyChecked()[groupID],
+            createdHere: try LedgerStore.Sync.createdHere(store).contains(groupID)
         )
     }
 }
@@ -1038,7 +1074,8 @@ private struct ReviewRemovalView: View {
     /// true. A read that fails leaves the banner out and the safe wording.
     private func load() {
         let group = context.named.group.id, member = context.member.id
-        if let lines = try? Removal.lines(store: context.store, group: group, member: member) {
+        // D-247 fix wave (I2): a settle held for Undo lands before the balance is read.
+        if let lines = try? Removal.linesLandingHeld(store: context.store, group: group, member: member) {
             plan = Removal.plan(lines: lines, member: member)
         }
         noHistory = (try? context.store.removalRefusal(groupID: group, memberID: member) == nil) ?? false
@@ -1092,7 +1129,8 @@ private struct RemovalStartView: View {
     private func load() {
         do {
             let group = context.named.group.id, member = context.member.id
-            lines = try Removal.lines(store: context.store, group: group, member: member)
+            // D-247 fix wave (I2): a settle held for Undo lands before the balance is read.
+            lines = try Removal.linesLandingHeld(store: context.store, group: group, member: member)
             plan = Removal.plan(lines: lines, member: member)
             nets = try Removal.nets(store: context.store, group: group)
             // D-186's wording is true only for someone who never joined and is
@@ -1286,15 +1324,26 @@ private struct SettleFirstView: View {
     private func record(_ settlements: [LedgerStore.SettlementDTO]) {
         // Never record a payment the screen could not have shown.
         guard Removal.canFormat(settlements) else { error = RolesCopy.cannotWritePayment; return }
+        // D-247 fix wave (I2): a settle still held for Undo lands first; the payments are worked out again if it did.
+        let pay: [LedgerStore.SettlementDTO]
+        do {
+            pay = try Removal.settleFirstLanding(
+                store: context.store, shown: settlements, member: context.member.id, group: context.named.group.id,
+                started: settle?.started == true || settle?.removed == true)
+        } catch {
+            self.error = RemovalContext.message(error)
+            return
+        }
+        guard Removal.canFormat(pay) else { error = RolesCopy.cannotWritePayment; return }
         busy = true
         Task {
             defer { busy = false }
-            var progress = settle ?? SettleFirstProgress(total: settlements.count)
+            var progress = (pay == settlements ? settle : nil) ?? SettleFirstProgress(total: pay.count)
             defer { settle = progress }
             do {
                 try await SettleFirstProgress.run(
                     &progress,
-                    append: { i in _ = try context.store.appendSettlement(settlements[i]) },
+                    append: { i in _ = try context.store.appendSettlement(pay[i]) },
                     // The payments reach the cloud before the removal does.
                     sync: {
                         guard context.shared else { return true }

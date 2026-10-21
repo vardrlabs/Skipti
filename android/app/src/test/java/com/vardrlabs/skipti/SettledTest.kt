@@ -77,39 +77,30 @@ class SettledTest {
         assertNull("no lines", GroupNext.pick(emptyList()))
     }
 
-    /** D-221 fix wave (S2, WORKLOG decision 17): the count is the group's open PAIRWISE entries (what Settle up's cards
-     *  show and record), every pair once in each currency, whoever's frame it is read from; the plan's transfers are not
-     *  read (a line with a plan but no entries counts nothing). The twin of iOS's testTheRemainingPaymentsCountTheGroupsPairs. */
+    /** D-247 (decision 168, D-221 b; overturns S2's pairwise count): the muted line counts the fewest-payments plan
+     *  Settle up shows (core's transfers, every currency's), never the pairs. "1 payment to go" at one. The twin of iOS's
+     *  testTheRemainingPaymentsCountThePlan. */
     @Test
-    fun the_remaining_count_is_the_groups_open_pairwise_entries() {
-        // a owes you 900 and c owes you 450 (your frame); c owes a 450 (a's frame); c's frame repeats all three.
-        val you = "d".repeat(32)
+    fun the_remaining_payments_count_the_plan() {
         val (a, c) = "a".repeat(32) to "c".repeat(32)
-        val frames = mapOf(
-            you to listOf(line("INR", listOf(a to 90_000L, c to 45_000L), transfers = 1)),
-            a to listOf(line("INR", listOf(you to -90_000L, c to 45_000L), transfers = 1)),
-            c to listOf(line("INR", listOf(you to -45_000L, a to -45_000L), transfers = 1)),
-        )
-        assertEquals("three open pairs, whatever the plan says (one transfer)", 3, GroupNext.remaining(frames))
-        assertEquals("your frame alone sees your two", 2, GroupNext.remaining(mapOf(you to frames.getValue(you))))
-        // Each currency is its own debt; a zero entry is not open.
-        assertEquals(2, GroupNext.remaining(mapOf(you to listOf(line("INR", listOf(a to 100L)), line("USD", listOf(a to -100L))), a to emptyList())))
-        assertEquals(0, GroupNext.remaining(mapOf(you to listOf(line("INR", listOf(a to 0L))))))
-        assertEquals("a plan without entries counts nothing", 0, GroupNext.remaining(mapOf(you to listOf(line("INR", emptyList(), 2)))))
-        assertEquals(0, GroupNext.remaining(emptyMap()))
-        // Read through core per person: one read per distinct member or removed person.
-        val reads = mutableListOf<String>()
-        assertEquals(3, GroupNext.remaining(listOf(you, a, a), listOf(c, a)) { reads.add(it); frames[it].orEmpty() })
-        assertEquals(listOf(you, a, c).sorted(), reads.sorted())
-        assertEquals("The last one", GroupNext.remainingLine(1))
+        // Your frame sees a owing you 900 and c owing you 450; the plan clears it in ONE transfer.
+        assertEquals("two open pairs, one payment in the plan", 1, GroupNext.planCount(listOf(line("INR", listOf(a to 90_000L, c to 45_000L), transfers = 1))))
+        // Each currency's plan counts.
+        assertEquals(3, GroupNext.planCount(listOf(line("INR", listOf(a to 100L), transfers = 2), line("USD", listOf(a to -100L), transfers = 1))))
+        // You are square, others are not: the plan still has their payment.
+        assertEquals(1, GroupNext.planCount(listOf(line("INR", emptyList(), transfers = 1))))
+        assertEquals(0, GroupNext.planCount(listOf(line("INR", emptyList()))))
+        assertEquals(0, GroupNext.planCount(emptyList()))
+        assertEquals("1 payment to go", GroupNext.remainingLine(1))
         assertEquals("2 payments to go", GroupNext.remainingLine(2))
         assertEquals("5 payments to go", GroupNext.remainingLine(5))
     }
 
-    /** D-221 follow-up (twin of iOS's testTheRemovedPeopleWhoStillOweEachOtherAreCounted): the count reads every member's
-     *  AND every removed person's frame. Worked by hand: you paid 100.00 split with Ana (Ana owes you 50.00); Xavi, since
-     *  removed, paid 200.00 split with Yara, also removed (Yara owes Xavi 100.00, both nets nonzero, so D-210 keeps them
-     *  in the pairwise view); Zed was removed at zero and adds nothing. Open pairs: 2 (members alone: 1). */
+    /** D-221 follow-up, D-247 (the plan count; twin of iOS's testTheRemovedPeopleWhoStillOweEachOtherAreCounted): removed
+     *  people who still owe each other are in the plan. Worked by hand: you paid 100.00 split with Ana (Ana owes you
+     *  50.00); Xavi, since removed, paid 200.00 split with Yara, also removed (Yara owes Xavi 100.00, both nets nonzero,
+     *  so D-210 keeps them); Zed was removed at zero and adds nothing. Nets: you +50, Ana -50, Xavi +100, Yara -100: the
+     *  fewest payments are 2 (Ana pays you, Yara pays Xavi). */
     @Test
     fun the_removed_people_who_still_owe_each_other_are_counted() {
         val (me, ana, xavi) = Triple("1".repeat(32), "2".repeat(32), "3".repeat(32))
@@ -123,10 +114,10 @@ class SettledTest {
         assertEquals("core keeps the removed pair open", listOf(ShareOut(xavi, -10_000)), frame(yara).first().entries)
         assertEquals("your frame sees Ana only", listOf(ShareOut(ana, 5_000)), frame(me).first().entries)
         assertEquals(GroupNext.Pick("INR", ShareOut(ana, 5_000)), GroupNext.pick(frame(me)))
-        val pairs = GroupNext.remaining(listOf(me, ana), removed, ::frame)
-        assertEquals("Ana to you, and Yara to Xavi", 2, pairs)
-        assertEquals("2 payments to go", GroupNext.remainingLine(pairs))
-        assertEquals("members alone miss the removed pair", 1, GroupNext.remaining(listOf(me, ana), emptyList(), ::frame))
+        val plan = GroupNext.planCount(frame(me))
+        assertEquals("Ana to you, and Yara to Xavi", 2, plan)
+        assertEquals("2 payments to go", GroupNext.remainingLine(plan))
+        assertEquals("the plan is the group's, whoever reads it", 2, GroupNext.planCount(frame(ana)))
     }
 
     /** The Task 7 review's race, the twin of iOS's testTheLatchHoldsUntilThePageMovesOn: "Settling" holds from the tap
@@ -201,10 +192,7 @@ class SettledTest {
         fun lines() = SettleAll.sections(store).first { it.named.group.id == paris.group.id }.lines
         val pick = picked(lines())
         assertEquals("EUR" to -3_200L, pick.currencyCode to pick.entry.minorUnits)
-        val parisLine = { who: String ->
-            uniffi.skipti_core.ffiBalanceLine(store.loadExpenses().map { it.toInput() }, emptyList(), emptyList(), emptyList(), who, paris.group.id)
-        }
-        assertEquals("The last one", GroupNext.remainingLine(GroupNext.remaining(paris.members.map { it.id }, emptyList(), parisLine)))
+        assertEquals("1 payment to go", GroupNext.remainingLine(GroupNext.planCount(lines())))
         val latch = SettleLatch<GroupNext.Pick>()
         repeat(2) { if (latch.begin(pick)) SettleAll.append(store, pick.entry, pick.currencyCode, paris) }
         val recorded = store.loadSettlements().filter { it.group == paris.group.id }
@@ -218,10 +206,12 @@ class SettledTest {
 
     /** S2's golden (.drafts/d221/fix/android/flat4b.py, worked without core): Flat 4B is electricity 2,700.00 you paid and
      *  groceries 1,350.00 Meera paid, three ways. Pairwise: Kiran owes you 900, Meera owes you 450, Kiran owes Meera 450.
-     *  The card offers "Kiran pays you" 900 and says 3 payments to go (never "The last one" while Meera still owes);
-     *  after it, Meera 450 with 2 to go; after that the viewer has nothing to pick while Kiran still owes Meera. */
+     *  Nets: you +1,350, Meera 0, Kiran -1,350: the plan is ONE transfer. D-247 (decision 168): the count is the plan's,
+     *  so "1 payment to go" at every step (the pairwise view had 3, then 2, then 1). After both your settles you are
+     *  square while Kiran still owes Meera 450.00 (nets: Meera +450, Kiran -450): "You're settled in Flat 4B", never "all
+     *  settled". The twin of iOS's testFlat4BNextCardCountsThePlan. */
     @Test
-    fun flat_4b_is_the_pairwise_golden() {
+    fun flat_4b_next_card_counts_the_plan() {
         val store = seeded()
         val flat = store.namedGroups().first { it.group.name == "Flat 4B" }
         val removed = store.removedIds(flat.group.id)
@@ -230,17 +220,32 @@ class SettledTest {
             store.loadRedistributions(), removed, who, flat.group.id,
         )
         fun name(id: String) = LedgerStore.label(id, flat)
+        fun section() = SettleAll.sections(store).first { it.named.group.name == "Flat 4B" }
         fun state(): Triple<String?, Long?, Int> {
             val lines = view(flat.selfId)
             val pick = GroupNext.pick(lines)
-            return Triple(pick?.let { name(it.entry.id) }, pick?.entry?.minorUnits, GroupNext.remaining(flat.members.map { it.id }, removed, ::view))
+            return Triple(pick?.let { name(it.entry.id) }, pick?.entry?.minorUnits, GroupNext.planCount(lines))
         }
-        assertEquals(Triple<String?, Long?, Int>("Kiran", 90_000L, 3), state())
-        assertEquals("3 payments to go", GroupNext.remainingLine(state().third))
+        assertEquals("the plan: one transfer", 1, view(flat.selfId).first().transfers.size)
+        assertEquals(Triple<String?, Long?, Int>("Kiran", 90_000L, 1), state())
+        assertEquals("1 payment to go", GroupNext.remainingLine(state().third))
+        assertEquals(SettleState.OPEN, section().state)
         SettleAll.append(store, GroupNext.pick(view(flat.selfId))!!.entry, "INR", flat)
-        assertEquals(Triple<String?, Long?, Int>("Meera", 45_000L, 2), state())
+        assertEquals("Kiran pays you 450.00", Triple<String?, Long?, Int>("Meera", 45_000L, 1), state())
         SettleAll.append(store, GroupNext.pick(view(flat.selfId))!!.entry, "INR", flat)
         assertEquals("Kiran still owes Meera", Triple<String?, Long?, Int>(null, null, 1), state())
+        val kiran = flat.members.first { name(it.id) == "Kiran" }.id
+        val meera = flat.members.first { name(it.id) == "Meera" }.id
+        assertEquals(listOf(ShareOut(meera, -45_000)), view(kiran).first().entries)
+        // D-221 a: you square, the group not: the you-only words, from core's progress (never "all settled").
+        val s = section()
+        assertTrue("your own lines are empty", s.settled)
+        assertFalse("core: 450.00 still outstanding", SettledSummary.allSettled(s.progress))
+        assertEquals(SettleState.YOU_SETTLED, s.state)
+        // Kiran pays Meera: now the whole group is square.
+        SettleAll.record(store, SettlementDTO(kiran, meera, 45_000, "INR", flat.group.id))
+        assertEquals(SettleState.ALL_SETTLED, section().state)
+        assertEquals(0, state().third)
     }
 
     /** milestones.py's ten cases: inputs built as the script builds them, outputs typed from milestones.out. */
@@ -293,7 +298,7 @@ class SettledTest {
         assertEquals("100 expenses together", SettledCopy.HUNDRED)
         assertEquals("A year together", SettledCopy.YEAR)
         assertEquals("Since 2 Mar 2026. Rare, and only once.", SettledCopy.since("2 Mar 2026"))
-        assertEquals("The last one", SettledCopy.LAST_ONE)
+        assertEquals("1 payment to go", SettledCopy.paymentsToGo(1))
         assertEquals("3 payments to go", SettledCopy.paymentsToGo(3))
         assertEquals("Settle", SettledCopy.SETTLE)
         assertEquals("Settling", SettledCopy.SETTLING)
@@ -305,7 +310,7 @@ class SettledTest {
     fun the_settled_copy_matches_ios() {
         val kotlin = setOf(
             SettledCopy.LABEL, SettledCopy.stillToSettle("§"), SettledCopy.NOTHING_LEFT, SettledCopy.HUNDRED,
-            SettledCopy.YEAR, SettledCopy.since("§"), SettledCopy.LAST_ONE, SettledCopy.paymentsToGo(3).replace("3", "§"),
+            SettledCopy.YEAR, SettledCopy.since("§"), SettledCopy.paymentsToGo(1), SettledCopy.paymentsToGo(3).replace("3", "§"),
             SettledCopy.SETTLE, SettledCopy.SETTLING,
         )
         assertEquals(kotlin, SwiftCopy.literals("Settled.swift", "enum SettledCopy"))
@@ -413,13 +418,16 @@ class SettledTest {
         for (banned in listOf("NumberFormat", "String.format", "DecimalFormat", "\"%.")) assertFalse("no $banned", banned in file)
     }
 
-    /** Q17 a (Design 8): the next card records through Settle up's own function, never a settlement of its own; Settle
-     *  up calls the same; a copy never shows the card. */
+    /** Q17 a (Design 8), D-247 (decision 182): the next card holds through Settle up's own hold (one write path, Undo for
+     *  both), never a settlement of its own; Settle up holds the same way; a copy never shows the card. */
     @Test
     fun the_next_card_records_like_settle_up() {
         val card = body("Settled.kt", "fun GroupNextCard(")
-        assertTrue("records like Settle up", "SettleAll.record(vaultPath, pick.entry, pick.currencyCode, named, askSettled = true)" in card)
-        assertTrue("Settle up records the same way", "SettleAll.record(vaultPath, entry, currency, named)" in body("SettleAll.kt", "fun SettleAllScreen("))
+        assertTrue("holds like Settle up", "SettleHold.shared.hold(SettleAll.settlement(pick.entry, pick.currencyCode, named), other, LedgerStore(vaultPath))" in card)
+        assertFalse("the next card writes nothing itself", "SettleAll.record(" in card || "SettleAll.append(" in card)
+        val screen = body("SettleAll.kt", "fun SettleAllScreen(")
+        assertTrue("Settle up holds the same way", "hold.hold(SettleAll.settlement(entry, currency, section.named, amount), other, LedgerStore(vaultPath))" in screen)
+        assertFalse("Settle up writes nothing itself: the hold does", "SettleAll.record(" in screen || "SettleAll.append(" in screen)
         assertEquals("one append, in SettleAll", 1, main("SettleAll.kt").split("appendSettlement(").size - 1)
         for (f in listOf("Settled.kt", "OverviewTab.kt")) assertFalse("$f appends nothing itself", "appendSettlement(" in main(f) || "settlementFor(" in main(f))
         assertTrue("never in a copy", "if (!isCopy && next != null) GroupNextCard(" in body("OverviewTab.kt", "fun GroupPage("))
@@ -439,13 +447,12 @@ class SettledTest {
         assertTrue("Settle up holds its card the same way", "if (!latch.begin(key)) return" in settle)
         assertEquals("and lets go on a failure", 1, settle.split("latch.failed(").size - 1)
         assertTrue("or when a reload no longer shows it", "latch.moved(found.flatMap { s -> s.keys })" in settle)
-        assertTrue("one at a time: another card's Settle reads as disabled", "enabled = !latch.busy" in settle)
+        assertEquals("one at a time: another card's Settle and Another amount read as disabled", 2, settle.split("enabled = !latch.busy").size - 1)
         assertFalse("never cleared before the reload", "settlingKey" in settle)
-        // S2: the count the card shows is the group's open pairwise payments, read on the page's load.
-        assertTrue(
-            "the pairwise count, every member's and removed person's frame",
-            "GroupNext.remaining(n.members.map { it.id }, removed, ::lineOf)" in body("OverviewTab.kt", "fun GroupPage("),
-        )
+        // D-247 (decision 168): the count is the plan's length, from the page's own lines (core's plan).
+        val page = body("OverviewTab.kt", "fun GroupPage(")
+        assertTrue("the plan count", "GroupNext.planCount(l)" in page)
+        assertFalse("the pairwise count is gone", "GroupNext.remaining(" in page)
     }
 
     /** Design 11 (L44): the seal is the theme's tile: Aurora a circle, Norse the diamond with its edge, Vardr Labs a

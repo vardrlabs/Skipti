@@ -18,7 +18,8 @@ struct SetupFacts: Equatable {
     var storedCurrency: String?
     /// The stored app lock timeout (`LockTimeout.parse`; missing reads as the default, two minutes).
     var lockTimeout = LockTimeout.standard
-    /// The phone has a lock (Face ID, Touch ID or a passcode).
+    /// The phone has a lock (Face ID, Touch ID or a passcode): `LAContext().canEvaluatePolicy(.deviceOwnerAuthentication)`
+    /// (`AppLock.available`). D-247: without one the app lock step is not counted.
     var lockAvailable = false
     /// `namedGroups()` is not empty (read-only copies count: you were in a group).
     var hasGroup = false
@@ -29,10 +30,17 @@ struct SetupFacts: Equatable {
 }
 
 enum SetupSteps {
-    /// The steps in their order: five without an account, seven signed in.
-    static func steps(signedIn: Bool) -> [SetupStep] {
-        let local: [SetupStep] = [.name, .picture, .currency, .appLock, .firstGroup]
+    /// The steps in their order: five without an account, seven signed in. D-247 (decision 169, D-221 h): a phone that
+    /// cannot lock (no passcode, no Face ID or Touch ID: `lockAvailable`, read again whenever SKIPTI comes to the front)
+    /// has no app lock step, so its ring can complete ("4 of 4"); it comes back once the phone has a lock.
+    static func steps(signedIn: Bool, lockAvailable: Bool) -> [SetupStep] {
+        let local: [SetupStep] = [.name, .picture, .currency, .appLock, .firstGroup].filter { $0 != .appLock || lockAvailable }
         return signedIn ? local + [.username, .notifications] : local
+    }
+
+    /// The facts' own steps.
+    static func steps(_ facts: SetupFacts) -> [SetupStep] {
+        steps(signedIn: facts.signedIn, lockAvailable: facts.lockAvailable)
     }
 
     /// Whether one step is done by these facts.
@@ -50,17 +58,17 @@ enum SetupSteps {
 
     /// The done steps among the facts' own steps.
     static func done(_ facts: SetupFacts) -> Set<SetupStep> {
-        Set(steps(signedIn: facts.signedIn).filter { isDone($0, facts) })
+        Set(steps(facts).filter { isDone($0, facts) })
     }
 
     /// The first undone step in order, passing over `skipping` (while the username card shows, it already asks);
     /// nil when every step is done.
     static func next(_ facts: SetupFacts, skipping: Set<SetupStep> = []) -> SetupStep? {
-        steps(signedIn: facts.signedIn).first { !skipping.contains($0) && !isDone($0, facts) }
+        steps(facts).first { !skipping.contains($0) && !isDone($0, facts) }
     }
 
     static func progress(_ facts: SetupFacts) -> (done: Int, total: Int) {
-        (done(facts).count, steps(signedIn: facts.signedIn).count)
+        (done(facts).count, steps(facts).count)
     }
 }
 
@@ -142,6 +150,10 @@ extension SetupFacts {
         facts.storedCurrency = UserDefaults.standard.string(forKey: DefaultCurrency.storageKey)
         facts.lockTimeout = LockTimeout.parse(UserDefaults.standard.string(forKey: LockTimeout.storageKey))
         facts.lockAvailable = AppLock.available
+        #if DEBUG
+        // D-247: the look's surface only (`--groups-proof --settle-look ring-nolock`): a simulator reports a lock.
+        if SettleLook.step == "ring-nolock" { facts.lockAvailable = false }
+        #endif
         facts.hasUsername = facts.signedIn && hasUsername
         if facts.signedIn {
             let status = await Push.shared.permission()

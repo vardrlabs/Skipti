@@ -14,7 +14,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -138,8 +141,17 @@ object Haptics {
     }
 }
 
-/** Design 4: one line of a small moment: its title, then its parts (joined on screen by the theme's separator). */
-data class DoneLine(val title: String, val parts: List<String>)
+/** Design 4: one line of a small moment: its title, then its parts (joined on screen by the theme's separator). D-247:
+ *  [action], the label of the one thing the toast offers (a held settle's "Undo"); what it does is the centre's
+ *  ([DoneMomentCenter.act]). The twin of iOS's `DoneLine`. */
+data class DoneLine(
+    val title: String,
+    val parts: List<String>,
+    val action: String? = null,
+    /** D-247 fix wave (decision 201): how long a line with an action stays (the hold's window: 12 s with a screen reader,
+     *  else [DoneCenter.ACTION_SECONDS]). */
+    val actionSeconds: Double = DoneCenter.ACTION_SECONDS,
+)
 
 /** Design 4: the once-only moments the big check marks. */
 enum class BigKind { FIRST_GROUP, SIGNED_IN, JOINED, ERASED }
@@ -183,15 +195,31 @@ object DoneCopy {
 
     fun personRemoved(name: String): String = "$name removed"
 
-    fun settledWith(name: String): String = "Settled with $name"
+    /** D-247 (decision 182): a settle held for Undo (written when the toast's time is up). */
+    fun settledWith(name: String): String = "Settled with $name. No money moved."
+
+    /** D-247: the held settle's toast action, and the toast that says Undo wrote nothing. */
+    const val UNDO = "Undo"
+    const val NOT_RECORDED = "Not recorded."
+
+    /** D-247 fix wave (decision 201): what a screen reader hears after a toast that offers an action, so the action is
+     *  named and its time said ([seconds], whole seconds as digits). */
+    fun actionSpoken(label: String, seconds: String): String = "$label is available for $seconds seconds."
 
     /** What a screen reader says: the title and the parts joined with a comma ([SpokenLine]). The separator is never
      *  read. */
     fun spoken(title: String, parts: List<String>): String = SpokenLine.join(listOf(title) + parts)
 
-    fun spoken(line: DoneLine): String = spoken(line.title, line.parts)
+    /** D-247 fix wave (decision 201): a line with an action ends with the action named ([actionSpoken]). */
+    fun spoken(line: DoneLine): String {
+        val words = spoken(line.title, line.parts)
+        val action = line.action ?: return words
+        val seconds = Math.round(line.actionSeconds).toString()
+        return words + " " + actionSpoken(action, seconds)
+    }
 
-    fun spoken(moment: DoneMoment): String = spoken(moment.title, moment.parts)
+    fun spoken(moment: DoneMoment): String =
+        if (moment is DoneMoment.Small) spoken(moment.line) else spoken(moment.title, moment.parts)
 }
 
 /** The spoken form's joiner: pieces joined with ", ", and a separator inside a piece (Norse's rune or the middle dot,
@@ -226,6 +254,16 @@ object DoneMoments {
      *  missing or blank part is left out, never shown empty, so a note-less expense reads "Expense added ᛫ 2,400". */
     fun line(title: String, vararg parts: String?): DoneMoment =
         DoneMoment.Small(DoneLine(title, parts.mapNotNull { it?.trim()?.takeIf(String::isNotEmpty) }))
+
+    /** D-247: an everyday moment that offers one action ([action], its label), shown for [seconds] (the hold's window).
+     *  Its own name (never an overload of [line], whose parts a second string would otherwise become). The twin of
+     *  iOS's `line(_:action:seconds:)`. */
+    fun lineWithAction(title: String, action: String, seconds: Double = DoneCenter.ACTION_SECONDS): DoneMoment =
+        DoneMoment.Small(DoneLine(title, emptyList(), action, seconds))
+
+    /** The toast's time on screen: [ToastMotion.TOTAL], or, with an action, the line's [DoneLine.actionSeconds] (the
+     *  action's whole window, so it never goes before what it offers does). The twin of iOS's `toastSeconds`. */
+    fun toastSeconds(line: DoneLine): Double = if (line.action == null) ToastMotion.TOTAL else line.actionSeconds
 
     /** Design 7: an expense added (or, [edited], saved): its description and core's amount. */
     fun expense(edited: Boolean, note: String?, paidMinor: Long, currency: String): DoneMoment =
@@ -382,9 +420,14 @@ open class DoneMomentCenter {
     /** Fix wave (M6): the serial whose words a host has announced. */
     private var spokenSerial = 0
 
-    /** Posts [moment]. On the main thread (T4 review 7): it writes snapshot state, and its haptic plays through a view. */
-    fun post(moment: DoneMoment, now: Long = SystemClock.uptimeMillis()) {
+    /** D-247: what the showing toast's action does ([post]'s `onAction`); null when it offers none. */
+    private var onAction: (() -> Unit)? = null
+
+    /** Posts [moment]. On the main thread (T4 review 7): it writes snapshot state, and its haptic plays through a view.
+     *  D-247: [onAction], what the toast's action does (a held settle's Undo), run at most once by [act]. */
+    fun post(moment: DoneMoment, now: Long = SystemClock.uptimeMillis(), onAction: (() -> Unit)? = null) {
         replacing = moment is DoneMoment.Big && current is DoneMoment.Big
+        this.onAction = onAction
         current = moment
         startedAt = now
         serial += 1
@@ -400,6 +443,29 @@ open class DoneMomentCenter {
 
     fun clear() {
         current = null
+        onAction = null
+    }
+
+    /** Clears the moment numbered [serial] only if it is still the one showing: a newer moment is left alone. */
+    fun clear(ifStill: Int) {
+        if (serial == ifStill) clear()
+    }
+
+    /** D-247: the showing toast's action, once: it runs only for the moment numbered [serial] (a newer post, or a clear,
+     *  makes an old tap do nothing). The twin of iOS's `act`. */
+    fun act(serial: Int) {
+        val line = (current as? DoneMoment.Small)?.line ?: return
+        val run = onAction
+        if (serial != this.serial || line.action == null || run == null) return
+        onAction = null
+        run()
+    }
+
+    /** D-224 (Design 9), D-247: a celebration starting clears the toast, unless the toast offers an action (a held
+     *  settle's Undo stays reachable for its whole window). The twin of iOS's `giveWay`. */
+    fun giveWay() {
+        if ((current as? DoneMoment.Small)?.line?.action != null) return
+        clear()
     }
 
     /** Fix wave (M6, D24): whether the host asking may announce the moment [serial]: the first claim of the showing
@@ -414,6 +480,9 @@ open class DoneMomentCenter {
 
 /** The app's centre: the root's host shows its small moments, the shell's overlay its big one. */
 object DoneCenter : DoneMomentCenter() {
+    /** D-247 (decision 182): how long a toast that offers an action stays, the hold's window ([SettleHold]). */
+    const val ACTION_SECONDS = 5.0
+
     /** The root's view, where the moments' haptics play; set by the root's [DoneToastHost] while it is composed. */
     internal var target: HapticTarget? = null
         private set
@@ -576,15 +645,15 @@ fun DoneCheck(presentation: DonePresentation, dark: Boolean, play: MomentPlay? =
 
 /** Design 5 (L50): the small moment's bar: the `owing` dot holding Lucide's check, then the title and the parts joined
  *  by the theme's separator, at most two lines; `surface` in the theme's panel shape with a `hairline` edge and the +'s
- *  shadow. It takes no touch. Fix wave (I1): hidden from TalkBack, which hears the moment from its host's live region
- *  (the toast fades in from alpha 0, and TalkBack does not read a region that appears transparent, E4's S9). The twin
- *  of iOS's `DoneToast`. */
+ *  shadow. Its words take no touch. Fix wave (I1): the words are hidden from TalkBack, which hears the moment from its
+ *  host's live region (the toast fades in from alpha 0, and TalkBack does not read a region that appears transparent,
+ *  E4's S9). D-247: a line that carries an action ([DoneLine.action], a held settle's "Undo") ends in
+ *  [DoneToastAction], the toast's one control; [onAction] is what a tap on it does. The twin of iOS's `DoneToast`. */
 @Composable
-fun DoneToast(line: DoneLine, dark: Boolean, modifier: Modifier = Modifier) {
+fun DoneToast(line: DoneLine, dark: Boolean, modifier: Modifier = Modifier, onAction: () -> Unit = {}) {
     val shape = ThemeArt.panelShape(Appearance.theme, ThemeArt.m("toastRadius").toInt())
     Row(
         modifier
-            .clearAndSetSemantics {}
             .fillMaxWidth()
             .shadow(ThemeArt.m("toastShadowRadius").dp, shape)
             .background(Tok.surface(dark), shape)
@@ -592,19 +661,37 @@ fun DoneToast(line: DoneLine, dark: Boolean, modifier: Modifier = Modifier) {
             .padding(horizontal = ThemeArt.m("toastPadH").dp, vertical = ThemeArt.m("toastPadV").dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            Modifier.size(ThemeArt.m("toastDot").dp).background(Tok.owing(dark), CircleShape).clearAndSetSemantics {},
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(TabIcons.ToastCheck, contentDescription = null, tint = Tok.onAccent(dark), modifier = Modifier.size(ThemeArt.m("toastGlyph").dp))
+        // The words: hidden from TalkBack (the host's live region says them), and nothing in them takes a touch.
+        Row(Modifier.weight(1f).clearAndSetSemantics {}, verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(ThemeArt.m("toastDot").dp).background(Tok.owing(dark), CircleShape).clearAndSetSemantics {},
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(TabIcons.ToastCheck, contentDescription = null, tint = Tok.onAccent(dark), modifier = Modifier.size(ThemeArt.m("toastGlyph").dp))
+            }
+            Spacer(Modifier.width(ThemeArt.m("toastGap").dp))
+            Text(
+                Separator.annotated(listOf(line.title) + line.parts),
+                style = Type.name(dark, TypeScale.toast.toInt()).copy(color = Tok.text(dark)),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
-        Spacer(Modifier.width(ThemeArt.m("toastGap").dp))
-        Text(
-            Separator.annotated(listOf(line.title) + line.parts),
-            style = Type.name(dark, TypeScale.toast.toInt()).copy(color = Tok.text(dark)),
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
+        line.action?.let { DoneToastAction(it, dark, onAction) }
+    }
+}
+
+/** D-247 (decision 182): the toast's one action, the in-card link's look (`accent` on the toast's surface, the toast's
+ *  size), Material's 48 dp touch at least. The only control in this file; it never waits on anyone: the moment ends on
+ *  its clock whether or not it is tapped (GUARANTEES #2). The twin of iOS's `DoneToastAction`. */
+@Composable
+fun DoneToastAction(label: String, dark: Boolean, run: () -> Unit) {
+    androidx.compose.material3.TextButton(
+        onClick = run,
+        modifier = Modifier.heightIn(min = 44.dp).widthIn(min = 44.dp),
+        contentPadding = PaddingValues(horizontal = 8.dp),
+    ) {
+        Text(label, style = Type.label(dark, TypeScale.toast.toInt()).copy(color = Tok.accent(dark)))
     }
 }
 
@@ -643,11 +730,13 @@ fun DoneToastHost(barShown: Boolean, center: DoneMomentCenter = DoneCenter) {
     if (small == null) return
     val motion = rememberMotionState().moment()
     val play = remember(serial, motion.tick) { MomentPlay(center.startedAt, still = !motion.tick) }
+    // D-247: a toast that offers an action stays the action's whole window.
+    val total = DoneMoments.toastSeconds(small.line)
     LaunchedEffect(play) {
         if (play.still) {
-            delay(MomentFrames.remainingMs(play.startedAtMs, SystemClock.uptimeMillis(), ToastMotion.TOTAL))
+            delay(MomentFrames.remainingMs(play.startedAtMs, SystemClock.uptimeMillis(), total))
         } else {
-            play.run(ToastMotion.TOTAL)
+            play.run(total)
         }
         if (center.serial == serial) center.clear()
     }
@@ -668,10 +757,12 @@ fun DoneToastHost(barShown: Boolean, center: DoneMomentCenter = DoneCenter) {
         DoneToast(
             small.line, dark,
             Modifier.graphicsLayer {
-                val pose = ToastMotion.pose(play.elapsed(stillAt = 0.0), play.still)
+                val pose = ToastMotion.pose(play.elapsed(stillAt = 0.0), play.still, total)
                 alpha = pose?.opacity?.toFloat() ?: 0f
                 translationY = (pose?.dy ?: 0.0).toFloat().dp.toPx()
             },
+            // D-247: the action runs only for this moment (a newer one makes an old tap do nothing).
+            onAction = { center.act(serial) },
         )
     }
 }

@@ -19,9 +19,9 @@ final class YouProgressTests: XCTestCase {
     /// GUARANTEES #5: without an account exactly the five, in order, and no step's words mention signing in or an
     /// account (the negative: an account is never implied or nudged for).
     func testWithoutAnAccountTheFiveStepsNeverMentionAnAccount() {
-        XCTAssertEqual(SetupSteps.steps(signedIn: false), [.name, .picture, .currency, .appLock, .firstGroup])
-        XCTAssertFalse(SetupSteps.steps(signedIn: false).contains(.username))
-        XCTAssertFalse(SetupSteps.steps(signedIn: false).contains(.notifications))
+        XCTAssertEqual(SetupSteps.steps(signedIn: false, lockAvailable: true), [.name, .picture, .currency, .appLock, .firstGroup])
+        XCTAssertFalse(SetupSteps.steps(signedIn: false, lockAvailable: true).contains(.username))
+        XCTAssertFalse(SetupSteps.steps(signedIn: false, lockAvailable: true).contains(.notifications))
         for step in SetupStep.allCases {
             for words in [StepCopy.title(step), StepCopy.why(step)] {
                 XCTAssertFalse(words.lowercased().contains("sign"), "\(step): \(words)")
@@ -33,9 +33,54 @@ final class YouProgressTests: XCTestCase {
     }
 
     func testSignedInAddsTheUsernameAndNotifications() {
-        XCTAssertEqual(SetupSteps.steps(signedIn: true),
+        XCTAssertEqual(SetupSteps.steps(signedIn: true, lockAvailable: true),
                        [.name, .picture, .currency, .appLock, .firstGroup, .username, .notifications])
         XCTAssertEqual(SetupSteps.progress(none(signedIn: true)).total, 7)
+    }
+
+    /// D-247 (decision 169, D-221 h): a phone that cannot lock (no passcode: `canEvaluatePolicy` false) has no app lock
+    /// step, so the ring completes at "4 of 4" (6 of 6 signed in); with a lock the step is back. The capability is the
+    /// pure function's input; nothing else about the steps changes.
+    func testThePhoneWithoutALockDropsTheAppLockStep() {
+        XCTAssertEqual(SetupSteps.steps(signedIn: false, lockAvailable: false), [.name, .picture, .currency, .firstGroup])
+        XCTAssertEqual(SetupSteps.steps(signedIn: true, lockAvailable: false),
+                       [.name, .picture, .currency, .firstGroup, .username, .notifications])
+        var facts = all(signedIn: false)
+        facts.lockAvailable = false
+        XCTAssertTrue(SetupSteps.progress(facts) == (4, 4), "every step done: the ring completes, \(SetupSteps.progress(facts))")
+        XCTAssertEqual(StepCopy.pill(done: 4, total: 4), "4 of 4 done")
+        XCTAssertNil(SetupSteps.next(facts), "nothing left to ask")
+        facts.hasGroup = false
+        XCTAssertEqual(SetupSteps.next(facts), .firstGroup, "the app lock is never the next step without a lock")
+        var signed = all(signedIn: true)
+        signed.lockAvailable = false
+        XCTAssertTrue(SetupSteps.progress(signed) == (6, 6))
+        // The negative: with a lock the step counts again, and undone it is asked for.
+        var locking = none(signedIn: false)
+        locking.lockAvailable = true
+        locking.hasName = true
+        locking.hasPicture = true
+        locking.storedCurrency = "INR"
+        XCTAssertTrue(SetupSteps.progress(locking) == (3, 5), "\(SetupSteps.progress(locking))")
+        XCTAssertEqual(SetupSteps.next(locking), .appLock)
+        locking.lockAvailable = false
+        XCTAssertTrue(SetupSteps.progress(locking) == (3, 4), "\(SetupSteps.progress(locking))")
+        XCTAssertEqual(SetupSteps.next(locking), .firstGroup)
+    }
+
+    /// The hub reads the capability again when SKIPTI comes to the front (a passcode set in the phone's Settings).
+    func testTheHubReadsTheLockAgainOnTheFront() throws {
+        let hub = try String(contentsOfFile: Self.app("AccountHubScreen.swift"), encoding: .utf8)
+        XCTAssertTrue(hub.contains("if phase == .active { Task { await readFacts() } }"))
+        let you = try String(contentsOfFile: Self.app("YouProgress.swift"), encoding: .utf8)
+        XCTAssertTrue(you.contains("facts.lockAvailable = AppLock.available"))
+        let lock = try String(contentsOfFile: Self.app("AppLock.swift"), encoding: .utf8)
+        XCTAssertTrue(lock.contains("LAContext().canEvaluatePolicy(.deviceOwnerAuthentication, error: nil)"))
+    }
+
+    private static func app(_ file: String) -> String {
+        URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Skipti/App/\(file)").path
     }
 
     /// Each fact flipped alone makes exactly its own step done.

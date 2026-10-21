@@ -44,10 +44,15 @@ enum Haptics {
     }
 }
 
-/// A small moment's line: the title, then its parts (joined on screen with the theme's separator).
+/// A small moment's line: the title, then its parts (joined on screen with the theme's separator). D-247: `action`, the
+/// label of the one thing the toast offers (a held settle's "Undo"); what it does is the centre's (`DoneCenter.act`).
 struct DoneLine: Equatable {
     let title: String
     let parts: [String]
+    var action: String? = nil
+    /// D-247 fix wave (decision 201): how long a line with an action stays (the hold's window: 12 s with a screen
+    /// reader, else `DoneCenter.actionSeconds`).
+    var actionSeconds: Double = DoneCenter.actionSeconds
 }
 
 /// The once-only moments the big check marks.
@@ -104,7 +109,14 @@ enum DoneCopy {
     static let nameSaved = "Name saved"
     static let usernameSaved = "Username saved"
     static let signedOut = "Signed out"
-    static func settledWith(_ name: String) -> String { "Settled with \(name)" }
+    /// D-247 (decision 182): a settle held for Undo (written when the toast's time is up).
+    static func settledWith(_ name: String) -> String { "Settled with \(name). No money moved." }
+    /// D-247: the held settle's toast action, and the toast that says Undo wrote nothing.
+    static let undo = "Undo"
+    static let notRecorded = "Not recorded."
+    /// D-247 fix wave (decision 201): what a screen reader hears after a toast that offers an action, so the action is
+    /// named and its time said (`seconds`, whole seconds as digits).
+    static func actionSpoken(_ label: String, seconds: String) -> String { "\(label) is available for \(seconds) seconds." }
     static let groupNameSaved = "Group name saved"
     /// U27 (the founder's words, 2026-10-20): a group deleted, here or for everyone.
     static let groupDeleted = "Group deleted"
@@ -117,9 +129,18 @@ enum DoneCopy {
     /// read.
     static func spoken(title: String, parts: [String]) -> String { SpokenLine.join([title] + parts) }
 
-    static func spoken(_ line: DoneLine) -> String { spoken(title: line.title, parts: line.parts) }
+    /// D-247 fix wave (decision 201): a line with an action ends with the action named (`actionSpoken`).
+    static func spoken(_ line: DoneLine) -> String {
+        let words = spoken(title: line.title, parts: line.parts)
+        guard let action = line.action else { return words }
+        let seconds = String(Int(line.actionSeconds.rounded()))
+        return words + " " + actionSpoken(action, seconds: seconds)
+    }
 
-    static func spoken(_ moment: DoneMoment) -> String { spoken(title: moment.title, parts: moment.parts) }
+    static func spoken(_ moment: DoneMoment) -> String {
+        if case .small(let line) = moment { return spoken(line) }
+        return spoken(title: moment.title, parts: moment.parts)
+    }
 }
 
 /// The spoken form's joining, kept out of `DoneCopy` so that enum holds only words: pieces joined with ", ", and a
@@ -158,6 +179,17 @@ enum DoneMoments {
             guard let kept = part?.trimmingCharacters(in: .whitespacesAndNewlines), !kept.isEmpty else { return nil }
             return kept
         }))
+    }
+
+    /// D-247: an everyday moment that offers one action (`label`), shown for `seconds` (the hold's window).
+    static func line(_ title: String, action label: String, seconds: Double = DoneCenter.actionSeconds) -> DoneMoment {
+        .small(DoneLine(title: title, parts: [], action: label, actionSeconds: seconds))
+    }
+
+    /// The toast's time on screen: `ToastMotion.total`, or, with an action, the line's `actionSeconds` (the action's
+    /// whole window, so it never goes before what it offers does).
+    static func toastSeconds(_ line: DoneLine) -> Double {
+        line.action == nil ? ToastMotion.total : line.actionSeconds
     }
 
     /// An expense added (or, `edited`, saved): its description and core's amount (the new amount on an edit).
@@ -277,6 +309,10 @@ final class DoneCenter {
     @ObservationIgnored private let haptic: @MainActor (HapticKind, Double) -> Void
     /// Says the moment to VoiceOver (`speak`; a test records instead).
     @ObservationIgnored private let announce: @MainActor (String) -> Void
+    /// D-247: what the showing toast's action does (`post(_:onAction:)`); nil when it offers none.
+    @ObservationIgnored private var onAction: (@MainActor () -> Void)?
+    /// D-247 (decision 182): how long a toast that offers an action stays, the hold's window (`SettleHold`).
+    nonisolated static let actionSeconds = 5.0
 
     init(gate: SuccessGate? = nil,
          haptic: @escaping @MainActor (HapticKind, Double) -> Void = DoneCenter.playHaptic,
@@ -292,9 +328,10 @@ final class DoneCenter {
     /// with it (D-224 follow-up, M1: VoiceOver can cut words queued while a sheet goes; Android speaks once its overlay
     /// composes, after the route has gone). A moment replaced before it begins is never said.
     func post(_ moment: DoneMoment, now: Double = Date().timeIntervalSinceReferenceDate, still: Bool? = nil,
-              held: Bool = false) {
+              held: Bool = false, onAction: (@MainActor () -> Void)? = nil) {
         let waits = held && moment.isBig
         dimHolds = moment.isBig && !waits && showsBig
+        self.onAction = onAction
         current = moment
         startedAt = now
         serial += 1
@@ -326,6 +363,22 @@ final class DoneCenter {
         current = nil
         held = false
         dimHolds = false
+        onAction = nil
+    }
+
+    /// D-247: the showing toast's action, once: it runs only for the moment numbered `serial` (a newer post, or a clear,
+    /// makes an old tap do nothing).
+    func act(_ serial: Int) {
+        guard serial == self.serial, case .small(let line) = current, line.action != nil, let run = onAction else { return }
+        onAction = nil
+        run()
+    }
+
+    /// D-224 (Design 9), D-247: a celebration starting clears the toast, unless the toast offers an action (a held
+    /// settle's Undo stays reachable for its whole window).
+    func giveWay() {
+        if case .small(let line) = current, line.action != nil { return }
+        clear()
     }
 
     /// Clears the moment numbered `serial` only if it is still the one showing: a newer moment is left alone.
@@ -493,32 +546,60 @@ struct DoneCheck: View {
 struct DoneToast: View {
     let title: String
     let parts: [String]
+    /// D-247: the one action the toast offers (its label), and what a tap on it does.
+    var action: String? = nil
+    var onAction: () -> Void = {}
 
     var body: some View {
         let shape = ThemeArt.panelShape(AppearanceState.shared.theme, radius: ThemeArt.m("toastRadius"))
         let dot = ThemeArt.m("toastDot")
         HStack(spacing: ThemeArt.m("toastGap")) {
-            LucideIcon(glyph: .check, size: ThemeArt.m("toastGlyph"), stroke: ThemeArt.m("toastCheckStroke"))
-                .foregroundStyle(Tokens.onAccent)
-                .frame(width: dot, height: dot)
-                .background(Tokens.owing, in: Circle())
-            Separator.text([title] + parts, size: TypeScale.toast)
-                .font(TypeRole.name(TypeScale.toast))
-                .foregroundStyle(Tokens.text)
-                .lineLimit(2)
-                .truncationMode(.tail)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: ThemeArt.m("toastGap")) {
+                LucideIcon(glyph: .check, size: ThemeArt.m("toastGlyph"), stroke: ThemeArt.m("toastCheckStroke"))
+                    .foregroundStyle(Tokens.onAccent)
+                    .frame(width: dot, height: dot)
+                    .background(Tokens.owing, in: Circle())
+                Separator.text([title] + parts, size: TypeScale.toast)
+                    .font(TypeRole.name(TypeScale.toast))
+                    .foregroundStyle(Tokens.text)
+                    .lineLimit(2)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            // The words never take a touch, and VoiceOver heard them from the centre.
+            .accessibilityHidden(true)
+            .allowsHitTesting(false)
+            if let action { DoneToastAction(label: action, run: onAction) }
         }
         .padding(.vertical, ThemeArt.m("toastPadV"))
         .padding(.horizontal, ThemeArt.m("toastPadH"))
-        .background(Tokens.surface, in: shape)
-        .overlay(shape.stroke(Tokens.hairline, lineWidth: 1))
+        // D-247 fix wave (review M2): the panel itself never takes a touch, so for the whole window what lies under it
+        // still works; only `DoneToastAction` does (Android's twin passes every touch but the button too).
+        .background { shape.fill(Tokens.surface).allowsHitTesting(false) }
+        .overlay { shape.stroke(Tokens.hairline, lineWidth: 1).allowsHitTesting(false) }
         .compositingGroup()
         .shadow(color: .black.opacity(Double(ThemeArt.m("toastShadowAlpha"))), radius: ThemeArt.m("toastShadowRadius"),
                 y: ThemeArt.m("toastShadowY"))
         .padding(.horizontal, ThemeArt.m("toastInset"))
-        .accessibilityHidden(true)
-        .allowsHitTesting(false)
+    }
+}
+
+/// D-247 (decision 182): the toast's one action, the in-card link's look (`accent` on the toast's surface, the toast's
+/// face), at least 44 points to touch. The only control in this file; it never waits on anyone: the moment ends on its
+/// clock whether or not it is tapped (GUARANTEES #2). Android's twin is `DoneToastAction`.
+struct DoneToastAction: View {
+    let label: String
+    let run: () -> Void
+
+    var body: some View {
+        Button(action: run) {
+            Text(verbatim: label)
+                .font(TypeRole.label(TypeScale.toast))
+                .foregroundStyle(Tokens.accent)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -536,13 +617,15 @@ struct DoneToastHost: View {
     var body: some View {
         let tick = MotionClock.momentTicks(reduceMotion: reduceMotion, active: phase == .active)
         Color.clear
+            .allowsHitTesting(false)
             .overlay(alignment: .bottom) {
                 if case .small(let line) = center.current {
+                    let serial = center.serial
                     TimelineView(ArtSchedule(paused: !tick)) { timeline in
                         let elapsed = MomentClock.elapsed(tick: tick, now: timeline.date.timeIntervalSinceReferenceDate,
                                                           startedAt: center.startedAt, still: 0)
-                        if let pose = ToastMotion.pose(elapsed: elapsed, still: !tick) {
-                            DoneToast(title: line.title, parts: line.parts)
+                        if let pose = ToastMotion.pose(elapsed: elapsed, still: !tick, total: DoneMoments.toastSeconds(line)) {
+                            DoneToast(title: line.title, parts: line.parts, action: line.action) { center.act(serial) }
                                 .opacity(pose.opacity)
                                 .offset(y: pose.dy)
                         }
@@ -550,9 +633,8 @@ struct DoneToastHost: View {
                     .padding(.bottom, ToastPlace.bottom(barShown: barShown))
                 }
             }
-            .allowsHitTesting(false)
             .task(id: center.serial) {
-                if center.current?.isBig == false { await center.expire(after: ToastMotion.total) }
+                if case .small(let line) = center.current { await center.expire(after: DoneMoments.toastSeconds(line)) }
             }
     }
 }

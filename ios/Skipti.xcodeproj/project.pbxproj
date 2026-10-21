@@ -112,6 +112,7 @@
 		A10206 /* ThemeMotionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10206 /* ThemeMotionTests.swift */; };
 		A10215 /* SettledTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10215 /* SettledTests.swift */; };
 		A10214 /* YouProgressTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10214 /* YouProgressTests.swift */; };
+		A10248 /* SettleUpTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10248 /* SettleUpTests.swift */; };
 		A10247 /* WelcomeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10247 /* WelcomeTests.swift */; };
 		A10110 /* Profile.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10125 /* Profile.swift */; };
 		A10111 /* ProfileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10126 /* ProfileTests.swift */; };
@@ -248,6 +249,7 @@
 		B10206 /* ThemeMotionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeMotionTests.swift; sourceTree = "<group>"; };
 		B10215 /* SettledTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettledTests.swift; sourceTree = "<group>"; };
 		B10214 /* YouProgressTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YouProgressTests.swift; sourceTree = "<group>"; };
+		B10248 /* SettleUpTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettleUpTests.swift; sourceTree = "<group>"; };
 		B10247 /* WelcomeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeTests.swift; sourceTree = "<group>"; };
 		B10125 /* Profile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Profile.swift; sourceTree = "<group>"; };
 		B10126 /* ProfileTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileTests.swift; sourceTree = "<group>"; };
@@ -407,6 +409,7 @@
 				B10206 /* ThemeMotionTests.swift */,
 				B10215 /* SettledTests.swift */,
 				B10214 /* YouProgressTests.swift */,
+				B10248 /* SettleUpTests.swift */,
 				B10247 /* WelcomeTests.swift */,
 				B10126 /* ProfileTests.swift */,
 				B10128 /* AboutTests.swift */,
@@ -688,6 +691,7 @@
 				A10206 /* ThemeMotionTests.swift in Sources */,
 				A10215 /* SettledTests.swift in Sources */,
 				A10214 /* YouProgressTests.swift in Sources */,
+				A10248 /* SettleUpTests.swift in Sources */,
 				A10247 /* WelcomeTests.swift in Sources */,
 				A10111 /* ProfileTests.swift in Sources */,
 				A10113 /* AboutTests.swift in Sources */,

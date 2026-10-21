@@ -280,6 +280,7 @@ fun GroupSettingsScreen(
             PeopleRoles.rows(
                 it.members, it.selfId, people.viewerYou, people.claims, GroupRoles.roles[groupId],
                 yourPlaces = GroupRoles.roles[groupId]?.places?.you, otherYouIds = people.otherYouIds,
+                createdHere = people.createdHere,
             ),
         )
     } ?: RoleRules.Role.MEMBER

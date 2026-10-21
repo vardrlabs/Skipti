@@ -743,8 +743,10 @@ enum ToastMotion {
     static let rise = 10.0
     static let ease: (Double, Double, Double, Double) = (0.2, 0.7, 0.3, 1.0)
 
-    /// (opacity, dy in points below the rest place), or nil before it starts and once it has gone.
-    static func pose(elapsed: Double, still: Bool) -> (opacity: Double, dy: Double)? {
+    /// (opacity, dy in points below the rest place), or nil before it starts and once it has gone. D-247: `lasting`, a
+    /// toast's whole time (a toast that offers an action stays `DoneCenter.actionSeconds`); the fades are the same.
+    static func pose(elapsed: Double, still: Bool, total lasting: Double = total) -> (opacity: Double, dy: Double)? {
+        let total = lasting
         guard elapsed >= 0, elapsed < total else { return nil }
         if still { return (1, 0) }
         if elapsed < fadeIn {

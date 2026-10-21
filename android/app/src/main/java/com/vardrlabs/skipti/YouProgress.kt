@@ -68,7 +68,8 @@ data class SetupFacts(
                 hasPicture = runCatching { store.loadAvatar() }.getOrDefault(Avatar.None) != Avatar.None,
                 storedCurrency = DefaultCurrency.stored,
                 lockTimeout = AppLock.timeout,
-                lockAvailable = AppLock.available(context),
+                // D-247: the look's surface only (`--groups-proof --settle-look ring-nolock`, debuggable builds).
+                lockAvailable = AppLock.available(context) && !SettleLook.noLock(),
                 hasGroup = runCatching { store.namedGroups().isNotEmpty() }.getOrDefault(false),
                 hasUsername = signedIn && hasUsername,
                 notificationsEnabled = signedIn && NotificationManagerCompat.from(context).areNotificationsEnabled(),
@@ -79,11 +80,17 @@ data class SetupFacts(
 }
 
 object SetupSteps {
-    /** Without an account five steps, in this order; signed in adds the username and notifications. */
-    fun steps(signedIn: Boolean): List<SetupStep> {
+    /** Without an account five steps, in this order; signed in adds the username and notifications. D-247 (decision 169,
+     *  D-221 h): a phone that cannot lock ([lockAvailable] false: no screen lock, `AppLock.available`, read again on every
+     *  resume) has no app lock step, so its ring can complete ("4 of 4"); it comes back once the phone has a lock. */
+    fun steps(signedIn: Boolean, lockAvailable: Boolean): List<SetupStep> {
         val base = listOf(SetupStep.NAME, SetupStep.PICTURE, SetupStep.CURRENCY, SetupStep.APP_LOCK, SetupStep.FIRST_GROUP)
+            .filter { it != SetupStep.APP_LOCK || lockAvailable }
         return if (signedIn) base + listOf(SetupStep.USERNAME, SetupStep.NOTIFICATIONS) else base
     }
+
+    /** The facts' own steps. */
+    fun steps(facts: SetupFacts): List<SetupStep> = steps(facts.signedIn, facts.lockAvailable)
 
     /** Whether one step is done by these facts. */
     fun isDone(step: SetupStep, facts: SetupFacts): Boolean = when (step) {
@@ -99,14 +106,14 @@ object SetupSteps {
     }
 
     /** The done steps of [steps] for these facts. */
-    fun done(facts: SetupFacts): Set<SetupStep> = steps(facts.signedIn).filter { isDone(it, facts) }.toSet()
+    fun done(facts: SetupFacts): Set<SetupStep> = steps(facts).filter { isDone(it, facts) }.toSet()
 
     /** The first undone step in order, passing over [skipping] (the username step while the username card shows). */
     fun next(facts: SetupFacts, skipping: Set<SetupStep> = emptySet()): SetupStep? =
-        steps(facts.signedIn).firstOrNull { it !in skipping && !isDone(it, facts) }
+        steps(facts).firstOrNull { it !in skipping && !isDone(it, facts) }
 
     /** (done, total). */
-    fun progress(facts: SetupFacts): Pair<Int, Int> = done(facts).size to steps(facts.signedIn).size
+    fun progress(facts: SetupFacts): Pair<Int, Int> = done(facts).size to steps(facts).size
 }
 
 /** Where "Do it" goes: name and picture, Profile; currency, Your data; app lock, Security; a first group, the

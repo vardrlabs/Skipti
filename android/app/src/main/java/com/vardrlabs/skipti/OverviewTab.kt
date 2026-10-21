@@ -595,7 +595,8 @@ fun GroupPage(
         onError = { pictureError = it },
     )
 
-    LaunchedEffect(vaultPath, groupId, SyncStatus.revision, requestIds) {
+    // D-247: a settle held, undone or written from the next card reads the page again.
+    LaunchedEffect(vaultPath, groupId, SyncStatus.revision, requestIds, SettleHold.shared.revision) {
         withContext(Dispatchers.IO) {
             runCatching {
                 val store = LedgerStore(vaultPath)
@@ -613,7 +614,9 @@ fun GroupPage(
                     all.map { StatsExpenseIn(it.toInput(), CategoryLevels.parent(it.category, tree)) },
                     n.selfId,
                 )
-                val settlements = store.loadSettlements().map { it.toInput() }
+                // D-247: a settle held for Undo counts as recorded (the next card moves on, the meter moves), read with
+                // the vault's under the hold's lock so a write landing meanwhile is never counted twice.
+                val settlements = SettleHold.shared.counting { held -> (store.loadSettlements() + held).map { it.toInput() } }
                 val redistributions = store.loadRedistributions()
                 val removed = store.removedIds(groupId)
                 fun lineOf(who: String) = ffiBalanceLine(all.map { it.toInput() }, settlements, redistributions, removed, who, groupId)
@@ -627,11 +630,11 @@ fun GroupPage(
                     .take(5)
                 Loaded(
                     Quad(n, s, l, projected),
-                    // D-221 fix wave (S2): what the next card counts, the group's open pairwise payments (every member's
-                    // and every removed person's frame).
-                    GroupNext.remaining(n.members.map { it.id }, removed, ::lineOf), loaded, RequestCards.balanceLines(store, groupId, Notices.requests(groupId)),
+                    // D-247 (decision 168): what the next card counts, the plan's length (core's fewest payments, the
+                    // plan Settle up shows).
+                    GroupNext.planCount(l), loaded, RequestCards.balanceLines(store, groupId, Notices.requests(groupId)),
                     store.historyNames(groupId),
-                    SettledSummary.blocks(GroupProgress.progress(store, groupId), n.group.settlementCurrency),
+                    SettledSummary.blocks(GroupProgress.progressOver(store, groupId, settlements), n.group.settlementCurrency),
                     GroupProgress.milestone(store, groupId, System.currentTimeMillis()),
                     CloudRecords.hasParked(store, groupId),
                 )
@@ -669,6 +672,7 @@ fun GroupPage(
         PeopleRoles.rows(
             it.members, it.selfId, people.viewerYou, people.claims, GroupRoles.roles[groupId],
             yourPlaces = GroupRoles.roles[groupId]?.places?.you, otherYouIds = people.otherYouIds,
+            createdHere = people.createdHere,
         )
     } ?: emptyList()
     val cards = if (named != null && people.shared && !isCopy) RequestCards.cards(Notices.requests(groupId), rows) else emptyList()
@@ -700,6 +704,8 @@ fun GroupPage(
     // a pushed page, another tab or the lock replaces it) and the screen is resumed (ON_RESUME).
     val motion = rememberMotionState()
     var play by remember { mutableStateOf<CelebrationPlay?>(null) }
+    // D-247: leaving the page (popped, pushed over, another tab) lands a settle held from its next card.
+    LandsHeldSettle()
     LaunchedEffect(celebration.pending, motion.resumed) {
         if (celebration.pending && motion.resumed) {
             celebration.pending = false
@@ -828,7 +834,11 @@ fun GroupPage(
                     SecondaryAction(RolesCopy.GROUP_SETTINGS_TITLE, dark) { onSettings(n.group.id) }
                 }
             }
-            error?.let { Text(it, style = Type.body(dark).copy(color = Tok.owed(dark)), modifier = Modifier.glassCard(dark)) }
+            // D-247 fix wave (I1): a held settle whose write failed (its window ended, the page went, SKIPTI left the
+            // front) says so here too, as on Settle up.
+            (error ?: SettleHold.shared.failure)?.let {
+                Text(it, style = Type.body(dark).copy(color = Tok.owed(dark)), modifier = Modifier.glassCard(dark))
+            }
             Spacer(Modifier.height(8.dp))
         }
         // GUARANTEES #2: over the content, under the bar, never taking a touch.

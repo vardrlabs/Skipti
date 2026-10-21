@@ -491,7 +491,7 @@ fun AccountHubScreen(
             // D-206 (the founder's items 4 and 5): you first, then five groups
             // instead of one long page.
             // D-221: the ring counts the setup steps; zero of them until the facts are read.
-            val (done, total) = facts?.let { SetupSteps.progress(it) } ?: (0 to SetupSteps.steps(signedIn).size)
+            val (done, total) = facts?.let { SetupSteps.progress(it) } ?: (0 to SetupSteps.steps(signedIn, lockAvailable).size)
             Column(
                 Modifier
                     .fillMaxWidth()

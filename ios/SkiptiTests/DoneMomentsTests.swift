@@ -87,7 +87,9 @@ final class DoneMomentsTests: XCTestCase {
             (DoneCopy.nameSaved, "Name saved"),
             (DoneCopy.usernameSaved, "Username saved"),
             (DoneCopy.signedOut, "Signed out"),
-            (DoneCopy.settledWith("Asha"), "Settled with Asha"),
+            (DoneCopy.settledWith("Asha"), "Settled with Asha. No money moved."),
+            (DoneCopy.undo, "Undo"),
+            (DoneCopy.notRecorded, "Not recorded."),
             (DoneCopy.groupNameSaved, "Group name saved"),
             (DoneCopy.groupDeleted, "Group deleted"),
             (DoneCopy.hapticsTitle, "Haptics"),
@@ -211,11 +213,11 @@ final class DoneMomentsTests: XCTestCase {
         let inside = Recorder()
         let a = inside.center()
         a.post(.small(DoneLine(title: DoneCopy.expenseAdded, parts: ["Lunch", "₹1,200.00"])), now: 100, still: false)
-        a.post(.small(DoneLine(title: DoneCopy.settledWith("Asha"), parts: ["₹600.00"])), now: 100.5, still: false)
+        a.post(.small(DoneLine(title: DoneCopy.settledWith("Asha"), parts: [])), now: 100.5, still: false)
         XCTAssertEqual(inside.haptics.count, 1, "0.5 s apart: one success")
         XCTAssertEqual(inside.haptics.first?.0, .success)
         XCTAssertEqual(inside.haptics.first?.1, 0, "a small moment: at once")
-        XCTAssertEqual(inside.spoken, ["Expense added, Lunch, ₹1,200.00", "Settled with Asha, ₹600.00"], "each post said once")
+        XCTAssertEqual(inside.spoken, ["Expense added, Lunch, ₹1,200.00", "Settled with Asha. No money moved."], "each post said once")
         a.post(.small(DoneLine(title: DoneCopy.nameSaved, parts: [])), now: 101.6, still: false)
         XCTAssertEqual(inside.haptics.count, 2, "1.1 s after the last success: plays")
 
@@ -297,16 +299,67 @@ final class DoneMomentsTests: XCTestCase {
         return try slice(source, from: head, to: "\n}\n")
     }
 
-    /// GUARANTEES #2: the toast, its host and the overlay never take a touch, and the file presents nothing and holds no
-    /// control (nothing can wait on a person).
+    /// GUARANTEES #2: the toast's words, its host and the overlay never take a touch, and the file presents nothing.
+    /// D-247: its one control is a toast's action (a held settle's Undo), only when the line carries one; it never waits
+    /// on anyone (the moment ends on its clock either way).
     func testTheMomentsNeverTakeATouch() throws {
         let source = try appSource("DoneMoments.swift")
         for head in ["struct DoneToast: View {", "struct DoneToastHost: View {", "struct DoneOverlay: View {"] {
             XCTAssertTrue(try declaration(source, head).contains(".allowsHitTesting(false)"), "\(head) takes touches")
         }
-        for banned in [".sheet(", ".fullScreenCover(", ".alert(", ".confirmationDialog(", "Button(", ".onTapGesture", ".gesture("] {
+        let toast = try declaration(source, "struct DoneToast: View {")
+        // D-247 fix wave (review M2): the panel (its fill and edge) never takes a touch, with an action or without; only
+        // the action's button does (Android's twin passes every touch but the button).
+        XCTAssertFalse(toast.contains(".allowsHitTesting(action != nil)"), "the whole panel took touches for the window")
+        XCTAssertTrue(toast.contains(".background { shape.fill(Tokens.surface).allowsHitTesting(false) }"))
+        XCTAssertTrue(toast.contains(".overlay { shape.stroke(Tokens.hairline, lineWidth: 1).allowsHitTesting(false) }"))
+        XCTAssertFalse(toast.contains(".background(Tokens.surface, in: shape)"), "a shape background takes touches")
+        XCTAssertFalse(toast.contains(".contentShape("), "nothing widens the panel's touch")
+        XCTAssertTrue(toast.contains("if let action { DoneToastAction(label: action, run: onAction) }"))
+        XCTAssertEqual(source.components(separatedBy: "Button(").count, 2, "one control in the file")
+        XCTAssertTrue(try declaration(source, "struct DoneToastAction: View {").contains("Button(action: run)"), "the toast's action")
+        for banned in [".sheet(", ".fullScreenCover(", ".alert(", ".confirmationDialog(", ".onTapGesture", ".gesture("] {
             XCTAssertFalse(source.contains(banned), "DoneMoments.swift holds \(banned)")
         }
+    }
+
+    /// D-247: a toast's action runs once, only for the moment that offered it; a newer post or a clear makes an old tap
+    /// do nothing; a toast with an action stays the action's whole window; a celebration gives way only to a plain toast.
+    @MainActor
+    func testTheToastsActionRunsOnceForItsOwnMoment() {
+        let c = DoneCenter(gate: SuccessGate(), haptic: { _, _ in }, announce: { _ in })
+        var ran = 0
+        c.post(DoneMoments.line("Settled with Ana. No money moved.", action: "Undo"), onAction: { ran += 1 })
+        let first = c.serial
+        XCTAssertEqual(DoneMoments.toastSeconds(DoneLine(title: "x", parts: [], action: "Undo")), DoneCenter.actionSeconds)
+        // D-247 fix wave (decision 201): the line carries its window (12 s with a screen reader).
+        XCTAssertEqual(DoneMoments.toastSeconds(DoneLine(title: "x", parts: [], action: "Undo", actionSeconds: 12)), 12)
+        XCTAssertEqual(DoneMoments.toastSeconds(DoneLine(title: "x", parts: [], actionSeconds: 12)), ToastMotion.total,
+                       "no action: the plain toast's time")
+        XCTAssertEqual(DoneMoments.toastSeconds(DoneLine(title: "x", parts: [])), ToastMotion.total)
+        XCTAssertEqual(DoneCenter.actionSeconds, 5)
+        c.act(first - 1)
+        XCTAssertEqual(ran, 0, "an old serial does nothing")
+        c.giveWay()
+        XCTAssertNotNil(c.current, "a celebration leaves the Undo toast")
+        c.act(first)
+        c.act(first)
+        XCTAssertEqual(ran, 1, "once")
+        c.post(DoneMoments.line("Settled with Ana. No money moved.", action: "Undo"), onAction: { ran += 1 })
+        c.post(DoneMoments.line("Expense added"))
+        c.act(c.serial)
+        XCTAssertEqual(ran, 1, "the newer toast offers nothing")
+        c.giveWay()
+        XCTAssertNil(c.current, "a plain toast gives way")
+        c.post(DoneMoments.line("Settled with Ana. No money moved.", action: "Undo"), onAction: { ran += 1 })
+        let third = c.serial
+        c.clear()
+        c.act(third)
+        XCTAssertEqual(ran, 1, "a cleared toast offers nothing")
+        // The pose lasts the asked time; the fades are the same.
+        XCTAssertNotNil(ToastMotion.pose(elapsed: 4.0, still: false, total: 5))
+        XCTAssertNil(ToastMotion.pose(elapsed: 4.0, still: false))
+        XCTAssertNil(ToastMotion.pose(elapsed: 5.0, still: false, total: 5))
     }
 
     /// Every motion is the engine's: the shared 30 fps grid, the pure poses on the moment's clock, the still rule; no
@@ -468,7 +521,6 @@ final class DoneMomentsTests: XCTestCase {
             "OverviewScreen.swift": (1, ["DoneCopy.groupPictureRemoved", "DoneCopy.groupPictureSaved"]),
             "UsernameStep.swift": (2, ["DoneCopy.usernameSaved, PeopleCopy.handle(h)", "DoneCopy.usernameSaved, PeopleCopy.handle(saved)"]),
             "AccountHubScreen.swift": (1, ["DoneCopy.signedOut"]),
-            "SettleAll.swift": (1, ["DoneCopy.settledWith("]),
         ]
         var found: [String: Int] = [:]
         for file in try appFiles() where file != "DoneMoments.swift" {
@@ -502,12 +554,17 @@ final class DoneMomentsTests: XCTestCase {
         XCTAssertTrue(people.contains("DoneToastHost(center: localDone)"), "its own host, no bar")
         XCTAssertFalse(people.contains("@State private var done: String?"), "the done bar is gone")
         XCTAssertFalse(people.contains("checkmark.circle.fill"), "the done bar's symbol is gone")
-        // The settle post is in the one record function, so Settle up and the group's next card both say it.
-        let record = try slice(try appSource("SettleAll.swift"), from: "static func record(store: LedgerStore,", to: "\n    }\n")
-        XCTAssertTrue(record.contains("DoneCenter.shared.post(DoneMoments.line(DoneCopy.settledWith("), "the shared record posts")
-        XCTAssertTrue(record.contains("Task { @MainActor in"), "on the main actor")
-        XCTAssertTrue(record.contains("DoneMoments.amount("), "its amount is core's")
-        XCTAssertTrue(record.contains("historyNames(group:"), "a removed person keeps their name")
+        // D-247: the settle posts are the hold's (its own centre, the app's by default), so Settle up's cards and the group's
+        // next card both say them: the held settle with its Undo, and Undo's "Not recorded.". The name keeps a removed
+        // person's (the history's), read by both callers.
+        let settle = try appSource("SettleAll.swift")
+        let hold = try slice(settle, from: "final class SettleHold {", to: "\n}\n")
+        XCTAssertEqual(hold.components(separatedBy: "center.post(").count, 3, "two posts, both the hold's")
+        XCTAssertTrue(hold.contains("center.post(DoneMoments.line(DoneCopy.settledWith(other), action: DoneCopy.undo, seconds: seconds),"))
+        XCTAssertTrue(hold.contains("center.post(DoneMoments.line(DoneCopy.notRecorded))"))
+        XCTAssertFalse(settle.contains("DoneCenter.shared.post("), "nothing else in Settle up posts")
+        XCTAssertTrue(try slice(settle, from: "    private func settle(_ entry: ShareOut,", to: "\n    }\n").contains("historyNames(group:"),
+                      "a removed person keeps their name")
         // A removal says so when it is done; a request's decline removes nobody.
         let removal = try appSource("RemovalFlow.swift")
         XCTAssertTrue(try slice(removal, from: "    func perform(redistributions:", to: "\n    }\n")
@@ -637,7 +694,7 @@ final class DoneMomentsTests: XCTestCase {
     func testTheCelebrationClearsAndBuzzes() throws {
         let settled = try appSource("Settled.swift")
         let start = try slice(try declaration(settled, "struct CelebrationOverlay: View {"), from: ".onAppear {", to: "}")
-        XCTAssertTrue(start.contains("DoneCenter.shared.clear()"), "clears the toast")
+        XCTAssertTrue(start.contains("DoneCenter.shared.giveWay()"), "clears the toast (D-247: unless it offers Undo)")
         XCTAssertTrue(start.contains("DoneCenter.shared.success()"), "plays the success, through the gate")
         XCTAssertEqual(settled.components(separatedBy: "DoneCenter.shared.success()").count, 2, "the celebration's haptic only")
         XCTAssertFalse(settled.contains("Haptics."), "never past the gate")
