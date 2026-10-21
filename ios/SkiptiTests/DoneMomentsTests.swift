@@ -466,8 +466,6 @@ final class DoneMomentsTests: XCTestCase {
             "GroupSettings.swift": (4, ["DoneCopy.groupNameSaved", "DoneCopy.groupPictureRemoved", "DoneCopy.groupPictureSaved",
                                         "DoneCopy.groupDeleted"]),
             "OverviewScreen.swift": (1, ["DoneCopy.groupPictureRemoved", "DoneCopy.groupPictureSaved"]),
-            // D-245: Profile and the welcome save through the one confirm (ProfileSave), which posts.
-            "ProfileConfirm.swift": (2, ["DoneCopy.nameSaved", "DoneCopy.pictureRemoved", "DoneCopy.pictureSaved"]),
             "UsernameStep.swift": (2, ["DoneCopy.usernameSaved, PeopleCopy.handle(h)", "DoneCopy.usernameSaved, PeopleCopy.handle(saved)"]),
             "AccountHubScreen.swift": (1, ["DoneCopy.signedOut"]),
             "SettleAll.swift": (1, ["DoneCopy.settledWith("]),
@@ -491,6 +489,13 @@ final class DoneMomentsTests: XCTestCase {
             for want in table[file]?.1 ?? [] { XCTAssertTrue(words.contains(want), "\(file) posts \(want)") }
         }
         XCTAssertEqual(found, table.mapValues(\.0), "the posting files and their counts")
+        // D-245 (decision 199): Profile and the welcome save through ProfileSave, whose one door posts Profile's toast or,
+        // in the welcome, plays the success alone; its two moments read DoneCopy through DoneMoments.
+        let save = try slice(try appSource("ProfileConfirm.swift"), from: "enum ProfileSave {", to: "\n}\n")
+        XCTAssertTrue(save.contains("done(DoneMoments.line(DoneCopy.nameSaved), feedback, center: center)"))
+        XCTAssertTrue(save.contains("done(DoneMoments.line(avatar == .none ? DoneCopy.pictureRemoved : DoneCopy.pictureSaved), feedback, center: center)"))
+        XCTAssertTrue(save.contains("case .toast: center.post(moment)"))
+        XCTAssertTrue(save.contains("case .haptic: center.success()"))
         // The add-person sheet's own centre and host (it is a sheet above the shell's host); its old done bar is gone.
         let people = try appSource("People.swift")
         XCTAssertTrue(people.contains("@State private var localDone = DoneCenter()"), "a local centre, on the app's gate")

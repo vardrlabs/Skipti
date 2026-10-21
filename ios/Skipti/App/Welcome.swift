@@ -10,6 +10,8 @@ import SwiftUI
 enum WelcomeCopy {
     static let next = "Next"
     static let skip = "Skip"
+    /// Decision 198: W2 to W4's back control, spoken (the glyph is the theme's back chevron).
+    static let back = "Back"
     static func step(_ n: Int) -> String { "Step \(n) of 4" }
 
     // W1
@@ -66,7 +68,7 @@ enum WelcomeCopy {
 
     /// Every fixed word the five welcome screens show (the G5 scan reads these; the done title with a sample name).
     static var welcomeScreens: [String] {
-        [next, skip, step(1), welcomeTitle, welcomeLead, wordmark, welcomeLine] + places + [welcomeFoot,
+        [next, skip, back, step(1), welcomeTitle, welcomeLead, wordmark, welcomeLine] + places + [welcomeFoot,
          lookTitle, lookLine, norseDark, nameTitle, nameLine, namePlaceholder, nameCaption("Sam"), saveName,
          pictureTitle, pictureLine, more, photo, use, pictureFoot, doneTitle("Sam"), doneTitleNoName, doneLine,
          startGroup, lookAround, errEmpty, errLong, errChar, photoUnreadable, DoneCopy.nameSaved, DoneCopy.pictureSaved]
@@ -109,6 +111,14 @@ enum WelcomeFlow {
     static func next(after step: WelcomeStep) -> WelcomeStep? { WelcomeStep(rawValue: step.rawValue + 1) }
 
     static func skippable(_ step: WelcomeStep) -> Bool { step != .done }
+
+    /// Decision 198: W2 to W4 go back a step (nothing saved is undone); W1 and Done have no back.
+    static func previous(before step: WelcomeStep) -> WelcomeStep? {
+        step == .welcome || step == .done ? nil : WelcomeStep(rawValue: step.rawValue - 1)
+    }
+
+    /// Decision 198: the progress shows what is DONE: going back never takes a completed step away.
+    static func shown(completed: Int, before: Int) -> Int { max(completed, before) }
 
     /// 1 to 4 on W1 to W4; none on Done.
     static func number(_ step: WelcomeStep) -> Int? { step == .done ? nil : step.rawValue + 1 }
@@ -673,7 +683,6 @@ struct WelcomeView: View {
     @State private var progressFrom = 0.0
     @State private var progressTo = 0.0
     @State private var progressStart = Date().timeIntervalSinceReferenceDate
-    @FocusState private var nameFocused: Bool
 
     private var nameDone: Bool { nameDoneFor != nil && nameDoneFor == NameRule.trimmed(name) }
 
@@ -713,8 +722,6 @@ struct WelcomeView: View {
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: step)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .auroraBackground()
-        // D-224: the toast for the name and picture saves, shown here above the step's bottom action.
-        .overlay(alignment: .bottom) { DoneToastHost(center: DoneCenter.shared, barShown: true) }
         .task { load() }
         .onChange(of: completed) { _, new in advance(to: new) }
         .onChange(of: name) { _, _ in nameError = nil }
@@ -739,6 +746,17 @@ struct WelcomeView: View {
 
     private var topBar: some View {
         HStack {
+            // Decision 198: back on W2 to W4, mirroring Skip; the theme's back chevron (Lucide's, as every bar's).
+            if let previous = WelcomeFlow.previous(before: step) {
+                Button { step = previous } label: {
+                    LucideIcon(glyph: .chevronLeft, size: 22)
+                        .foregroundStyle(Tokens.groundAccent)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text(verbatim: WelcomeCopy.back))
+            }
             Spacer()
             if WelcomeFlow.skippable(step) {
                 Button { onClose(.skipped) } label: {
@@ -873,15 +891,15 @@ struct WelcomeView: View {
         return VStack(spacing: 20) {
             title(WelcomeCopy.nameTitle)
             line(WelcomeCopy.nameLine)
-            TextField(WelcomeCopy.namePlaceholder, text: $name)
-                .font(TypeRole.body(17))
-                .multilineTextAlignment(.center)
-                .textContentType(.name)
-                .submitLabel(.done)
-                .focused($nameFocused)
-                .onSubmit { saveName() }
-                .hairlineField()
-                .glassCard(padding: 12)
+            // P1, P2 (the controller's look): the app's carded field, a ListCard holding a FieldRow (the whole row takes
+            // the tap and focuses; no underline inside the card), as New group's "Your name".
+            ListCard {
+                FieldRow(WelcomeCopy.namePlaceholder, text: $name, font: TypeRole.body(17))
+                    .textContentType(.name)
+            }
+            .multilineTextAlignment(.center)
+            .submitLabel(.done)
+            .onSubmit { saveName() }
             if !trimmed.isEmpty {
                 Text(verbatim: WelcomeCopy.nameCaption(trimmed))
                     .font(TypeRole.body(TypeScale.detail))
@@ -948,17 +966,18 @@ struct WelcomeView: View {
 
     private func goNext() {
         guard let next = WelcomeFlow.next(after: step) else { return }
-        nameFocused = false
+        endEditing()
         step = next
     }
 
     private func saveName() {
-        switch ProfileSave.name(name, store: store) {
+        // Decision 199: the done row is the done state here; the success haptic plays, no toast.
+        switch ProfileSave.name(name, store: store, feedback: .haptic) {
         case .saved(let stored):
             savedName = stored
             name = stored
             nameError = nil
-            nameFocused = false
+            endEditing()
             nameDoneFor = stored
         case .refused(let words):
             nameError = words
@@ -968,7 +987,7 @@ struct WelcomeView: View {
     private func usePicture() {
         guard let picked = stage.staged else { return }
         do {
-            try ProfileSave.picture(picked, store: store)
+            try ProfileSave.picture(picked, store: store, feedback: .haptic)
             saved = picked
             stage.used(picked)
             moreOpen = false
@@ -977,10 +996,15 @@ struct WelcomeView: View {
         }
     }
 
+    private func endEditing() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    }
+
     /// Decision 192: a new completed share sweeps from the one shown now.
     private func advance(to completed: Int) {
-        let to = Double(min(max(completed, 0), WelcomeProgress.steps))
-        guard to != progressTo else { return }
+        // Decision 198: a step back never takes the progress back.
+        let to = Double(WelcomeFlow.shown(completed: min(max(completed, 0), WelcomeProgress.steps), before: Int(progressTo)))
+        guard to > progressTo else { return }
         progressFrom = progressTo
         progressTo = to
         progressStart = Date().timeIntervalSinceReferenceDate

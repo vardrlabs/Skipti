@@ -72,20 +72,35 @@ enum ProfileSave {
             })
     }
 
+    /// How a save says it is done: Profile's toast (D-224, its success haptic with it), or, inside the welcome, the
+    /// success haptic alone (decision 199: the welcome's done row is its done state).
+    enum Feedback: Equatable {
+        case toast, haptic
+    }
+
+    @MainActor
+    static func done(_ moment: DoneMoment, _ feedback: Feedback, center: DoneCenter) {
+        switch feedback {
+        case .toast: center.post(moment)
+        case .haptic: center.success()
+        }
+    }
+
     enum NameOutcome: Equatable {
         case saved(String)
         case refused(String)
     }
 
     /// The typed name, checked in words first (nothing is written when it is refused), then saved and shared once.
-    static func name(_ raw: String, store: LedgerStore, effects: Effects = .live) -> NameOutcome {
+    static func name(_ raw: String, store: LedgerStore, effects: Effects = .live, feedback: Feedback = .toast,
+                     center: DoneCenter = .shared) -> NameOutcome {
         if let problem = NameRule.check(raw) { return .refused(problem.message) }
         do {
             let me = try store.setYourName(raw)
             effects.bump()
             effects.changed()
             effects.share()
-            DoneCenter.shared.post(DoneMoments.line(DoneCopy.nameSaved))
+            done(DoneMoments.line(DoneCopy.nameSaved), feedback, center: center)
             return .saved(me.name ?? NameRule.trimmed(raw))
         } catch {
             return .refused(WelcomeCopy.nameNotSaved(error))
@@ -94,12 +109,13 @@ enum ProfileSave {
 
     /// A confirmed picture (or the removal, `.none`): one `Avatar` record, one share request. Throws what the vault or
     /// core refused; nothing else happens then.
-    static func picture(_ avatar: Avatar, store: LedgerStore, effects: Effects = .live) throws {
+    static func picture(_ avatar: Avatar, store: LedgerStore, effects: Effects = .live, feedback: Feedback = .toast,
+                        center: DoneCenter = .shared) throws {
         try store.saveAvatar(avatar)
         effects.bump()
         effects.changed()
         effects.share()
-        DoneCenter.shared.post(DoneMoments.line(avatar == .none ? DoneCopy.pictureRemoved : DoneCopy.pictureSaved))
+        done(DoneMoments.line(avatar == .none ? DoneCopy.pictureRemoved : DoneCopy.pictureSaved), feedback, center: center)
     }
 }
 

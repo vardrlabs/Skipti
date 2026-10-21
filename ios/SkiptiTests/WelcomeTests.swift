@@ -121,6 +121,56 @@ final class WelcomeTests: XCTestCase {
         XCTAssertEqual(WelcomeFlow.doneTitle(name: "   "), "You're set", "a blank name is no name")
     }
 
+    /// Decision 198: back on W2 to W4 only, one step, and the progress keeps what is done.
+    func testBackGoesOneStepAndTheProgressKeepsWhatIsDone() throws {
+        XCTAssertEqual(WelcomeStep.allCases.map { WelcomeFlow.previous(before: $0) }, [nil, .welcome, .look, .name, nil])
+        XCTAssertEqual(WelcomeCopy.back, "Back")
+        XCTAssertEqual(WelcomeFlow.shown(completed: 2, before: 3), 3, "back from W4 to W3: three steps stay done")
+        XCTAssertEqual(WelcomeFlow.shown(completed: 3, before: 2), 3)
+        let source = try appSource("Welcome.swift")
+        XCTAssertTrue(source.contains("if let previous = WelcomeFlow.previous(before: step) {"))
+        XCTAssertTrue(source.contains(".accessibilityLabel(Text(verbatim: WelcomeCopy.back))"))
+        XCTAssertTrue(source.contains("guard to > progressTo else { return }"), "the sweep only goes forward")
+        let back = try XCTUnwrap(source.components(separatedBy: "Button { step = previous } label: {").last?
+            .components(separatedBy: ".accessibilityLabel").first)
+        for banned in ["saveAvatar", "setYourName", "clear(", "stage."] {
+            XCTAssertFalse(back.contains(banned), "back undoes nothing: \(banned)")
+        }
+    }
+
+    /// Decision 199: inside the welcome a save plays the success haptic and posts no toast; Profile's posts its toast.
+    @MainActor
+    func testTheWelcomesSavesPostNoToastAndProfilesDo() throws {
+        let store = tempStore()
+        var haptics: [HapticKind] = []
+        let center = DoneCenter(gate: SuccessGate(), haptic: { kind, _ in haptics.append(kind) }, announce: { _ in })
+        let spy = ProfileSave.Effects(changed: {}, share: {}, bump: {})
+        XCTAssertEqual(ProfileSave.name("Sam", store: store, effects: spy, feedback: .haptic, center: center), .saved("Sam"))
+        XCTAssertNil(center.current, "no toast in the welcome")
+        XCTAssertEqual(haptics, [.success], "the success haptic plays")
+        let profile = DoneCenter(gate: SuccessGate(), haptic: { _, _ in }, announce: { _ in })
+        try ProfileSave.picture(.emoji("🦊"), store: store, effects: spy, center: profile)
+        XCTAssertEqual(profile.current, DoneMoments.line(DoneCopy.pictureSaved), "Profile's toast")
+        let welcome = try appSource("Welcome.swift")
+        XCTAssertTrue(welcome.contains("ProfileSave.name(name, store: store, feedback: .haptic)"))
+        XCTAssertTrue(welcome.contains("ProfileSave.picture(picked, store: store, feedback: .haptic)"))
+        XCTAssertFalse(welcome.contains("DoneToastHost"), "no toast host in the welcome")
+        let profileSource = try appSource("Profile.swift")
+        XCTAssertFalse(profileSource.contains("feedback: .haptic"), "Profile keeps its toast")
+    }
+
+    /// P1, P2 (the controller's look): W3's field is the app's carded field: a FieldRow in a ListCard (the whole row
+    /// focuses; no underline inside the card).
+    func testTheNameFieldIsTheCardedFieldRow() throws {
+        let page = try XCTUnwrap(try appSource("Welcome.swift").components(separatedBy: "private var namePage: some View {").last?
+            .components(separatedBy: "private var picturePage").first)
+        XCTAssertTrue(page.contains("ListCard {\n                FieldRow(WelcomeCopy.namePlaceholder, text: $name, font: TypeRole.body(17))"))
+        XCTAssertFalse(page.contains(".hairlineField()"), "no second line inside the card")
+        XCTAssertFalse(page.contains("TextField("), "no bare field")
+        let row = try appSource("ListRows.swift")
+        XCTAssertTrue(row.contains(".simultaneousGesture(TapGesture().onEnded { focused = true })"), "the whole row focuses")
+    }
+
     func testOneActionAtTheBottom() {
         XCTAssertEqual(WelcomeFlow.action(.welcome, nameDirty: true, staged: true), .next)
         XCTAssertEqual(WelcomeFlow.action(.look, nameDirty: false, staged: false), .next)

@@ -579,8 +579,8 @@ final class ThemeMotionTests: XCTestCase {
         // 1 text site on the ground (RemovalFlow's Edit amounts) and `barTint()` (F1, every toolbar item). D-221: You's
         // "Edit" is gone (Q11 a, the progress pill took its place). D-223 (D21): Lately's "See all" sits on the card's
         // surface, so it takes `accent` like every in-card link, not the ground token.
-        // D-245: the welcome's Skip and its "Welcome to" lead sit on the ground: 4.
-        XCTAssertEqual(try count("Tokens.groundAccent"), 4)
+        // D-245: the welcome's Skip, its back chevron (decision 198) and its "Welcome to" lead sit on the ground: 5.
+        XCTAssertEqual(try count("Tokens.groundAccent"), 5)
     }
 
     /// D-225 fix wave (decision 26, review I3, look F4): a section label names what follows and is not faint text, so
