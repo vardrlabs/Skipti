@@ -6028,6 +6028,73 @@ public func FfiConverterTypeSpendingExpenseIn_lower(_ value: SpendingExpenseIn) 
 }
 
 
+/**
+ * D-249 (decision 205): who you are in one group, as the Balance tab reads
+ * it (`OverviewGroupIn.viewer`). All counts a group expense's share only
+ * when it is held by YOUR id in THAT expense's group, so an id that means
+ * you in one group can never count someone else's share in another (the
+ * D-237 A1 shape: a group's maker can name any id as a person).
+ */
+public struct SpendingGroupIn: Equatable, Hashable {
+    public var groupId: String
+    /**
+     * Your id in this group (its `selfId`).
+     */
+    public var viewer: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(groupId: String, 
+        /**
+         * Your id in this group (its `selfId`).
+         */viewer: String) {
+        self.groupId = groupId
+        self.viewer = viewer
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SpendingGroupIn: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSpendingGroupIn: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SpendingGroupIn {
+        return
+            try SpendingGroupIn(
+                groupId: FfiConverterString.read(from: &buf), 
+                viewer: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SpendingGroupIn, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.groupId, into: &buf)
+        FfiConverterString.write(value.viewer, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSpendingGroupIn_lift(_ buf: RustBuffer) throws -> SpendingGroupIn {
+    return try FfiConverterTypeSpendingGroupIn.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSpendingGroupIn_lower(_ value: SpendingGroupIn) -> RustBuffer {
+    return FfiConverterTypeSpendingGroupIn.lower(value)
+}
+
+
 public struct SpendingOut: Equatable, Hashable {
     /**
      * One per currency, never converted into each other, largest total
@@ -10078,6 +10145,31 @@ fileprivate struct FfiConverterSequenceTypeSpendingExpenseIn: FfiConverterRustBu
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeSpendingGroupIn: FfiConverterRustBuffer {
+    typealias SwiftType = [SpendingGroupIn]
+
+    public static func write(_ value: [SpendingGroupIn], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSpendingGroupIn.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [SpendingGroupIn] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [SpendingGroupIn]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSpendingGroupIn.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeSpendingRowOut: FfiConverterRustBuffer {
     typealias SwiftType = [SpendingRowOut]
 
@@ -11040,12 +11132,12 @@ public func ffiOverview(groups: [OverviewGroupIn], expenses: [ExpenseInput], set
 /**
  * The "Your spending" card and page (D-248).
  */
-public func ffiSpending(expenses: [SpendingExpenseIn], viewerIds: [String], fromMs: UInt64, untilMs: UInt64, view: SpendingView)throws  -> SpendingOut  {
+public func ffiSpending(expenses: [SpendingExpenseIn], groups: [SpendingGroupIn], fromMs: UInt64, untilMs: UInt64, view: SpendingView)throws  -> SpendingOut  {
     return try  FfiConverterTypeSpendingOut_lift(try rustCallWithError(FfiConverterTypeCoreError_lift) {
         uniffiCallStatus in
     uniffi_skipti_core_fn_func_ffi_spending(
         FfiConverterSequenceTypeSpendingExpenseIn.lower(expenses),
-        FfiConverterSequenceString.lower(viewerIds),
+        FfiConverterSequenceTypeSpendingGroupIn.lower(groups),
         FfiConverterUInt64.lower(fromMs),
         FfiConverterUInt64.lower(untilMs),
         FfiConverterTypeSpendingView_lower(view),uniffiCallStatus
@@ -11290,7 +11382,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_skipti_core_checksum_func_ffi_overview() != 11671) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_skipti_core_checksum_func_ffi_spending() != 39615) {
+    if (uniffi_skipti_core_checksum_func_ffi_spending() != 10839) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_skipti_core_checksum_func_ffi_your_effect() != 55797) {

@@ -86,6 +86,13 @@ enum SpendingPrefs {
     static func readView(_ defaults: UserDefaults = .standard) -> SpendingView { view(defaults.string(forKey: viewKey)) }
     static func write(_ view: SpendingView, _ defaults: UserDefaults = .standard) { defaults.set(raw(view), forKey: viewKey) }
     static func readOnHome(_ defaults: UserDefaults = .standard) -> Bool { onHome(defaults.object(forKey: onHomeKey) as? Bool) }
+
+    /// Decision 206: the view the page opens in. From the Expenses tab's Just me header it is always Just me, and
+    /// opening it there writes nothing (the card keeps the remembered view); from the card it is the remembered one.
+    /// A tap on the page's switch is remembered as anywhere else.
+    static func pageStart(fromJustMeHeader: Bool, stored: String?) -> SpendingView {
+        fromJustMeHeader ? .justMe : view(stored)
+    }
 }
 
 extension SpendingView {
@@ -175,12 +182,12 @@ enum SpendingLoad {
         }
     }
 
-    /// Your ids: this phone's "you", the ids your other phones wrote as you, and who you are in each group. In order,
-    /// once each.
-    static func viewerIds(me: LedgerStore.SelfDTO?, named: [NamedGroupWire]) -> [String] {
-        var out: [String] = []
-        for id in [me?.id].compactMap({ $0 }) + (me?.aliases ?? []) + named.map(\.selfId) where !out.contains(id) {
-            out.append(id)
+    /// Decision 205: who you are in each group (its `selfId`, as the Balance tab reads it), so All counts a group
+    /// expense's share only when it is yours in THAT group. One entry per group, in order; Just me needs none.
+    static func groups(named: [NamedGroupWire]) -> [SpendingGroupIn] {
+        var out: [SpendingGroupIn] = []
+        for g in named where !out.contains(where: { $0.groupId == g.group.id }) {
+            out.append(SpendingGroupIn(groupId: g.group.id, viewer: g.selfId))
         }
         return out
     }
@@ -188,7 +195,6 @@ enum SpendingLoad {
     static func load(_ store: LedgerStore, month: SpendingMonth, view: SpendingView,
                      timeZone: TimeZone = .current) throws -> Loaded {
         let live = try store.projectedExpenses().expenses
-        let me = try store.loadSelf()
         let named: [NamedGroupWire]
         do {
             named = try store.namedGroups()
@@ -196,11 +202,11 @@ enum SpendingLoad {
             named = []
         }
         let inputs = inputs(live, tree: CategoryLevels.tree)
-        let viewers = viewerIds(me: me, named: named)
+        let yours = groups(named: named)
         let bounds = month.bounds(timeZone: timeZone)
-        let out = try ffiSpending(expenses: inputs, viewerIds: viewers, fromMs: bounds.fromMs, untilMs: bounds.untilMs, view: view)
+        let out = try ffiSpending(expenses: inputs, groups: yours, fromMs: bounds.fromMs, untilMs: bounds.untilMs, view: view)
         let ever = out.rows.isEmpty
-            ? !(try ffiSpending(expenses: inputs, viewerIds: viewers, fromMs: 0, untilMs: UInt64.max, view: view)).rows.isEmpty
+            ? !(try ffiSpending(expenses: inputs, groups: yours, fromMs: 0, untilMs: UInt64.max, view: view)).rows.isEmpty
             : true
         return Loaded(out: out, hasAny: ever,
                       groupNames: Dictionary(named.map { ($0.group.id, $0.group.name) }, uniquingKeysWith: { a, _ in a }))
@@ -368,7 +374,11 @@ struct SpendingCard: View {
 /// Table, the largest currency's slices), and the month's expenses newest first. Reached from Home's card and from the
 /// Expenses tab's Just me header (decision 190). The + opens Add expense on Just me from here.
 struct SpendingScreen: View {
+    /// Decision 206: true when opened from the Expenses tab's Just me header.
+    var fromJustMeHeader = false
     @AppStorage(SpendingPrefs.viewKey) private var viewRaw = SpendingPrefs.justMeRaw
+    /// The view this visit opened in until the switch is tapped (decision 206); nil reads the remembered one.
+    @State private var opened: SpendingView?
     @State private var month = SpendingMonth.current()
     @State private var loaded: SpendingLoad.Loaded?
     @State private var error: String?
@@ -378,7 +388,8 @@ struct SpendingScreen: View {
 
     private var store: LedgerStore { LedgerStore.defaultStore() }
     private var view: Binding<SpendingView> {
-        Binding(get: { SpendingPrefs.view(viewRaw) }, set: { viewRaw = SpendingPrefs.raw($0) })
+        Binding(get: { opened ?? SpendingPrefs.pageStart(fromJustMeHeader: fromJustMeHeader, stored: viewRaw) },
+                set: { opened = $0; viewRaw = SpendingPrefs.raw($0) })
     }
     private var isCurrent: Bool { month == SpendingMonth.current() }
 
@@ -424,7 +435,7 @@ struct SpendingScreen: View {
             }
         }
         .navigationDestination(isPresented: $exporting) { ExportScreen(store: store, justMe: true) }
-        .task(id: "\(SyncStatus.shared.revision)|\(viewRaw)|\(month.year)-\(month.month)") { load() }
+        .task(id: "\(SyncStatus.shared.revision)|\(SpendingPrefs.raw(view.wrappedValue))|\(month.year)-\(month.month)") { load() }
         .onAppear { SpendingPresence.shared.shown(tab) }
         .onDisappear { SpendingPresence.shared.gone(tab) }
     }

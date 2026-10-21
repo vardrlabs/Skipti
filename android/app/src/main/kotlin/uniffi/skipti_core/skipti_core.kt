@@ -1058,7 +1058,7 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_skipti_core_fn_func_ffi_overview(`groups`: RustBuffer.ByValue,`expenses`: RustBuffer.ByValue,`settlements`: RustBuffer.ByValue,`redistributions`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun uniffi_skipti_core_fn_func_ffi_spending(`expenses`: RustBuffer.ByValue,`viewerIds`: RustBuffer.ByValue,`fromMs`: Long,`untilMs`: Long,`view`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_skipti_core_fn_func_ffi_spending(`expenses`: RustBuffer.ByValue,`groups`: RustBuffer.ByValue,`fromMs`: Long,`untilMs`: Long,`view`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_skipti_core_fn_func_ffi_your_effect(`expense`: RustBuffer.ByValue,`viewer`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1391,7 +1391,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_skipti_core_checksum_func_ffi_overview() != 11671) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_skipti_core_checksum_func_ffi_spending() != 39615) {
+    if (lib.uniffi_skipti_core_checksum_func_ffi_spending() != 10839) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_skipti_core_checksum_func_ffi_your_effect() != 55797) {
@@ -6153,6 +6153,54 @@ public object FfiConverterTypeSpendingExpenseIn: FfiConverterRustBuffer<Spending
             FfiConverterOptionalString.write(value.`sliceCategory`, buf)
             FfiConverterOptionalULong.write(value.`timestampMs`, buf)
             FfiConverterULong.write(value.`addedAtMs`, buf)
+    }
+}
+
+
+
+/**
+ * D-249 (decision 205): who you are in one group, as the Balance tab reads
+ * it (`OverviewGroupIn.viewer`). All counts a group expense's share only
+ * when it is held by YOUR id in THAT expense's group, so an id that means
+ * you in one group can never count someone else's share in another (the
+ * D-237 A1 shape: a group's maker can name any id as a person).
+ */
+data class SpendingGroupIn (
+    var `groupId`: kotlin.String
+    , 
+    /**
+     * Your id in this group (its `selfId`).
+     */
+    var `viewer`: kotlin.String
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeSpendingGroupIn: FfiConverterRustBuffer<SpendingGroupIn> {
+    override fun read(buf: ByteBuffer): SpendingGroupIn {
+        return SpendingGroupIn(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: SpendingGroupIn) = (
+            FfiConverterString.allocationSize(value.`groupId`) +
+            FfiConverterString.allocationSize(value.`viewer`)
+    )
+
+    override fun write(value: SpendingGroupIn, buf: ByteBuffer) {
+            FfiConverterString.write(value.`groupId`, buf)
+            FfiConverterString.write(value.`viewer`, buf)
     }
 }
 
@@ -10992,6 +11040,34 @@ public object FfiConverterSequenceTypeSpendingExpenseIn: FfiConverterRustBuffer<
 /**
  * @suppress
  */
+public object FfiConverterSequenceTypeSpendingGroupIn: FfiConverterRustBuffer<List<SpendingGroupIn>> {
+    override fun read(buf: ByteBuffer): List<SpendingGroupIn> {
+        val len = buf.getInt()
+        return List<SpendingGroupIn>(len) {
+            FfiConverterTypeSpendingGroupIn.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<SpendingGroupIn>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeSpendingGroupIn.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<SpendingGroupIn>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeSpendingGroupIn.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceTypeSpendingRowOut: FfiConverterRustBuffer<List<SpendingRowOut>> {
     override fun read(buf: ByteBuffer): List<SpendingRowOut> {
         val len = buf.getInt()
@@ -12233,14 +12309,14 @@ public object FfiConverterSequenceTypeCondition: FfiConverterRustBuffer<List<Con
         /**
          * The "Your spending" card and page (D-248).
          */
-    @Throws(CoreException::class) fun `ffiSpending`(`expenses`: List<SpendingExpenseIn>, `viewerIds`: List<kotlin.String>, `fromMs`: kotlin.ULong, `untilMs`: kotlin.ULong, `view`: SpendingView): SpendingOut {
+    @Throws(CoreException::class) fun `ffiSpending`(`expenses`: List<SpendingExpenseIn>, `groups`: List<SpendingGroupIn>, `fromMs`: kotlin.ULong, `untilMs`: kotlin.ULong, `view`: SpendingView): SpendingOut {
             return FfiConverterTypeSpendingOut.lift(
     uniffiRustCallWithError(CoreException) { _status ->
     UniffiLib.uniffi_skipti_core_fn_func_ffi_spending(
     
         
         FfiConverterSequenceTypeSpendingExpenseIn.lower(`expenses`),
-        FfiConverterSequenceString.lower(`viewerIds`),
+        FfiConverterSequenceTypeSpendingGroupIn.lower(`groups`),
         FfiConverterULong.lower(`fromMs`),
         FfiConverterULong.lower(`untilMs`),
         FfiConverterTypeSpendingView.lower(`view`),_status)

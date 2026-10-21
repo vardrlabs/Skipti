@@ -361,6 +361,18 @@ pub struct CurrencySpendingOut {
     pub categories: Vec<CategoryShareOut>,
 }
 
+/// D-249 (decision 205): who you are in one group, as the Balance tab reads
+/// it (`OverviewGroupIn.viewer`). All counts a group expense's share only
+/// when it is held by YOUR id in THAT expense's group, so an id that means
+/// you in one group can never count someone else's share in another (the
+/// D-237 A1 shape: a group's maker can name any id as a person).
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct SpendingGroupIn {
+    pub group_id: String,
+    /// Your id in this group (its `selfId`).
+    pub viewer: String,
+}
+
 /// One expense that counts in the window.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct SpendingRowOut {
@@ -393,20 +405,25 @@ pub struct SpendingOut {
 /// D-248: what you spent in `[from_ms, until_ms)` (the shells pass the
 /// phone's month bounds). Just me counts personal expenses (no group) at
 /// their full amount; All adds your share of every group expense, read as
-/// the sum of the shares held by any of `viewer_ids` (your personal id and
-/// your id in each group), and lists a group expense only when that share is
-/// above zero. Settlements and redistributions are not inputs, so they never
+/// the share held by your id in that expense's own group (`groups`; a group
+/// not listed counts nothing), and lists a group expense only when that share
+/// is above zero. Settlements and redistributions are not inputs, so they never
 /// count. A converted expense counts in its converted currency (its shares
 /// are in it), as `group_stats` counts it. No floats (ADR-0002).
 pub fn spending(
     expenses: &[SpendingExpenseIn],
-    viewer_ids: &[String],
+    groups: &[SpendingGroupIn],
     from_ms: u64,
     until_ms: u64,
     view: SpendingView,
 ) -> Result<SpendingOut, CoreError> {
-    for v in viewer_ids {
-        parse_participant(v)?;
+    for (i, g) in groups.iter().enumerate() {
+        parse_participant(&g.viewer)?;
+        if groups[..i].iter().any(|h| h.group_id == g.group_id) {
+            return Err(CoreError::InvalidInput(
+                "a group is listed twice".to_string(),
+            ));
+        }
     }
     if from_ms > until_ms {
         return Err(CoreError::InvalidInput(
@@ -434,9 +451,12 @@ pub fn spending(
         let amount = match (&e.group, view) {
             (None, _) => full,
             (Some(_), SpendingView::JustMe) => continue,
-            (Some(_), SpendingView::All) => {
+            (Some(group), SpendingView::All) => {
+                let Some(you) = groups.iter().find(|g| &g.group_id == group) else {
+                    continue;
+                };
                 let mut yours: i64 = 0;
-                for x in e.shares.iter().filter(|x| viewer_ids.contains(&x.id)) {
+                for x in e.shares.iter().filter(|x| x.id == you.viewer) {
                     yours = add(yours, x.amount_minor)?;
                 }
                 if yours == 0 {
@@ -511,12 +531,12 @@ pub fn spending(
 #[uniffi::export]
 pub fn ffi_spending(
     expenses: Vec<SpendingExpenseIn>,
-    viewer_ids: Vec<String>,
+    groups: Vec<SpendingGroupIn>,
     from_ms: u64,
     until_ms: u64,
     view: SpendingView,
 ) -> Result<SpendingOut, CoreError> {
-    spending(&expenses, &viewer_ids, from_ms, until_ms, view)
+    spending(&expenses, &groups, from_ms, until_ms, view)
 }
 
 // ---------------------------------------------------------------------------
@@ -1124,7 +1144,7 @@ mod tests {
     }
 
     /// goldens.py's world: you are pid(1) in Just me and pid(0x11) in Goa.
-    fn world() -> (Vec<SpendingExpenseIn>, Vec<String>) {
+    fn world() -> (Vec<SpendingExpenseIn>, Vec<SpendingGroupIn>) {
         let (me, you_goa, rahul, meera) = (pid(1), pid(0x11), pid(0x12), pid(0x13));
         let goa = pid(0xa0);
         let g = Some(goa.as_str());
@@ -1232,7 +1252,13 @@ mod tests {
                 1_792_153_800_000,
             ),
         ];
-        (expenses, vec![me, you_goa])
+        (
+            expenses,
+            vec![SpendingGroupIn {
+                group_id: goa,
+                viewer: you_goa,
+            }],
+        )
     }
 
     type Shape = Vec<(String, i64, Vec<(Option<String>, i64, u32)>)>;
@@ -1400,18 +1426,117 @@ mod tests {
         assert!(empty.rows.is_empty() && empty.currencies.is_empty());
     }
 
+    /// Decision 205 (D-249): All reads your share with each group's own
+    /// "you". goldens.py's reuse case: you are pid(0x11) in Goa and
+    /// pid(0x21) in Flat 4B, where the maker named Kabir pid(0x11). Only your
+    /// 200.00 of F1 counts (the old rule, any of your ids in any group,
+    /// counted 600.00), and Kabir's own F2 is not yours at all.
+    #[test]
+    fn all_counts_your_share_with_each_groups_own_you() {
+        let (mut expenses, mut groups) = world();
+        let (kabir, you_flat, asha) = (pid(0x11), pid(0x21), pid(0x22));
+        let flat = pid(0xb0);
+        expenses.push(spent(
+            "F1",
+            Some(&flat),
+            &asha,
+            60_000,
+            "INR",
+            &[(&kabir, 40_000), (&you_flat, 20_000)],
+            Some(FOOD),
+            1_791_898_200_000,
+        ));
+        expenses.push(spent(
+            "F2",
+            Some(&flat),
+            &kabir,
+            1_000,
+            "EUR",
+            &[(&kabir, 1_000)],
+            Some(ENT),
+            1_792_218_600_000,
+        ));
+        groups.push(SpendingGroupIn {
+            group_id: flat.clone(),
+            viewer: you_flat,
+        });
+        let out = spending(&expenses, &groups, OCT_FROM, OCT_UNTIL, SpendingView::All).unwrap();
+        let (currencies, rows) = shape(&out);
+        assert_eq!(
+            currencies,
+            vec![
+                (
+                    "INR".to_string(),
+                    549_950,
+                    vec![
+                        sl(Some(FOOD), 374_750, 6814),
+                        sl(None, 100_200, 1822),
+                        sl(Some(TRAVEL), 75_000, 1364),
+                    ]
+                ),
+                (
+                    "EUR".to_string(),
+                    3_750,
+                    vec![sl(Some(ENT), 3_300, 8800), sl(Some(FOOD), 450, 1200)]
+                ),
+            ]
+        );
+        assert_eq!(
+            rows,
+            vec![
+                rw("J2", "INR", 45_000),
+                rw("J4", "INR", 100_200),
+                rw("G4", "EUR", 1_500),
+                rw("J6", "EUR", 450),
+                rw("J5", "EUR", 1_800),
+                rw("F1", "INR", 20_000),
+                rw("G2", "INR", 30_000),
+                rw("G1", "INR", 100_000),
+                rw("J1", "INR", 254_750),
+            ]
+        );
+        // Negative: Kabir's 400.00 of F1 and his own F2 never count as yours.
+        assert_eq!(
+            out.rows.iter().find(|r| r.id == "F1").unwrap().amount_minor,
+            20_000
+        );
+        assert!(out.rows.iter().all(|r| r.id != "F2"));
+        // A group with no "you" listed counts nothing: All is Just me.
+        let none = spending(&expenses, &[], OCT_FROM, OCT_UNTIL, SpendingView::All).unwrap();
+        let just_me = spending(
+            &expenses,
+            &groups,
+            OCT_FROM,
+            OCT_UNTIL,
+            SpendingView::JustMe,
+        )
+        .unwrap();
+        assert_eq!(none, just_me);
+        // Just me rows stay yours whatever the groups say.
+        assert_eq!(
+            just_me,
+            spending(&expenses, &[], OCT_FROM, OCT_UNTIL, SpendingView::JustMe).unwrap()
+        );
+    }
+
     #[test]
     fn spending_refuses_a_bad_window_a_bad_id_and_a_negative_amount() {
         let (expenses, you) = world();
         assert!(spending(&expenses, &you, OCT_UNTIL, OCT_FROM, SpendingView::All).is_err());
         assert!(spending(
             &expenses,
-            &["me".to_string()],
+            &[SpendingGroupIn {
+                group_id: pid(0xa0),
+                viewer: "me".to_string(),
+            }],
             OCT_FROM,
             OCT_UNTIL,
             SpendingView::All
         )
         .is_err());
+        // Decision 205: one group, one "you"; a group listed twice is refused.
+        let twice = vec![you[0].clone(), you[0].clone()];
+        assert!(spending(&expenses, &twice, OCT_FROM, OCT_UNTIL, SpendingView::All).is_err());
         let me = pid(1);
         let neg = spent("N", None, &me, -5, "INR", &[], None, OCT_FROM);
         assert!(spending(&[neg], &you, OCT_FROM, OCT_UNTIL, SpendingView::JustMe).is_err());

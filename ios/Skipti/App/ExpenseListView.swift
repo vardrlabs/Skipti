@@ -206,7 +206,7 @@ struct ExpenseListView: View {
         }
         .navigationTitle("Expenses")
         .navigationBarTitleDisplayMode(.large)
-        .navigationDestination(isPresented: $openSpending) { SpendingScreen() }
+        .navigationDestination(isPresented: $openSpending) { SpendingScreen(fromJustMeHeader: true) } // decision 206
         .sheet(item: $editing) { target in
             NavigationStack {
                 AddExpenseScreen(onSaved: { editing = nil; load() }, editing: target)

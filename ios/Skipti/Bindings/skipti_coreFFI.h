@@ -694,7 +694,7 @@ RustBuffer uniffi_skipti_core_fn_func_ffi_overview(RustBuffer groups, RustBuffer
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SKIPTI_CORE_FN_FUNC_FFI_SPENDING
 #define UNIFFI_FFIDEF_UNIFFI_SKIPTI_CORE_FN_FUNC_FFI_SPENDING
-RustBuffer uniffi_skipti_core_fn_func_ffi_spending(RustBuffer expenses, RustBuffer viewer_ids, uint64_t from_ms, uint64_t until_ms, RustBuffer view, RustCallStatus *_Nonnull out_status
+RustBuffer uniffi_skipti_core_fn_func_ffi_spending(RustBuffer expenses, RustBuffer groups, uint64_t from_ms, uint64_t until_ms, RustBuffer view, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SKIPTI_CORE_FN_FUNC_FFI_YOUR_EFFECT

@@ -147,6 +147,24 @@ final class SpendingTests: XCTestCase {
         XCTAssertFalse(slice.contains("SettingsSync"))
     }
 
+    /// Decision 206: the page opened from the Expenses tab's Just me header always starts in Just me, whatever is
+    /// remembered, and opening it writes nothing (the card keeps its view); from the card it opens in the remembered one.
+    func testThePageFromTheJustMeHeaderStartsInJustMe() throws {
+        XCTAssertEqual(SpendingPrefs.pageStart(fromJustMeHeader: true, stored: "all"), .justMe)
+        XCTAssertEqual(SpendingPrefs.pageStart(fromJustMeHeader: true, stored: nil), .justMe)
+        // Negative: from the card the remembered All stays All.
+        XCTAssertEqual(SpendingPrefs.pageStart(fromJustMeHeader: false, stored: "all"), .all)
+        XCTAssertEqual(SpendingPrefs.pageStart(fromJustMeHeader: false, stored: "justMe"), .justMe)
+        let list = try appSource("ExpenseListView.swift")
+        XCTAssertTrue(list.contains("navigationDestination(isPresented: $openSpending) { SpendingScreen(fromJustMeHeader: true) }"))
+        let home = try appSource("OverviewScreen.swift")
+        XCTAssertTrue(home.contains("navigationDestination(isPresented: $openSpending) { SpendingScreen() }"))
+        // The page reads the start without writing it; only the switch's setter writes.
+        let page = try appSource("Spending.swift")
+        XCTAssertTrue(page.contains("get: { opened ?? SpendingPrefs.pageStart(fromJustMeHeader: fromJustMeHeader, stored: viewRaw) }"))
+        XCTAssertTrue(page.contains("set: { opened = $0; viewRaw = SpendingPrefs.raw($0) }"))
+    }
+
     /// The card is drawn only while Spending on Home is on, and after the ledgers; the no-group hero replaced the old
     /// empty state.
     func testHomeDrawsTheCardUnderTheSwitchAndTheHeroWithNoGroup() throws {
@@ -244,14 +262,19 @@ final class SpendingTests: XCTestCase {
         XCTAssertFalse(empty.hasAny)
     }
 
-    func testTheViewersAreYourIdsOnce() {
-        let me = LedgerStore.SelfDTO(id: "a", name: "Sam", aliases: ["b"])
+    /// Decision 205: each group is read with its own "you", never a list of your ids matched in every group (an id
+    /// that is you in G can be someone else in H: the D-237 A1 shape). Core's golden pins the counting.
+    func testEachGroupKeepsItsOwnYou() {
         let g = NamedGroupWire(group: GroupWire(id: "g", name: "G", settlementCurrency: "INR", members: ["a", "c"]),
                                selfId: "a", members: [])
-        let h = NamedGroupWire(group: GroupWire(id: "h", name: "H", settlementCurrency: "INR", members: ["d"]),
+        let h = NamedGroupWire(group: GroupWire(id: "h", name: "H", settlementCurrency: "INR", members: ["a", "d"]),
                                selfId: "d", members: [])
-        XCTAssertEqual(SpendingLoad.viewerIds(me: me, named: [g, h]), ["a", "b", "d"])
-        XCTAssertEqual(SpendingLoad.viewerIds(me: nil, named: []), [])
+        XCTAssertEqual(SpendingLoad.groups(named: [g, h]),
+                       [SpendingGroupIn(groupId: "g", viewer: "a"), SpendingGroupIn(groupId: "h", viewer: "d")])
+        // Negative: "a" is not you in H, and a group listed twice keeps its first "you" (core refuses a repeat).
+        XCTAssertFalse(SpendingLoad.groups(named: [g, h]).contains(SpendingGroupIn(groupId: "h", viewer: "a")))
+        XCTAssertEqual(SpendingLoad.groups(named: [g, g]).count, 1)
+        XCTAssertEqual(SpendingLoad.groups(named: []), [])
     }
 
     // MARK: - The Ledger page (decision 193)
