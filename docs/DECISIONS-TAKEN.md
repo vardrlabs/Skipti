@@ -1223,6 +1223,91 @@ https://claude.ai/artifact/FwwzuzRkyyxiuGvJKNMPCG (v1); briefs `.drafts/u9/brief
   your groups." for a Just me shot.
 - **176:** build with the drafted words, adapted to these answers; the revised pages show the final set, and you can
   redirect from them.
+- **192 (U9, chat after v2):** the welcome's step indicator becomes a larger progress piece that advances as each step
+  is completed; in Norse its runes light and glow one by one in step with the fill; Aurora and Vardr Labs get their own
+  versions (a glowing gradient line with nodes; a bracketed segmented bar).
+- **193 (U10, chat after v2):** the Ledger choice page gets richer rows: each ledger's tile and a meta line (when it
+  was created, month and year, and how many people; Just me says so), not a flat list.
+- **194 (chat after v2):** a fluidity sweep: every action that jumps instead of moving gets a fitting transition, in
+  its own unit after U10 and before the store pages and the video; every animation passes the motion doors (Reduce
+  Motion, Less motion, power saving for art).
+- **195 (Norse art, chat):** the glowing runes glow from the glyph itself (a blurred copy of the rune's own shape under
+  it), not a round halo, everywhere: the page's rising runes, the hero runes, the hero ᚠ, the You ring and the
+  welcome's progress. Its own unit right after D-245 (`.drafts/runeglow/plan.md`). Also: the welcome's Norse progress
+  runes must sit centred on the line, the last inside the bar's end (sent to D-245's implementer).
+- **197 (mine, from your brainstorm ask):** Norse's welcome progress is "the winding road": five runes ᚠ ᚢ ᚦ ᚨ ᚱ (the
+  futhark's opening: finishing the welcome spells it), joined by arches that alternate over and under, a gold fill with
+  a spark at its front, each rune lighting from its own glyph as the road reaches it. Chosen over plain Bifröst arches
+  (calmer but static-looking) and a runestone serpent band (most ornate, too busy at 26 pt). The three:
+  https://claude.ai/artifact/L6fTyyxHynd8vBg9mivDf7. Overturn: say A or C. **Confirmed by you in chat (2026-10-20): "the winding road looks great".**
+
+### The D-245 chain, 177 to 181, 198, 199: the welcome and the picture confirm (U9, U17)
+
+#### 177: the welcome waits on its own flag, written at the first launch
+
+- **What:** a new install's first launch writes `welcome/pending` (before D-175's `onboarding/complete`); the welcome
+  shows while it is set and clears on Skip or Done. An install from before this build never gets it. A relaunch with
+  it still set (the app was killed mid-welcome) shows it again from the start, after the app lock.
+- **Why:** `onboarding/complete` is set the moment the vault opens, so it cannot tell "finished the welcome"; existing
+  installs must never see a first-run guide.
+- **Risk if wrong:** someone who killed the app mid-welcome meets the lock before the welcome (the lock is theirs).
+- **Overturn:** clear the flag at the first Next instead.
+- **Status:** in D-245.
+
+#### 178: in first run the picture step is itself the confirm
+
+- **What:** W4's page shows the staged picture and "Use this picture"; the Profile page shows the same confirm content
+  in a sheet (161). Nothing saves before the button on either.
+- **Why:** a sheet over a step that already exists to choose a picture would be a third layer for the same choice.
+- **Risk if wrong:** none known; the component is shared.
+- **Overturn:** present the sheet in W4 too.
+- **Status:** in D-245.
+
+#### 179: your name is at most 60 characters, refused in words
+
+- **What:** the Your name field refuses (never cuts) over 60 characters, the cloud rules' share limit; errors read
+  "Add a name first.", "Names can be up to 60 characters.", "That name has a character SKIPTI can't use." instead of
+  core's raw text. Core's 64 for other members' names is unchanged.
+- **Why:** a 61 to 64 character name was saved on the phone and silently never shared with your groups.
+- **Risk if wrong:** none known; no existing name changes.
+- **Overturn:** raise the rules to 64 (a rules deploy).
+- **Status:** in D-245.
+
+#### 180: the welcome's last line names Just me only once Just me exists
+
+- **What:** W5 reads "Start a group for a trip, a flat or a dinner."; U10 appends ", or keep your own spending in Just
+  me." (your approved line) in the same unit that builds Just me.
+- **Why:** no build should name a ledger that is not there, even between two units.
+- **Status:** in D-245; completed by U10.
+
+#### 181: promise 5 follows your clarified guarantee everywhere it is shown
+
+- **What:** GUARANTEES.md #5 (your decision 171), About's promise 5 on both phones ("...; sharing a group with others
+  needs one.") and CLAUDE.md 10's summary.
+- **Status:** in D-245.
+
+#### 198: the welcome has Back on its middle steps
+
+- **What:** W2 to W4 show a back control at the top left, opposite Skip; it goes one step back and undoes nothing; the
+  progress never moves backwards.
+- **Why:** found on the look: a mistaken Next had no way back but Skip.
+- **Status:** in D-245.
+
+#### 199: no toast inside the welcome
+
+- **What:** the welcome's saves show their done row and play the success haptic, but post no D-224 toast; Profile
+  keeps its toast.
+- **Why:** found on the look: "Name saved" showed twice on one screen.
+- **Status:** in D-245.
+
+#### 200: one action at a time on the name step
+
+- **What:** W3 shows "Save name" while the field holds an unsaved name and "Next" once it is saved (or empty); Skip and
+  Back stay. W4 does the same with "Use this picture".
+- **Why:** mock v2 drew one action at the bottom; two filled buttons on one step is the form look you disliked.
+- **Risk if wrong:** someone who types a name and wants to move on without saving it must clear the field or Skip.
+- **Overturn:** show Next beside Save name.
+- **Status:** in D-245.
 ---
 
 ## High: user-visible behaviour or a privacy surface

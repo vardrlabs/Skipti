@@ -34,6 +34,40 @@ then ONE round of pop-ups for every call of his, then build in his order with de
   GUARANTEES #5 clarified (his wording yes); video = Motion artifact; shots name "Sam"; parked calls stay parked;
   captions approved; build to the redraw, show him after). My own calls start at **177**.
 - NEXT: redraw both mock pages to his answers (agent), meanwhile plan U9 (D-245, branch d245-welcome) and build.
+- Mock pages v2 PUBLISHED (same links). Plans: `.drafts/d245/plan.md` (U9+U17; my calls 177-181), `.drafts/d246/plan.md`
+  (D-246 settle + ring, D-247 small fixes; calls 182-186), `.drafts/d248/plan.md` (U10; calls 187-191). Decisions
+  177+ get written into DECISIONS-TAKEN at each unit's record step.
+- IN FLIGHT: D-245 stage 1 (iOS) implementer on branch d245-welcome in the main tree (report
+  `.drafts/d245/stage1-report.md`); D-248 stage 1 (core only) in worktree `/private/tmp/skipti-d248-core` on branch
+  d248-just-me from main (report `.drafts/d248/stage1-report.md`; no bindings until rebased after D-247).
+- The founder after v2 (chat): decisions 192 (enlarged progress with runes lighting in step; sent to the D-245 stage 1
+  implementer), 193 (richer Ledger choice rows: tile + "Since {Month Year} · n people"; in d248 plan section 8), 194
+  (fluidity sweep = D-249, `.drafts/d249/plan.md`, after U10). Then (2026-10-20, ~21:25): **"I'll be away for a while:
+  decide anything yourself after researching what fits best."** So: product and design calls are mine, recorded;
+  deploys, consoles, money, anything public and GUARANTEES stay his explicit yes (opener's "Never" list unchanged).
+- **D-248 stage 1 DONE 6b24891** (worktree /private/tmp/skipti-d248-core): `ffi_spending` (overview.rs), 
+  `ffi_snapshot_personal` (ffi.rs), CSV 9 columns with `category` last ("Parent / Leaf"); core lib 394 -> 402; goldens
+  `.drafts/d248/goldens.py`; 10 sabotage rows exact. Finding: `skrin d236_the_scanner_sees_a_key_freed_as_it_stands`
+  failed once, passed on reruns (flaky: watch it in gates). Bindings after rebase onto main post D-247.
+- D-249 audit (read-only) dispatched -> `.drafts/d249/audit.md`. DONE (top: Android pages cut where iOS slides; amounts cut;
+  helpers ChangeMotion/PageMotion/MoneyChange/RowsMotion/Reveal/FillMotion; guards that go red listed).
+- Founder (chat): rune halos -> glyph glow everywhere (decision 195, `.drafts/runeglow/plan.md`, own unit right after
+  D-245); Norse welcome progress = "the winding road" (197, CONFIRMED by him; https://claude.ai/artifact/L6fTyyxHynd8vBg9mivDf7).
+- **D-245 stage 1 DONE 9360fe2** (iOS; 894 tests 0 failures; report `.drafts/d245/stage1-report.md`). My look on
+  d245-look (lock off via defaults `applock.timeout off`; DELETE the key / the sim at close-out): good; polish wave sent
+  to the same implementer: P1 field tap target, P2 Norse card corners + double line in welcome, P3 Back on W2-W4
+  (decision 198), P4 no toast inside the welcome, haptic kept (decision 199). Then stage 2 = Android twin (needs
+  `TypeScale.welcomeMark = 52` on Android).
+- Stage 1b 4bad2cd (iOS polish, 897/0); **stage 2 f1483ac** (Android twin, JVM 1078/0; look 23 shots
+  `.drafts/d245/look/android/`; AVD d245-look kept). **Opus review: Needs fixes** (`.drafts/d245/review.md`: I1 Android
+  stale welcome after erase, I2 "stays on this phone" lines shown signed in, I3 largest text unchecked + minors + twins).
+  Fix wave dispatched (report `.drafts/d245/fixwave-report.md`). Decision 200 drafted. Then: sabotage lanes, pairs,
+  gate, records (`.drafts/d245/record/decisions.md` holds 177-181, 198-200), merge, cleanup (d245-look sim + AVD).
+- Fix wave c59c013 (iOS 903, JVM 1088); sabotage 50 rows (45 EXACT, 5 LISTED, 2 survivors pinned in e80825a);
+  **gate 23/23 (2026-10-21T03:59Z, 5m21s; iOS 904, JVM 1089, cargo 406). RECORDED (BUILD-LOG D-245, decisions 177-181
+  and 198-200, CLAUDE.md 10 guarantee 5). Merging.** Next: the rune glyph glow unit (`.drafts/runeglow/plan.md`), then
+  U29-U31 (`.drafts/d246/plan.md`: settle + ring, then small fixes), then U10 (`.drafts/d248/plan.md`, core stage done
+  in worktree /private/tmp/skipti-d248-core), then D-249 fluidity, then U32/U33.
 
 ## SESSION 10 (closed): 2026-10-20 (Opus; opener `.drafts/stop/fable-opener-3.md`'s successor): FINISH D-239, THEN 0.5.1 U27, U26, U24, U25
 

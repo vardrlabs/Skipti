@@ -295,6 +295,7 @@ surface; 0026 the WebAuthn relying-party ID, superseded by 0027: the RP ID is `s
 | D-242 | **Norse made vibrant: the founder's approved "Vibrant" colours, both phones (U24's colour half; his pop-up 2026-10-20 on the mock-up https://claude.ai/artifact/KMKWvN6nQh6cHQ6p33n6yf; the Norse app icon keeps today's gold, his answer).** Built by an Opus implementer from the derivation scripts (`.drafts/d212/palette.py`, `.drafts/d214/motion.py`, `.drafts/d226/art.py`), never by hand: the Norse token column (bg #07080E, surface #111218, text #F3EAD3, textDim #B5A888, textFaint and neutral #9A8F76, accent #DFB043, owed copper #EE8A58, owing jade #7FD4C1, the hero stops, softs, meter), the Norse group tone fills (derived from bg), the art colours (norseEdge #6B5426, card #1A1710 / #0F1015, norseSilver #9AA2AE, diamond #F2D37A / #B4851F, norseCheckFill #18120A), the rune gold #DFB043 and silver #B8C0CC, the gold page glow 0.08 to 0.09. Aurora and Vardr Labs byte-identical (a new five-column palette golden on each shell; Aurora dark Balance 0 pixels changed outside random group tiles). Review (Opus): Approved with minors; decision 143: textFaint is the founder's approved #9A8F76 as an approved palette.py input (the derivation gave #90866E), so motion.py's Norse page check keeps measuring textFaint (the implementer had narrowed it; cap 1.00, runes stay 0.79). Before/after pairs both shells (`.drafts/d242/look/pairs/`): warmer gold, jade amounts, clearer edges; modest without D-243's glows. Sabotage 4 rows (one-step drifts in Aurora and Vardr Labs, one shell and both at once) all red as intended. | The livelier art (flare, hero runes, the glowing ᚠ, the turning ring, the edge glow) is D-243. | `.drafts/d242/` (report.md, apply.py, fixwave_apply.py, sabotage.py and sabotage/results.txt, script outputs, look/pairs/, gate.log, gate2.log) |
 | D-243 | **The livelier Norse art (the founder's U24 motion half, 2026-10-20; the approved Vibrant mock-up; his pop-up: each rune its own lane).** Both phones, one engine each, values from `.drafts/d214/motion.py`: page runes flare with a soft halo (0.19 at the flare, the cap; halo 0.05), each in its own lane (decision 144: the hour-long scan finds no overlap and no failed floor; before, faint text over two crossing runes fell to 4.23, and to 3.04 with the flare); the Norse Balance hero gets 7 rising runes in lanes left of the ᚠ, clipped inside the inner frame (decision 145), and its ᚠ glows on a 9 s cycle (0.16 to 0.208, halo 0.10); the Futhark ring round You's picture turns once per 90 s from upright, as art (decision 148); a static gold glow outside Norse card edges as 0.5 pt bands, reach 6 pt after a gap audit (decision 147; page text keeps 6 pt from a Norse card, guarded); glows are cached discs, never blurs (decision 146). iOS's sign-in hero moved to a Section header so the glow shows as on Android (decision 150). Built in five implementer stages from `.drafts/d243/plan.md`; a stage-2 look caught a launch crash no test saw (overlapping Canvas symbol ids, guarded); the gap audit fixed the plan's grown-chamfer formula and Android's LedgerCard clipping the glow. Opus whole-branch review: Approved with minors, fix wave 65019b0. Look: one 30 fps grid on You (151 frames in 5 s), p90 within 1 ms, power saving 0 idle frames while a moment plays. Sabotage 45 rows: 41 red, 4 survived (missing pins), pinned and re-run red. | Two invisible iOS pixel differences accepted (decision 149); the LG G8X frame cost unmeasured. | `.drafts/d243/` (plan.md, stage1..4 reports, look/report.md and pairs/, gap-audit.md, values.md, motion-*.out, sab/, sab2/, gate.log) |
 | D-244 | **Settings follow the account (the founder's U25, 2026-10-20; ADR-0043 reverses ADR-0041's "never synced").** With an account, theme, light or dark, text size, Less motion, haptics, the app icon choice and the default currency follow to the account's other phones (decisions 151 to 158): one personal `setting` record per change (type 3, header version 1, latest write per key; no rules change; a 0.5.0 phone ignores them); one write funnel per shell, never without an account, nothing leaves with sync off; arrivals apply live and at launch, never echoed back; a phone's first sign-in takes the account's values and fills its gaps; an arrived icon waits until SKIPTI comes to the front; app lock, screen privacy, the sync switch, notifications and the device name stay per phone. Built in four implementer stages (core, iOS, Android twin with Swift-reading parity, a two-phone emulator proof `--settings-emulator-proof` and a cross-shell look) plus a review fix wave (the migrated mode, one Android queue, sign-out reconciles, vocabulary parity, core and group-log sabotage). The privacy page gains the founder's line and Version 2 (decision 158), NOT deployed. | The Hosting deploy of the privacy page is owed before 0.5.1's apps ship; not tried on a real phone pair. | `.drafts/u25/design.md`, `.drafts/d244/` (stage1..4 reports, stage2/ stage3/ fw/ sabotage, stage4/ proofs, look/, gate.log) |
+| D-245 | **The welcome and the picture confirm (the founder's U9 and U17, 0.5.1; decisions 159 to 162, 171, 192, 195, 197 his, 177 to 181 and 198 to 200 mine).** A new install's first launch shows a five-step welcome, every step skippable and none naming an account: Welcome (the five places with their glyphs), Pick a look (a tap restyles the whole screen through Appearance's own path), Your name, Your picture (staged until "Use this picture"), Done ("Nice to meet you, {name}", Start a group / Look around first). A progress piece advances as steps complete: in Norse the winding road between ᚠ ᚢ ᚦ ᚨ ᚱ, each rune lighting from its own glyph; Aurora a glowing line with nodes; Vardr Labs a bracketed segmented bar. Back on the middle steps; no toast inside the welcome. You's profile: a picture tap or photo pick opens a confirm sheet and saves once (one share request); the name is capped at 60 (the rules' share limit) with errors in words; Android's keyboard Done saves. About gains "Show the welcome again". GUARANTEES #5 is clarified in the founder's words ("Sharing a group with other people's phones needs an account"), with About's promise 5. Built in two implementer stages (iOS, Android twin reading the Swift copy table), an iOS polish wave from the controller's look, and a review fix wave (a fresh welcome after an erase on Android, the phone-only lines hidden when signed in, the largest text size, twin timing and the sheet's art). | Not looked at with VoiceOver or TalkBack listening; the picture sheet at the largest text size; a real phone. | `.drafts/u9/brief.md`, `.drafts/d245/` (plan, stage reports, review, fixwave, look/, sab/, gate.log), mock-up https://claude.ai/artifact/4gSbSAQy4QmwtXwZ5UfKr2 (v2), progress https://claude.ai/artifact/L6fTyyxHynd8vBg9mivDf7 |
 | D-55 | **The networking boundary + OTP sign-in, end to end against the real relay.** The largest architectural gap closed: the relay is complete (auth, passkeys, subject-owned authz, restart-proven persistence — 163 tests) and the iOS app contained ZERO networking code. Boundary: `RelayTransport` protocol — URLSessionRelayTransport (real, localhost:8080) and a stub both satisfy it; screens talk to IdentityService, never to URLSession (ADR-0025's rule applied to networking). **D-27's contract is structural in the error type:** the 401 rejection maps to ONE `.rejected` case covering unknown accounts and wrong codes — the app cannot distinguish them and the UI copy never suggests which. OTP is the first leg landed (simpler transport — no entitlements); §4.2 makes passkeys the primary path and they follow over the SAME transport, recorded plainly. Tests: stub suite (uniform rejection across unknown/wrong-code shapes, 429/5xx mapping, malformed body → badResponse, session decode with explicit snake_case keys per D-18's wire format) + an E2E against a REAL running relay that SKIPS honestly when the relay is down (D-23: a skip is recorded, never mistaken for a pass). The E2E proved the request path + uniform rejection against the real axum handlers; a SUCCESSFUL verify is not provable from the test host (the relay never exposes the code — it goes out-of-band), covered server-side by the relay's own suite. ATS: NSAllowsLocalNetworking for the simulator's localhost; production rides the TLS deployment story | §4.2 makes passkeys primary; §5.8's deep-link hand-off and the D-41 subject-owned sync both need a signed-in subject, which this delivers | `ios/Skipti/Relay/IdentityService.swift`, `ios/Skipti/App/SignInScreen.swift`, `ios/SkiptiTests/RelayClientTests.swift` |
 | D-56 | **SyncService — the transport between the vault and the relay.** Pushes and pulls OPAQUE sealed blobs (hex-encoded) to/from the subject-owned bucket. D-18's cursor semantics respected (exclusive, 409 = normal); D-41's namespace (bucket = subject_id); §10.3 offline = default (.offline returned, local ledger stays authoritative). The E2E tests prove the transport against a real relay: unauthenticated push rejected by the auth gate, unauthenticated pull returns empty, request well-formed enough to route. The full push→pull round trip with a valid session is NOT provable here (the relay never exposes the OTP code — it goes out-of-band); covered server-side by the relay's own suite and locally by the vault tests. **The mnemonic golden flake (§5.6 recurrence):** the ffi.rs mnemonic golden called ffi_mnemonic_generate for a RANDOM kit, tampered word 0, and asserted validation fails — BIP-39's 4-bit checksum survives that ~1/16 of draws. Fixed by pinning the negative to entropy [0x42; 16] (the same fix mnemonic.rs got in D-49); the generate path is tested POSITIVELY only. AGENTS.md §7 gains the rule so it lives where sessions read | §6.4: the relay parses nothing; §10.3: offline is the default; D-18/D-41 respected, not reimplemented | `ios/Skipti/App/SyncService.swift`, `core/src/ffi.rs` (mnemonic golden), `AGENTS.md` (§7), `ios/SkiptiTests/SyncE2ETests.swift` |
 | D-57 | **Passkeys on iOS — §4.2's primary path over the same transport as D-55's OTP leg.** `PasskeyAuthService` is transport-only: register/authenticate start parse `challenge_id` + `publicKeyOptions` through webauthn-rs 0.5's REAL serde shape — options sit one level down under `publicKey` (the browser CredentialCreationOptions shape), camelCase inside (`pubKeyCredParams`), base64url unpadded; finish bodies match `RegisterPublicKeyCredential`/`PublicKeyCredential` field renames exactly (`rawId`/`clientDataJSON`/`attestationObject`/`authenticatorData`/`userHandle`), verified against the vendored crate source and pinned by capture-the-request tests on fixed bytes. Assertion finish carries optional `device_label` (D-34 parity: labels optional on both sign-in paths). D-27 stays structural: every 401 maps to ONE `.rejected` case across all four routes — the app cannot decompose it. `PasskeyCeremony` builds `ASAuthorizationPlatformPublicKeyCredential` requests from parsed options (provider keyed by RP ID; challenge/userID decoded; `excludeCredentials` gated to iOS 17.4 where the platform API exists) and maps results back into wire shapes. **Honest limit:** the controller ceremony cannot run until the associated-domains entitlement (`webcredentials:skipti.vardrlabs.com`), an AASA file served from https://skipti.vardrlabs.com, and TLS exist (ADR-0027) — no test claims otherwise; recorded in §4.4. E2E drives all four routes against a REAL relay: register/start returns parseable options whose RP ID is the dev default `localhost`; fabricated attestation / unknown account / garbage assertion reject uniformly. ALSO fixed here, found while wiring: the Xcode project file had `A10026` defined twice — committed HEAD failed `make ios-app` outright (SyncE2ETests compiled into the app target, XCTest unresolvable there) and in no resolution did SyncE2ETests ever run; unique IDs plus the missing test-phase entry brought its three tests to life against the live relay (incident §5.9). Full suite: **27 passed / 0 failed / 0 skipped** with the relay up | §4.2 makes passkeys primary; D-55 landed OTP first deliberately — same transport, same rejection contract | `ios/Skipti/Relay/{PasskeyAuthService,PasskeyCeremony}.swift`, `ios/SkiptiTests/PasskeyServiceTests.swift`, `ios/Skipti.xcodeproj/project.pbxproj` |
@@ -23037,6 +23038,76 @@ core C1 to C6 red (several BROADER through the FFI round trip), iOS F1 to F7 and
 setting record accepted from a GROUP log (now caught by two tests on each shell). None survived, no compile errors.
 `.drafts/d244/stage2/`, `stage3/`, `fw/`.
 
+### D-245: the welcome and the picture confirm, 2026-10-21
+
+The full gate on the tree committed with this record (branch `d245-welcome`; `.drafts/d245/gate.log`):
+
+```
+GATE PASSED: 23 passed, 0 skipped
+
+Evidence (paste into docs/BUILD-LOG.md §3 when claiming progress):
+
+  gate: full  ·  2026-10-21T03:59:22Z  ·  branch d245-welcome  ·  commit e80825a
+  cargo fmt --all -- --check                                 exit 0
+  cargo clippy --workspace --all-targets -- -D warnings      exit 0
+  float audit (ADR-0002: no f32/f64 in core/src)             exit 0
+  buildlog structure (D-number contiguity, fences)           exit 0
+  swift interpolation (no literal backslash-paren in UI strings) exit 0
+  swift autolink (no email/URL in string-literal UI titles)  exit 0
+  swift list rows (no styled button as a clear list row)     exit 0
+  em dashes (D-228: no U+2014 or U+2013 on the public surface) exit 0
+  gate self-test (D-137 heavy-leg proof and hook routing)    exit 0
+  cargo test --workspace                                     406 passed, 0 failed
+  cargo build -p skipti-core --target wasm32-unknown-unknown exit 0
+  cargo test --workspace --release -- --ignored              exit 0 (~40s sweeps)
+  bindings freshness (regenerate == committed)               exit 0 (byte-identical)
+  kotlin bindings compile standalone (bytes != buildable)    KOTLIN BINDINGS COMPILE OK
+  cargo audit                                                exit 0
+  cargo deny check (ADR-0012 banned SDK scan)                exit 0
+  SBOM generation (cargo cyclonedx)                          exit 0
+  firebase rules (emulators: every refusal tested)           RULES TESTS PASSED
+  npm audit (Cloud Functions' dependencies)                  exit 0 (no high or critical)
+  make ios-app (build + simulator tests)                     TEST SUCCEEDED
+  make android-app (core .so + APK packaging)                BUILD SUCCESSFUL
+  make android-test (JVM goldens against real core)          per-class tally printed; exits non-zero on any failure
+  licence inventory (regenerate == committed)                exit 0 (current)
+```
+
+cargo test 406 passed, 0 failed; iOS Executed 904 tests, with 0 failures (0 unexpected); JVM 1089 tests, 0 failed, one variant (play debug; XML written 23:59:21). On the way: stage 1 iOS 894; stage 1b iOS 897; stage 2 JVM 1078; fix
+wave iOS 903, JVM 1088; sabotage pins +1 per shell.
+
+**Built.** iOS `Welcome.swift` (WelcomeCopy, WelcomeFlow with Back, WelcomeGate on `welcome/pending`, WelcomeLook
+through `SettingsSync.set` and Appearance's close, WelcomeProgress with `RuneInk`, the five screens) and
+`ProfileConfirm.swift` (NameRule 60, ProfileSave with one seam for Use, Not now and Remove, PictureConfirm as a page in
+the welcome and a sheet on Profile, DoneRow); Android `Welcome.kt`, `ProfileConfirm.kt` twins (the copy table read from
+the Swift file; `SaveLatch` against double saves; the keyboard's Done saves). The flag is written before D-175's mark;
+the welcome is a cover over the shell after the lock; About's replay row; `TypeScale.welcomeMark` 52 both shells;
+GUARANTEES.md #5 and About promise 5 (decision 171); CLAUDE.md 10's summary.
+
+**Progress** (decisions 192, 197): Norse, the winding road from the approved page: five runes ᚠ ᚢ ᚦ ᚨ ᚱ at 30 + 70i
+in a 340-wide frame, ink-centred (Core Text bounds; a pixel test holds every rune within 0.5 pt of its place), four
+cubic arches up, down, up, down, ending 14 pt short of each rune, a 2.2 pt gold fill with a spark at its front (0.9 s
+in-out), each lit rune drawn over a blurred copy of its own glyph (never a disc). Aurora a mint-to-cyan line with
+glowing nodes; Vardr Labs a bracketed segmented bar. A moment: Reduce Motion and Less motion land it at once, power
+saving does not still it.
+
+**Looks.** Controller's look on `d245-look` (iOS): W1 to W5 in Aurora and Norse; four polish items (field tap target,
+the carded field's double line, Back, the doubled "saved"), fixed in 4bad2cd. Stage 2's Android look on AVD `d245-look`
+(23 shots, `.drafts/d245/look/android/`). The fix wave's largest-text look on both (`.drafts/d245/look/largest/`):
+nothing clips; W1's places stack, W4's "More" takes its own row.
+
+**Review** (Opus, whole branch): Needs fixes. I1 Android reopened the welcome with the last run's state after an
+erase (fixed: a fresh session per showing); I2 the phone-only lines showed in a signed-in replay (hidden when signed
+in); I3 the largest text size (minimum heights, wrapping, looked at); minors (no re-save of an unchanged name, a double
+tap on Android, words instead of raw errors, dead code, a real seam for Not now, the G5 scan reads the copy table, step
+announcements) and twins (Android's 0.25 s crossfade with its chrome, the sheet on the page art) fixed in c59c013.
+
+**Sabotage** (`.drafts/d245/sab/`, two worktree lanes on c59c013): 50 rows, 26 iOS and 24 Android: 45 EXACT, 5 LISTED
+(predicted: shared `shouldShow`, the `SettingsSync.set` site count, the small-moment table, the progress test reading
+still poses), 0 BROADER, 0 compile errors. First pass 2 SURVIVED (I4 / A5: Skip could stop clearing the flag, guarded
+only by a `contains`); pinned by `testEveryExitClearsTheFlagAtTheRoot` / `every_exit_clears_the_flag_at_the_root`
+(e80825a) and re-run EXACT. Earlier: stage 1's ink row, the fix wave's 5 rows, all red.
+
 ## 4. Gap register (open, honest)
 
 ### 4.1 Blocking store-policy compliance later
@@ -26299,6 +26370,17 @@ setting record accepted from a GROUP log (now caught by two tests on each shell)
   (f) Setting records share the claim checks' 2,000 cap (CLOUD-SECURITY G-31 note, for the Fable audit).
   (g) Found by the look, not this unit: on iPhone in Norse at text size step 2 the Appearance title is cut to
   "APPEARAN..."; Android is not (a twin difference to fix).
+- **D-245's residue, stated not implied:**
+  (a) Not listened to with VoiceOver or TalkBack (the labels and the step announcements are tested, not heard).
+  (b) The picture sheet at the largest text size, and erase-then-welcome on iOS, were not looked at.
+  (c) Android's picture sheet keeps Android's rounded bottom-sheet shape with a drag handle (the existing person-sheet
+  pattern), where iOS presents its own sheet; both stand on the theme's page art.
+  (d) Android has no pixel test of the rune placement on the road (the geometry and the font's side bearings are
+  tested; the look shows them on the road); iOS has one.
+  (e) W5 names Just me only once U10 lands (decision 180).
+  (f) A staged photo does not survive an Android activity re-creation (a theme or lock change mid-step): the person
+  picks it again.
+  (g) Not on a real phone.
 - **No local profile name.** The no-account path has nothing a user can open
   and later attach an account to. When an account is added its name should
   seed the profile and stay editable.
@@ -29115,3 +29197,5 @@ t and import (D-119): GUARANTEES #4 is now true
 2026-10-20 (D-243): the Norse theme comes alive on both phones: the rising runes glow and flare now and then, each in its own lane; the Balance card gets its own rising runes and its rune glows; the ring of runes round your picture on You turns slowly; and Norse cards carry a thin gold glow. Everything holds still with Reduce Motion or Less motion, and the art pauses when the phone saves power. On iPhone the sign-in card now shows the Norse edges as Android does. Ships in 0.5.1.
 
 2026-10-20 (D-244): with an account, your look and your default currency follow you to your other phones: the theme, light or dark, text size, Less motion, haptics, the app icon and the default currency. A phone that signs in takes your account's settings. Without an account nothing leaves the phone, and with sync off changes stay where they are. The app lock and its timeout stay on each phone. The privacy page says so. Ships in 0.5.1, after the privacy page is published.
+
+2026-10-21 (D-245): a new install now opens with a short welcome: what is where, a theme to pick (it changes as you tap), your name and your picture, each saved only when you say so, then a choice to start a group or look around. Every step can be skipped and none mentions an account. In Norse the progress is a winding road between five runes that light as you go. On You, choosing a picture now asks before it is saved and shared. About can show the welcome again. Guarantee 5 now says plainly that sharing a group with other people's phones needs an account.
