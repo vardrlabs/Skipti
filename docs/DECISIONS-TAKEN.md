@@ -1323,6 +1323,36 @@ https://claude.ai/artifact/FwwzuzRkyyxiuGvJKNMPCG (v1); briefs `.drafts/u9/brief
 - **Risk if wrong:** the page runes' glow reads fainter than you want; raising it means loosening a contrast floor.
 - **Overturn:** a larger blur at the same light, or (your call) a lower floor for the page.
 - **Status:** in D-246.
+
+### The D-247 chain, 182, 183, 201: Settle up's other amount and Undo, the settled words, the ring (your 167 to 170)
+
+#### 182: Settle up's Undo is a held write, not a dialog
+
+- **What:** a settle (whole or another amount) is held for 5 seconds: the card shows it settled, the toast says
+  "Settled with {name}. No money moved." with Undo; Undo writes nothing ("Not recorded."); the write lands when the time
+  runs out, at the next Settle, when Settle up, the group page or the removal flow goes away or starts, and when the app
+  leaves the front (iOS inactive, Android pause or stop, never a configuration change). It is checked by core and by the
+  ledger's own placing rules BEFORE it is held, so nothing can be refused after the card says settled. No confirmation
+  dialog.
+- **Why:** your "too many clicks" (feedback item 10) and guarantee 2's spirit (no interstitials); settlements have no
+  revision path, so a true after-the-fact Undo would need a new record shape in core and the rules.
+- **Risk if wrong:** the app crashing inside the 5 seconds loses a settle the person saw (they settle again).
+- **Overturn:** a confirmation dialog, or a reverse settlement as Undo.
+- **Status:** in D-247.
+
+#### 183: another amount is capped at the debt, checked again at the tap
+
+- **What:** "Another amount" refuses more than is owed ("That is more than {name} owes." / "That is more than you owe
+  {name}."), against the live debt when Settle is tapped, so a partial never flips who owes whom.
+- **Why:** an overpayment is a different event (the other person now owes); it deserves its own expense.
+- **Overturn:** allow it with a warning.
+- **Status:** in D-247.
+
+#### 201: a screen reader gets a longer Undo
+
+- **What:** with VoiceOver or TalkBack running the hold lasts 12 seconds and the toast's Undo is announced first.
+- **Why:** the review found Undo nearly unreachable by a screen reader inside 5 seconds.
+- **Status:** in D-247.
 ---
 
 ## High: user-visible behaviour or a privacy surface
