@@ -544,7 +544,7 @@ class DoneMomentsTest {
         }
         val shell = kt("AppRoot.kt").substringAfter("private fun HomeShell(").substringBefore("\n}\n")
         val cover = shell.indexOf("if (ToastCover.covers(route)) CoversShellToast()")
-        assertTrue("the shell covers its toast for such a route, before it draws one", cover in 0 until shell.indexOf("when (route) {"))
+        assertTrue("the shell covers its toast for such a route, before it draws one", cover in 0 until shell.indexOf("when (shown) {"))
         assertTrue("the add-person screen covers it", "CoversShellToast()" in body(kt("People.kt"), "AddPersonScreen"))
         val host = body(kt("DoneMoments.kt"), "DoneToastHost")
         assertTrue("the app's host hides its toast while covered", "center === DoneCenter && ToastCover.hides(AppLock.locked)" in host)
@@ -1076,7 +1076,7 @@ class DoneMomentsTest {
         assertTrue("the shell reads the rule", rule in shell)
         assertTrue("holds the cover while it applies", "if (pushCovered) CoversShellToast()" in shell)
         assertTrue("and forgets the push once it does not", "LaunchedEffect(pushCovered) { if (!pushCovered) pushCover = null }" in shell)
-        assertTrue("before it draws", shell.indexOf("if (pushCovered) CoversShellToast()") in 0 until shell.indexOf("when (route) {"))
+        assertTrue("before it draws", shell.indexOf("if (pushCovered) CoversShellToast()") in 0 until shell.indexOf("when (shown) {"))
     }
 
     /** A-R3: a first group made from New group plays its moment over Home's NEW page, as iOS's does (its Home is loaded

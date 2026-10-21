@@ -596,7 +596,7 @@ class SkiptiBarTest {
         assertTrue(window.contains("setDimAmount(0f)"))
         assertTrue("slides in unless reduce", window.contains("if (motion.reduce) EnterTransition.None else slideInHorizontally("))
         assertTrue("from the motion state", window.contains("val motion = rememberMotionState()"))
-        assertTrue("iOS's push, 250 ms", window.contains("tween(250)"))
+        assertTrue("iOS's push, 250 ms (D-250: ChangeMotion.PAGE)", window.contains("slideInHorizontally(ChangeMotion.tween(ChangeMotion.Kind.PAGE))") && ChangeMotion.millis(ChangeMotion.Kind.PAGE) == 250)
         assertTrue("rows in cards", list.contains("glassCard("))
         assertTrue("the page's backdrop", window.contains("backdropSource(backdrop)"))
         assertTrue(c.contains("Type.numeric(17, FontWeight.Normal"))

@@ -392,15 +392,18 @@ fun OverviewScreen(
                     SectionLabel(OverviewCopy.PEOPLE, dark, Modifier.padding(top = 4.dp), color = Tok.text(dark))
                     // D-234 wave (decision 102): iOS pads this card 14.
                     Column(Modifier.glassCard(dark, padding = 14)) {
-                        people.forEachIndexed { i, p ->
-                            if (i > 0) HorizontalDivider(color = Tok.hairline(dark))
+                        // D-250: rows keyed by what they show (a person per currency, repeats numbered: MotionKeys), never
+                        // by position, so a person who comes or goes moves and the rest close up.
+                        val keys = MotionKeys.unique(people.map { "${it.name}/${it.currencyCode}" })
+                        MovingRows(people.zip(keys), key = { it.second }) { (p, _), at ->
+                            if (at > 0) HorizontalDivider(color = Tok.hairline(dark))
                             PersonRow(p, groups, dark)
                         }
                     }
                 }
             }
         }
-        error?.let { Text(it, style = Type.body(dark).copy(color = Tok.owed(dark)), modifier = Modifier.glassCard(dark)) }
+        error?.let { RevealOnEnter { Text(it, style = Type.body(dark).copy(color = Tok.owed(dark)), modifier = Modifier.glassCard(dark)) } }
         Spacer(Modifier.height(8.dp))
     }
 }
@@ -541,8 +544,10 @@ private fun Hero(o: OverviewOut, groupCount: Int, dark: Boolean, onSettle: () ->
                     if (first.amountMinor > 0) OverviewCopy.GET_BACK else OverviewCopy.OWE,
                     style = Type.body(dark).copy(color = dim, fontSize = TypeScale.heroLine.sp),
                 )
-                Text(
+                // D-250: the amount rolls when it changes (after an Add, a settle), by core's signed integer.
+                MoneyText(
                     money(abs(first.amountMinor), first.currencyCode),
+                    first.amountMinor,
                     // The numbers face (O-1), as iOS draws it: a money amount is a figure, not a title.
                     style = Type.numericColored(TypeScale.heroAmount, Tok.onHero(dark), androidx.compose.ui.text.font.FontWeight.Bold),
                     // D-217 final fix: shrinks to fit as iOS's does (minimumScaleFactor 0.6), never cut.
@@ -604,7 +609,8 @@ private fun PersonRow(p: PersonNetOut, groups: List<NamedGroupWire>, dark: Boole
         }
         Column(horizontalAlignment = Alignment.End) {
             Text(OverviewCopy.verb(p.netMinor), style = Type.label(dark, 12).copy(color = colour))
-            Text(money(abs(p.netMinor), p.currencyCode), style = Type.numericColored(17, colour))
+            // D-250: the person's amount rolls when it changes.
+            MoneyText(money(abs(p.netMinor), p.currencyCode), p.netMinor, style = Type.numericColored(17, colour))
         }
     }
 }
@@ -832,12 +838,17 @@ fun GroupPage(
                 StatsRow(n, stats, lines.firstOrNull(), dark)
                 milestone?.let { MilestoneCard(it, dark) }
                 val next = GroupNext.pick(lines)
-                if (!isCopy && next != null) GroupNextCard(
-                    vaultPath, n, historyNames, next, remaining, dark, onError = { error = it },
-                    // D-224 fix wave (F7): the card's payment settled the group: the play is marked at once.
-                    onAllSettled = { celebration.settledHere(isCopy) },
-                )
-                cards.forEach { card ->
+                // D-250: the next card is one place (its payment changes in it); it comes in, and leaves sliding out
+                // when the last payment is settled, as Settle up's cards do.
+                MovingRows(listOfNotNull(next?.takeIf { !isCopy }), key = { "next" }, leave = RowLeave.SLIDE) { pick, _ ->
+                    GroupNextCard(
+                        vaultPath, n, historyNames, pick, remaining, dark, onError = { error = it },
+                        // D-224 fix wave (F7): the card's payment settled the group: the play is marked at once.
+                        onAllSettled = { celebration.settledHere(isCopy) },
+                    )
+                }
+                // D-250: request cards keyed by their request, in and out.
+                MovingRows(cards, key = { it.id }, leave = RowLeave.SLIDE, spacing = 14.dp) { card, _ ->
                     RequestCardView(
                         card, dark, canSettleUp = lines.any { it.viewerNetMinor != 0L }, balance = cardBalances[card.id], busy = cardBusy,
                         onDecline = { decline(card.item, n) },
@@ -882,7 +893,8 @@ fun GroupPage(
                 if (lines.isNotEmpty()) {
                     SectionLabel(OverviewCopy.WHO_OWES, dark, color = Tok.text(dark))
                     val names = LedgerStore.balanceNames(n, historyNames)
-                    lines.forEach { line ->
+                    // D-250: one card per currency, keyed by it.
+                    MovingRows(lines, key = { it.currencyCode }, spacing = 14.dp) { line, _ ->
                         Box(Modifier.glassCard(dark)) { BalanceLineView(line, names, n.selfId, dark) }
                     }
                 }
@@ -892,7 +904,8 @@ fun GroupPage(
                 } else {
                     // D-234 wave (decision 102): iOS pads this card 14.
                     Column(Modifier.glassCard(dark, padding = 14)) {
-                        recent.forEachIndexed { i, e ->
+                        // D-250: keyed by the expense (iOS's `\.element.id`, not its place), in and out.
+                        MovingRows(recent, key = { it.id }) { e, i ->
                             if (i > 0) HorizontalDivider(color = Tok.hairline(dark))
                             Row(
                                 Modifier
@@ -930,7 +943,8 @@ fun GroupPage(
             // D-247 fix wave (I1): a held settle whose write failed (its window ended, the page went, SKIPTI left the
             // front) says so here too, as on Settle up.
             (error ?: SettleHold.shared.failure)?.let {
-                Text(it, style = Type.body(dark).copy(color = Tok.owed(dark)), modifier = Modifier.glassCard(dark))
+                // D-250: the line rises in (iOS's `.reveal`).
+                RevealOnEnter { Text(it, style = Type.body(dark).copy(color = Tok.owed(dark)), modifier = Modifier.glassCard(dark)) }
             }
             Spacer(Modifier.height(8.dp))
         }
@@ -1020,14 +1034,14 @@ private fun GroupHeader(n: NamedGroupWire, dark: Boolean, isCopy: Boolean, onPeo
 private fun StatsRow(n: NamedGroupWire, stats: GroupStatsOut?, net: BalanceLineOut?, dark: Boolean) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         val zero = money(0, n.group.settlementCurrency)
-        Stat(OverviewCopy.TOTAL_SPENT, stats?.spent?.firstOrNull()?.let { money(it.amountMinor, it.currencyCode) } ?: zero, Tok.text(dark), dark, Modifier.weight(1f))
-        Stat(OverviewCopy.YOUR_SHARE, stats?.yourShare?.firstOrNull()?.let { money(it.amountMinor, it.currencyCode) } ?: zero, Tok.text(dark), dark, Modifier.weight(1f))
+        Stat(OverviewCopy.TOTAL_SPENT, stats?.spent?.firstOrNull()?.let { money(it.amountMinor, it.currencyCode) } ?: zero, Tok.text(dark), dark, Modifier.weight(1f), stats?.spent?.firstOrNull()?.amountMinor ?: 0L)
+        Stat(OverviewCopy.YOUR_SHARE, stats?.yourShare?.firstOrNull()?.let { money(it.amountMinor, it.currencyCode) } ?: zero, Tok.text(dark), dark, Modifier.weight(1f), stats?.yourShare?.firstOrNull()?.amountMinor ?: 0L)
         if (net != null && net.viewerNetMinor != 0L) {
             Stat(
                 if (net.viewerNetMinor > 0) OverviewCopy.GET_BACK else OverviewCopy.OWE,
                 money(abs(net.viewerNetMinor), net.currencyCode),
                 if (net.viewerNetMinor > 0) Tok.owing(dark) else Tok.owed(dark),
-                dark, Modifier.weight(1f),
+                dark, Modifier.weight(1f), net.viewerNetMinor,
             )
         } else {
             Stat(OverviewCopy.SETTLED_SHORT, Placeholder.NONE, Tok.textDim(dark), dark, Modifier.weight(1f))
@@ -1051,7 +1065,7 @@ private class Loaded(
 )
 
 @Composable
-private fun Stat(label: String, value: String, colour: Color, dark: Boolean, modifier: Modifier) {
+private fun Stat(label: String, value: String, colour: Color, dark: Boolean, modifier: Modifier, minor: Long = 0L) {
     Column(
         modifier
             .background(Tok.surface(dark).copy(alpha = 0.8f), ThemeArt.panelShape(Appearance.theme, 14))
@@ -1064,8 +1078,10 @@ private fun Stat(label: String, value: String, colour: Color, dark: Boolean, mod
         Text(label, style = Type.bodyDim(dark).copy(fontSize = 12.sp), maxLines = 2)
         // D-221 fix wave (S11): iOS's 2 between the label and the value.
         Spacer(Modifier.height(2.dp))
-        Text(
+        // D-250: the value rolls when it changes (core's integer behind it).
+        MoneyText(
             value,
+            minor,
             style = Type.numericColored(TypeScale.statValue, colour),
             autoSize = amountAutoSize(TypeScale.statValue),
             maxLines = 1,

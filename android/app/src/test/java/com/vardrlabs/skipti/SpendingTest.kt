@@ -248,15 +248,15 @@ class SpendingTest {
         val shell = main("AppRoot.kt")
         assertTrue("onOpenSpending = { spendingOpen = SpendingOpen.HEADER }" in shell)
         assertTrue("onOpenSpending = { spendingOpen = SpendingOpen.CARD }" in shell)
-        assertTrue(Regex("""spendingOpen == SpendingOpen\.HEADER\) \{[^}]*SpendingScreen\(\s*vaultPath = vaultPath, dark = dark, fromJustMeHeader = true,""").containsMatchIn(shell))
-        assertTrue(Regex("""spendingOpen == SpendingOpen\.CARD\) \{[^}]*SpendingScreen\(\s*vaultPath = vaultPath, dark = dark, fromJustMeHeader = false,""").containsMatchIn(shell))
+        assertTrue(Regex("""page\.spending == SpendingOpen\.HEADER\) \{[^}]*SpendingScreen\(\s*vaultPath = vaultPath, dark = dark, fromJustMeHeader = true,""").containsMatchIn(shell))
+        assertTrue(Regex("""page\.spending == SpendingOpen\.CARD\) \{[^}]*SpendingScreen\(\s*vaultPath = vaultPath, dark = dark, fromJustMeHeader = false,""").containsMatchIn(shell))
         // The page reads the start without writing it; only a tap on the switch writes.
         val page = main("Spending.kt")
         assertTrue("val view = opened ?: SpendingPrefs.pageStart(fromJustMeHeader, SpendingPrefs.shownView)" in page)
         assertTrue("        opened = v\n        SpendingPrefs.setView(context, v)" in page)
         // The + over the page opens Add expense on Just me.
         assertTrue("onAdd = { route = if (SpendingPresence.shown) \"add/justme\" else \"add\" }" in shell)
-        assertTrue("startOnJustMe = route == \"add/justme\"" in shell)
+        assertTrue("startOnJustMe = shown == \"add/justme\"" in shell)
         assertTrue(SpendingOpen.covers(SpendingOpen.CARD, HomeTab.BALANCE))
         assertTrue(SpendingOpen.covers(SpendingOpen.HEADER, HomeTab.EXPENSES))
         assertFalse(SpendingOpen.covers(SpendingOpen.HEADER, HomeTab.BALANCE))

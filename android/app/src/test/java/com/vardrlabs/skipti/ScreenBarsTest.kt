@@ -411,7 +411,7 @@ class ScreenBarsTest {
         assertFalse("a 40 sp title", form.contains("Text(\"Sign in\", style = Type.display(dark))"))
         val root = src("AppRoot.kt")
         // the bar's button and BackHandler share one parent
-        assertTrue(root.contains("SignInScreen(vaultPath, onBack = { route = HomeRoutes.parent(route) })"))
+        assertTrue(root.contains("SignInScreen(vaultPath, onBack = { route = HomeRoutes.parent(shown) })"))
         // the confirmation keeps its title and has no back button
         assertTrue(src("AccountOwner.kt").contains("PushedBar(\"Sign in\", onBack = null"))
     }

@@ -1,5 +1,6 @@
 package com.vardrlabs.skipti
 
+import androidx.compose.animation.animateColorAsState
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
@@ -96,6 +97,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.EaseInOut
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -510,13 +512,16 @@ fun AccountHubScreen(
                 // it full screen. The viewer hangs on this always-present screen.
                 // D-221 (Design 4, L38, L39): the ring round the picture, in the ring's box; the picture and its
                 // viewer stay 104 and centred.
+                // D-250: the ring sweeps from the share it last drew (kept across You's pages, which draw You afresh on
+                // the way back) to the new one, the welcome's sweep; the Norse runes light one by one as it passes them.
+                val ringFill = rememberFill(if (facts != null) RuneRing.share(done, total) else null, memory = "you-ring").toDouble()
                 Box(Modifier.size(ThemeArt.m("ringBox").dp), contentAlignment = Alignment.Center) {
                     if (facts != null) {
                         // D-243: the ring turns on the art's clock (RingTurn); the picture over it does not.
                         if (Appearance.theme == AppTheme.NORSE) {
-                            RuneRing(done, total, dark, Modifier.artTurn { RingTurn.degrees(it) })
+                            RuneRing(done, total, dark, Modifier.artTurn { RingTurn.degrees(it) }, sweep = ringFill)
                         } else {
-                            CompletionRing(done, total, dark)
+                            CompletionRing(done, total, dark, sweep = ringFill)
                         }
                     }
                     AvatarView(avatar, name, 104.dp, dark)
@@ -675,12 +680,15 @@ fun AccountHubScreen(
                 // D-222 (L59, Design 4): Theme and Light or dark sit on the ground; Text size is one card. Each label is 8
                 // above its content.
                 SettingItem.THEME -> Column {
+                    // D-250: the person's theme change crossfades the window (a cut when motion is reduced).
+                    val themeView = LocalView.current
+                    val themeMotion = rememberMotionState()
                     SectionLabel(AppearanceCopy.CARDS[0], dark)
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         AppTheme.entries.forEach { theme ->
                             ThemeCard(theme, Appearance.theme == theme, dark, Modifier.weight(1f)) {
-                                Appearance.setTheme(context, theme)
+                                ThemeCrossfade.change(themeView, themeMotion.reduce) { Appearance.setTheme(context, theme) }
                             }
                         }
                     }
@@ -1228,6 +1236,11 @@ private fun ThemeSwatch(theme: AppTheme) {
 @Composable
 private fun ModeControl(dark: Boolean) {
     val context = LocalContext.current
+    // D-250: one chosen pill that slides between the segments (the switch's travel), the words' colours easing, and the
+    // mode change crossfading the window; a cut when motion is reduced.
+    val view = LocalView.current
+    val reduce = rememberMotionState().reduce
+    val places = remember { PillPlaces() }
     val choice = ModeChoice.shown(Appearance.theme, Appearance.mode)
     val shape = ThemeArt.pillShape(Appearance.theme)
     val track = ThemeArt.m("modeTrack")
@@ -1239,13 +1252,23 @@ private fun ModeControl(dark: Boolean) {
         Modifier
             .fillMaxWidth()
             .heightIn(min = ThemeArt.m("touchTarget").dp)
-            .alpha(if (choice.enabled) 1f else ButtonLook.DISABLED_ALPHA),
+            .alpha(if (choice.enabled) 1f else ButtonLook.DISABLED_ALPHA)
+            .pillTrack(places),
         contentAlignment = Alignment.Center,
     ) {
         Box(Modifier.matchParentSize().padding(vertical = margin.dp).background(Tok.accentSoft(dark), shape))
+        SlidingPill(
+            places, AppearanceMode.entries.indexOf(choice.chosen), shape, Tok.surface(dark),
+            shadow = ThemeArt.m("segmentShadowRadius").dp, modifier = Modifier.align(Alignment.TopStart),
+        )
         Row(Modifier.fillMaxWidth().padding(horizontal = inset.dp).selectableGroup(), verticalAlignment = Alignment.CenterVertically) {
-            AppearanceMode.entries.forEach { mode ->
+            AppearanceMode.entries.forEachIndexed { index, mode ->
                 val chosen = mode == choice.chosen
+                val words by animateColorAsState(
+                    if (chosen) Tok.text(dark) else Tok.textDim(dark),
+                    if (reduce) snap() else ChangeMotion.tween(ChangeMotion.Kind.CHANGE),
+                    label = "modeWords",
+                )
                 val size = TypeScale.segment
                 // Fix wave (look item 6): the segment is its words, one node, so TalkBack's node is the RadioButton
                 // itself with its text and state; the selection takes the full touch row, the pill sits inside it.
@@ -1258,17 +1281,15 @@ private fun ModeControl(dark: Boolean) {
                             selected = mode == choice.chosen,
                             enabled = choice.enabled,
                             role = Role.RadioButton,
-                            onClick = { Appearance.setMode(context, mode) },
+                            onClick = { ThemeCrossfade.change(view, reduce) { Appearance.setMode(context, mode) } },
                         )
                         .padding(vertical = (margin + inset).dp)
-                        .then(
-                            if (chosen) Modifier.shadow(ThemeArt.m("segmentShadowRadius").dp, shape).background(Tok.surface(dark), shape)
-                            else Modifier,
-                        )
+                        // D-250: the chosen pill is drawn once, under the words, and slides ([SlidingPill]).
+                        .pillPlace(places, index)
                         .heightIn(min = (track - 2 * inset).dp)
                         .wrapContentHeight()
                         .padding(horizontal = 4.dp),
-                    style = Type.name(dark, TypeScale.segment.toInt()).copy(color = if (chosen) Tok.text(dark) else Tok.textDim(dark)),
+                    style = Type.name(dark, TypeScale.segment.toInt()).copy(color = words),
                     textAlign = TextAlign.Center,
                     maxLines = 1,
                     softWrap = false,

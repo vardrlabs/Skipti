@@ -6,6 +6,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -72,6 +73,10 @@ import kotlin.math.ceil
 class Backdrop internal constructor(internal val content: GraphicsLayer?, internal val blurred: GraphicsLayer? = null) {
     /** Whether [content] holds the drawing of a source still on screen. State: a pane redraws when it changes. */
     internal var recorded by mutableStateOf(false)
+    /** D-250: bumped when a source goes away. Every source reads it while drawing, so during a page's slide (two pages
+     *  record into one backdrop for a moment) the page that stays draws, and records, again once the other has gone,
+     *  and the bars never keep the leaving page's picture. */
+    internal var sourcesGone by mutableIntStateOf(0)
     /** The source's place in the window, px. */
     internal var sourceOffset = Offset.Zero
     /** The bars over this page. State: a bar that arrives or leaves redraws the source (its cut-out changes). */
@@ -185,10 +190,16 @@ fun rememberBackdrop(): Backdrop {
 /** The page's scrolling content: put it on the viewport-sized node, before the scroll modifier. */
 @Composable
 fun Modifier.backdropSource(backdrop: Backdrop): Modifier {
-    DisposableEffect(backdrop) { onDispose { backdrop.recorded = false } }
+    DisposableEffect(backdrop) {
+        onDispose {
+            backdrop.recorded = false
+            backdrop.sourcesGone++
+        }
+    }
     return this
         .onGloballyPositioned { backdrop.sourceOffset = it.positionInWindow() }
         .drawWithContent {
+            @Suppress("UNUSED_VARIABLE") val gone = backdrop.sourcesGone
             val layer = backdrop.content
             val panes = backdrop.panes.toList()
             val blurring = layer != null && panes.any { it.blurs }

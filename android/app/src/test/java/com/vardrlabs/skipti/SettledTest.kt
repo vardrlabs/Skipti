@@ -369,7 +369,7 @@ class SettledTest {
     @Test
     fun the_group_page_order() {
         val page = body("OverviewTab.kt", "fun GroupPage(")
-        val anchors = listOf("GroupHeader(n,", "SettledCard(", "StatsRow(", "MilestoneCard(", "GroupNextCard(", "cards.forEach { card ->")
+        val anchors = listOf("GroupHeader(n,", "SettledCard(", "StatsRow(", "MilestoneCard(", "GroupNextCard(", "MovingRows(cards, key = { it.id }")
         val at = anchors.map { a -> page.indexOf(a).also { assertTrue("the page draws $a", it >= 0) } }
         assertEquals("in order: $anchors at $at", at.sorted(), at)
         for (a in anchors) assertEquals("$a once", 1, page.split(a).size - 1)
@@ -413,7 +413,7 @@ class SettledTest {
         assertTrue("core's percent", "\"\${SettledSummary.percent(b.basisPoints)}%\"" in card)
         assertTrue("the percent's size", "TypeScale.settledPercent" in card)
         assertTrue("the label", "SectionLabel(SettledCopy.LABEL" in card)
-        assertTrue("the big meter", "SettledMeter(SettledMeters.fraction(b.basisPoints), big = true, dark)" in card)
+        assertTrue("the big meter (D-250: sweeping)", "SettledMeter(rememberFill(SettledMeters.fraction(b.basisPoints).toDouble()), big = true, dark)" in card)
         val file = main("Settled.kt")
         for (banned in listOf("NumberFormat", "String.format", "DecimalFormat", "\"%.")) assertFalse("no $banned", banned in file)
     }
@@ -430,7 +430,7 @@ class SettledTest {
         assertFalse("Settle up writes nothing itself: the hold does", "SettleAll.record(" in screen || "SettleAll.append(" in screen)
         assertEquals("one append, in SettleAll", 1, main("SettleAll.kt").split("appendSettlement(").size - 1)
         for (f in listOf("Settled.kt", "OverviewTab.kt")) assertFalse("$f appends nothing itself", "appendSettlement(" in main(f) || "settlementFor(" in main(f))
-        assertTrue("never in a copy", "if (!isCopy && next != null) GroupNextCard(" in body("OverviewTab.kt", "fun GroupPage("))
+        assertTrue("never in a copy", "MovingRows(listOfNotNull(next?.takeIf { !isCopy }), key = { \"next\" }, leave = RowLeave.SLIDE) { pick, _ ->\n                    GroupNextCard(" in body("OverviewTab.kt", "fun GroupPage("))
         assertTrue("the compact button", "compact = true" in card)
         assertTrue("Settle, Settling", "if (settling) SettledCopy.SETTLING else SettledCopy.SETTLE" in card)
         assertTrue("the sentence", "SettleAllCopy.sentence(pick.youOwe, other)" in card)
@@ -681,7 +681,7 @@ class SettledTest {
         assertTrue("the shell holds one per group (S8), in memory", held >= 0)
         assertFalse("never saved", "rememberSaveable { HashMap<String, CelebrationState>" in root)
         assertFalse("no longer one per open group", "remember(openGroup) { CelebrationState() }" in root)
-        assertTrue("above the routes, so a pushed page, another tab or another group keeps it", held < root.indexOf("    when (route) {"))
+        assertTrue("above the routes, so a pushed page, another tab or another group keeps it", held < root.indexOf("    when (shown) {"))
         assertTrue("each group's own, handed to its page", "celebration = celebrations.getOrPut(id) { CelebrationState() }," in root)
         // S8: a pending play is dropped when a later load finds the group unsettled; the play ends on ON_PAUSE.
         assertTrue("a stale pending is cleared", "if (!after) celebration.pending = false" in load)

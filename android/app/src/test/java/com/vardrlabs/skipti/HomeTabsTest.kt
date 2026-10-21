@@ -233,11 +233,11 @@ class HomeTabsTest {
     @Test
     fun every_page_under_the_tab_bar_keeps_it_clear() {
         val shell = main("AppRoot.kt").substringAfter("private fun HomeShell(")
-        val start = shell.indexOf("when (selectedTab) {")
+        val start = shell.indexOf("when (page.tab) {") // D-250: the tab's page reads its own place
         // D-224: the first group's overlay sits between the pages and the bar; it is not a page.
         val end = shell.indexOf("DoneOverlay(donePlay, dark)", start)
         assertTrue("the tab switch is found: $start, $end", start >= 0 && end > start)
-        val pages = Regex("""^\s*(?:\} \?: if \([^)]*\) \{\s*)?(?:HomeTab\.[A-Z, .]+->\s*(?:openGroup\?\.let \{ id ->)?\s*)?([A-Z][A-Za-z]+)\(""", RegexOption.MULTILINE)
+        val pages = Regex("""^\s*(?:\} \?: if \([^)]*\) \{\s*)?(?:HomeTab\.[A-Z, .]+->\s*(?:page\.group\?\.let \{ id ->)?\s*)?([A-Z][A-Za-z]+)\(""", RegexOption.MULTILINE)
             .findAll(shell.substring(start, end)).map { it.groupValues[1] }.toSet()
         // D-249: Your spending's page, over Balance (the card) or Expenses (the Just me header).
         assertEquals(setOf("GroupPage", "SpendingScreen", "OverviewScreen", "GroupsTab", "ExpenseListScreen", "SettleAllScreen"), pages)

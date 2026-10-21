@@ -164,13 +164,26 @@ object StepCopy {
  *  `Math.round(24 x done / total)` (half up) in integers. */
 object RuneRing {
     fun lit(done: Int, total: Int): Int = if (total <= 0) 0 else (48 * done + total) / (2 * total)
+
+    /** D-250: done of total as a share of the ring (0 with no steps, never past the whole). The twin of iOS's
+     *  `RuneRing.share(done:total:)`. */
+    fun share(done: Int, total: Int): Double = if (total <= 0) 0.0 else done.coerceIn(0, total).toDouble() / total
+
+    /** D-250: the runes lit at a share between two counts while the ring sweeps ([rememberFill]): the Look Book's half-up
+     *  rounding of 24 times the share. At rest the integer form ([lit]) decides, so no float ever picks a resting ring.
+     *  The twin of iOS's `RuneRing.lit(share:)`. */
+    fun lit(share: Double): Int = kotlin.math.floor(Runes.FUTHARK.size * share.coerceIn(0.0, 1.0) + 0.5 + 1e-9).toInt()
+
+    /** D-250: what the ring lights at [fill]: at rest (the share of [done] of [total]) the count's own rounding, mid-sweep
+     *  the share's. */
+    fun litAt(fill: Double, done: Int, total: Int): Int = if (fill == share(done, total)) lit(done, total) else lit(fill)
 }
 
 /** D-221 (Design 4, L38): Aurora's and Vardr Labs' ring round You's picture: the `ringTrack` circle and the `ring` arc
  *  from 12 o'clock clockwise over [done] of [total], round caps; no arc at 0, the whole circle at [total]. Decorative:
  *  hidden from TalkBack (the pill carries the count). The twin of iOS's `CompletionRing`. */
 @Composable
-fun CompletionRing(done: Int, total: Int, dark: Boolean) {
+fun CompletionRing(done: Int, total: Int, dark: Boolean, sweep: Double = RuneRing.share(done, total)) {
     val radius = ThemeArt.m("ringRadius")
     val stroke = ThemeArt.m("ringStroke")
     val track = Tok.ringTrack(dark)
@@ -183,7 +196,8 @@ fun CompletionRing(done: Int, total: Int, dark: Boolean) {
             drawArc(
                 color = fill,
                 startAngle = -90f,
-                sweepAngle = 360f * done.coerceAtMost(total) / total,
+                // D-250: the share drawn ([rememberFill] sweeps it between two counts; done of total at rest).
+                sweepAngle = 360f * sweep.coerceIn(0.0, 1.0).toFloat(),
                 useCenter = false,
                 topLeft = Offset(center.x - r, center.y - r),
                 size = Size(2 * r, 2 * r),
@@ -201,9 +215,10 @@ fun CompletionRing(done: Int, total: Int, dark: Boolean) {
  *  halo is gone); [modifier] lets You's hero turn the ring ([artTurn]); the done check turns it on its moment's own
  *  clock. Decorative: hidden from TalkBack. The twin of iOS's `RuneRing` view. */
 @Composable
-fun RuneRing(done: Int, total: Int, dark: Boolean, modifier: Modifier = Modifier) {
+fun RuneRing(done: Int, total: Int, dark: Boolean, modifier: Modifier = Modifier, sweep: Double = RuneRing.share(done, total)) {
     val density = LocalDensity.current
-    val lit = RuneRing.lit(done, total)
+    // D-250: at rest the count's own rounding; mid-sweep the share's, so the runes light one by one as it passes them.
+    val lit = RuneRing.litAt(sweep, done, total)
     val radius = ThemeArt.m("runeRingRadius")
     val style = Type.rune(runeSize("runeRingSize", density))
     val ring = Tok.ring(dark)
@@ -256,8 +271,10 @@ fun ProgressPill(done: Int, total: Int, dark: Boolean) {
             Box(Modifier.size(ThemeArt.m("progressDot").dp).background(Tok.ring(dark), CircleShape))
             Spacer(Modifier.width(ThemeArt.m("progressDotGap").dp))
         }
-        Text(
+        // D-250: the count rolls as a step is done (iOS's `.moneyChange(Int64(done))`).
+        MoneyText(
             StepCopy.pill(done, total),
+            done.toLong(),
             style = Type.label(dark).copy(color = ThemePills.text(PillTone.ACCENT, dark), fontSize = TypeScale.pill.sp),
         )
     }

@@ -24,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -331,9 +332,10 @@ fun ExpenseListScreen(
                                 }
                             }
                             actionError?.let {
-                                Text(it, style = Type.bodyDim(dark).copy(color = Tok.owed(dark)))
+                                // D-250: the line rises in (iOS's `.reveal`).
+                                RevealOnEnter { Text(it, style = Type.bodyDim(dark).copy(color = Tok.owed(dark))) }
                             }
-                            ExpenseSections.build(expenses, filter).forEach { section ->
+                            ExpenseSections.build(expenses, filter).forEach { section -> key(section.groupId ?: "") {
                                 val named = groups.firstOrNull { it.group.id == section.groupId }
                                 val justMe = section.groupId == null
                                 Row(
@@ -360,7 +362,9 @@ fun ExpenseListScreen(
                                 }
                                 // D-234 (L12-d): iOS's 14 inside the group's card.
                                 if (section.expenses.isNotEmpty()) Column(Modifier.glassCard(dark, padding = 14)) {
-                                    section.expenses.forEachIndexed { index, expense ->
+                                    // D-250: keyed by the expense: a deleted row slides out (the rows below close up) and
+                                    // an Undo brings it back; a filter's new rows come in.
+                                    MovingRows(section.expenses, key = { it.id }, leave = RowLeave.SLIDE) { expense, index ->
                                         if (index > 0) HorizontalDivider(color = Tok.hairline(dark))
                                         Box {
                                             ExpenseRow(
@@ -407,7 +411,7 @@ fun ExpenseListScreen(
                                         }
                                     }
                                 }
-                            }
+                            } }
                         }
                     }
                 }

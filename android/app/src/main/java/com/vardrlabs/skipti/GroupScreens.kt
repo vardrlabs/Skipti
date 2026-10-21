@@ -3,6 +3,7 @@ package com.vardrlabs.skipti
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -13,6 +14,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
@@ -254,27 +257,27 @@ fun CreateGroupScreen(vaultPath: String, onCreated: (String) -> Unit, onBack: ()
         SectionLabel("People", dark)
         // Every row gone leaves no empty card: the label, then "Add a person".
         if (people.rows.isNotEmpty()) {
-            ListCard(dark) {
-                people.rows.forEachIndexed { index, r ->
-                    row {
-                        key(r.id) {
-                            NameField(
-                                r.name,
-                                { text -> people = people.rename(r.id, text) },
-                                "Name",
+            // D-250: ListCard's look, its rows moving: a person added comes in and one removed leaves, the rows below
+            // closing up (keyed by the row's id, as before); a cut when motion is reduced.
+            ListCardColumn(dark) {
+                MovingRows(people.rows, key = { it.id }) { r, at ->
+                    if (at > 0) ListCardHairline(dark)
+                    val index = people.rows.indexOfFirst { it.id == r.id }.coerceAtLeast(0)
+                    NameField(
+                        r.name,
+                        { text -> people = people.rename(r.id, text) },
+                        "Name",
+                        dark,
+                        spoken = "Person ${index + 1}",
+                        focus = rowFocus.getOrPut(r.id) { FocusRequester() },
+                        onNext = { returned(r.id) },
+                        trailing = {
+                            RemoveGlyphButton(
+                                if (r.name.isBlank()) "Remove person ${index + 1}" else "Remove ${r.name}",
                                 dark,
-                                spoken = "Person ${index + 1}",
-                                focus = rowFocus.getOrPut(r.id) { FocusRequester() },
-                                onNext = { returned(r.id) },
-                                trailing = {
-                                    RemoveGlyphButton(
-                                        if (r.name.isBlank()) "Remove person ${index + 1}" else "Remove ${r.name}",
-                                        dark,
-                                    ) { people = people.remove(r.id) }
-                                },
-                            )
-                        }
-                    }
+                            ) { people = people.remove(r.id) }
+                        },
+                    )
                 }
             }
         }
@@ -816,7 +819,7 @@ internal fun PrimaryAction(
             border = BorderStroke(1.dp, color),
             colors = ButtonDefaults.outlinedButtonColors(contentColor = color, disabledContentColor = color),
             contentPadding = padding,
-            modifier = modifier.heightIn(min = minHeight).alpha(if (enabled) 1f else ButtonLook.DISABLED_ALPHA),
+            modifier = modifier.heightIn(min = minHeight).alpha(enabledAlpha(enabled)),
         ) {
             Text(ButtonLook.label(label, Appearance.theme), style = Type.label(dark, size).copy(color = LocalContentColor.current, letterSpacing = 0.08.em))
         }
@@ -837,7 +840,7 @@ internal fun PrimaryAction(
         ),
         shape = ThemeArt.controlShape(Appearance.theme),
         contentPadding = padding,
-        modifier = modifier.heightIn(min = minHeight).alpha(if (enabled) 1f else ButtonLook.DISABLED_ALPHA),
+        modifier = modifier.heightIn(min = minHeight).alpha(enabledAlpha(enabled)),
     ) {
         Text(label, style = Type.label(dark, size).copy(color = LocalContentColor.current))
     }
@@ -886,7 +889,7 @@ internal fun TonalAction(
             enabled = enabled,
             shape = RectangleShape,
             colors = ButtonDefaults.textButtonColors(contentColor = words, disabledContentColor = words),
-            modifier = modifier.heightIn(min = 52.dp).alpha(if (enabled) 1f else ButtonLook.DISABLED_ALPHA),
+            modifier = modifier.heightIn(min = 52.dp).alpha(enabledAlpha(enabled)),
         ) {
             Text(ButtonLook.label(label, Appearance.theme, keepsCase), style = Type.label(dark).copy(color = LocalContentColor.current, letterSpacing = 0.08.em))
         }
@@ -908,7 +911,7 @@ internal fun TonalAction(
             disabledContentColor = if (destructive) Tok.owed(dark) else Tok.accent(dark),
         ),
         shape = ThemeArt.controlShape(Appearance.theme),
-        modifier = modifier.heightIn(min = 52.dp).alpha(if (enabled) 1f else ButtonLook.DISABLED_ALPHA),
+        modifier = modifier.heightIn(min = 52.dp).alpha(enabledAlpha(enabled)),
     ) {
         Text(
             label,
@@ -921,10 +924,13 @@ internal fun TonalAction(
 internal fun ErrorLine(message: String, dark: Boolean, detail: Boolean = false) {
     // D-217 look fix 3: iOS draws some error lines at 14 (Import, the erase failure), the rest at the body size.
     val base = Type.bodyDim(dark).copy(color = Tok.owed(dark))
-    Text(
-        message,
-        style = if (detail) base.copy(fontSize = TypeScale.detail.sp) else base,
-        modifier = Modifier.semantics { contentDescription = message },
-    )
+    // D-250: an error line rises in when it appears (iOS's `.reveal`) and leaves at once.
+    RevealOnEnter {
+        Text(
+            message,
+            style = if (detail) base.copy(fontSize = TypeScale.detail.sp) else base,
+            modifier = Modifier.semantics { contentDescription = message },
+        )
+    }
 }
 

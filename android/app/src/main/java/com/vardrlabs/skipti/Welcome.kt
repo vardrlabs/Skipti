@@ -1036,6 +1036,8 @@ fun WelcomeScreen(vaultPath: String, session: WelcomeSession, onClose: (WelcomeE
     // The step change ([WelcomeFade]): `to` is the step drawn, `from` the one leaving; one crossfade per change. Under
     // reduced motion the page changes at once.
     val reduce = rememberMotionState().reduce
+    // D-250: the look picked here crossfades the window (ThemeCrossfade; a cut when reduced).
+    val lookView = androidx.compose.ui.platform.LocalView.current
     var from by remember { mutableStateOf(s.step) }
     var to by remember { mutableStateOf(s.step) }
     var turn by remember { mutableIntStateOf(0) }
@@ -1131,7 +1133,7 @@ fun WelcomeScreen(vaultPath: String, session: WelcomeSession, onClose: (WelcomeE
                             ) {
                                 when (page) {
                                     WelcomeStep.WELCOME -> WelcomePage(dark, signedIn)
-                                    WelcomeStep.LOOK -> LookPage(dark) { WelcomeLook.choose(context, it) }
+                                    WelcomeStep.LOOK -> LookPage(dark) { ThemeCrossfade.change(lookView, reduce) { WelcomeLook.choose(context, it) } }
                                     WelcomeStep.NAME -> NamePage(s, dark, onSave = { saveName() }, onReturn = { saveName(returned = true) })
                                     WelcomeStep.PICTURE -> PicturePage(s, dark, signedIn, onPhoto = {
                                         pickPhoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))

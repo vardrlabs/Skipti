@@ -117,6 +117,14 @@ sealed class RelativeWhen {
 sealed class LedgerLine {
     abstract val currency: String?
 
+    /** D-250: core's net behind the line (owed to you positive, owed by you negative, settled 0), for its roll. */
+    val amountMinor: Long
+        get() = when (this) {
+            is Owed -> minor
+            is YouOwe -> -minor
+            Settled -> 0L
+        }
+
     /** Money coming to you ("Owed", in owing). */
     data class Owed(val minor: Long, override val currency: String) : LedgerLine()
 
@@ -280,8 +288,10 @@ fun LedgerCard(
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
         }
-        Text(ledgerLineText(line, dark), style = Type.bodyDim(dark).copy(fontSize = TypeScale.detail.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
-        basisPoints?.let { bps -> SettledMeter(SettledMeters.fraction(bps), big = false, dark) }
+        // D-250: the line's amount rolls when it changes (core's integer behind it), the small meter sweeps.
+        MoneyText(ledgerLineText(line, dark), line.amountMinor, style = Type.bodyDim(dark).copy(fontSize = TypeScale.detail.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+        val meter = rememberFill(basisPoints?.let { SettledMeters.fraction(it).toDouble() })
+        basisPoints?.let { SettledMeter(meter, big = false, dark) }
     }
 }
 

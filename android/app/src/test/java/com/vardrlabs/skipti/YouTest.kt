@@ -104,7 +104,7 @@ class YouTest {
         assertEquals("a chevron row speaks as You's did", YouRows.spoken("Security", listOf("App lock off")), ListRows.spoken("Security", listOf("App lock off"), RowTrailing.Chevron))
         assertTrue(
             "the list card pads 0, then the list's own padding",
-            "Column(modifier.glassCard(dark, padding = 0).padding(horizontal = ThemeArt.m(\"listPadH\").dp, vertical = ThemeArt.m(\"listPadV\").dp))" in rows,
+            "Column(modifier.glassCard(dark, padding = 0).then(sizing).padding(horizontal = ThemeArt.m(\"listPadH\").dp, vertical = ThemeArt.m(\"listPadV\").dp), content = content)" in rows,
         )
         for (gone in listOf("YouCopy.SECURITY_LINE", "AboutInfo.versionLine(", "AppearanceCopy.summary", "fontSize = 13.sp")) {
             assertFalse("AccountHubScreen.kt still has $gone", gone in src)

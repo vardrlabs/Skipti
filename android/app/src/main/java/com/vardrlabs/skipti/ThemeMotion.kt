@@ -7,6 +7,12 @@ import android.content.IntentFilter
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.EaseInOut
+import androidx.compose.animation.core.Easing
+import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.TweenSpec
+import androidx.compose.animation.core.snap
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -1654,4 +1660,147 @@ fun Modifier.heroArt(dark: Boolean, shape: Shape): Modifier = composed {
 private inline fun DrawScope.clippedTo(shape: Shape, block: DrawScope.() -> Unit) {
     val outline = shape.createOutline(size, layoutDirection, this)
     clipPath(Path().apply { addOutline(outline) }, block = block)
+}
+
+// MARK: - D-250 (decision 194): the change motion
+
+/** D-250 (decision 194, the fluidity sweep): how a UI CHANGE moves: a page pushed or a sheet raised, a row in or out, a
+ *  line appearing, an amount or a count changing, a pill sliding, a button brightening, a meter or the ring filling,
+ *  the theme changing. The twin of iOS's `ChangeMotion` (ThemeMotion.swift); every value POINTS at one that already
+ *  exists, and ThemeMotionTest reads iOS's table so the twins cannot drift. These are changes, not art: Reduce Motion
+ *  and Less motion (the door, [rememberMotionState]'s `reduce`) cut them; power saving never stills them (D-239: only
+ *  the art reads it), as it never stills a moment. */
+object ChangeMotion {
+    /** Rows in and out, a pill sliding, a button brightening, a state swapping: the switch thumb's travel, ease-in-out. */
+    val CHANGE: Double = ThemeArt.m("switchTravel").toDouble()
+    /** An amount or a count rolling, a line rising in: the toast's way in, on the toast's ease. */
+    const val NUMBER = ToastMotion.FADE_IN
+    val NUMBER_EASE: List<Double> = ToastMotion.EASE
+    /** How far a line rises as it appears ([Reveal]): the toast's rise, in dp. */
+    const val RISE = ToastMotion.RISE
+    /** A page: a push, a back, a sheet rising or falling ([PageMotion]); the pushed window's 250 ms. */
+    const val PAGE = 0.25
+    /** The settled meter and You's ring: the welcome's progress sweep, on its own ease ([WelcomeProgress.eased]). */
+    const val FILL = WelcomeProgress.SWEEP_SECONDS
+    /** A crossfade of the whole window (the person's theme or mode change): the bar's fade, tween(150). */
+    const val FADE = 0.15
+
+    enum class Kind { CHANGE, NUMBER, PAGE, FILL, FADE }
+
+    fun seconds(kind: Kind): Double = when (kind) {
+        Kind.CHANGE -> CHANGE
+        Kind.NUMBER -> NUMBER
+        Kind.PAGE -> PAGE
+        Kind.FILL -> FILL
+        Kind.FADE -> FADE
+    }
+
+    fun millis(kind: Kind): Int = (seconds(kind) * 1000).roundToInt()
+
+    /** iOS's `.easeInOut` is CSS ease-in-out, (0.42, 0, 0.58, 1): Compose's [EaseInOut]. */
+    fun easing(kind: Kind): Easing = when (kind) {
+        Kind.CHANGE, Kind.PAGE, Kind.FADE -> EaseInOut
+        Kind.NUMBER -> CubicBezierEasing(NUMBER_EASE[0].toFloat(), NUMBER_EASE[1].toFloat(), NUMBER_EASE[2].toFloat(), NUMBER_EASE[3].toFloat())
+        Kind.FILL -> FillEasing
+    }
+
+    /** The motion of [kind] (never a snap: a call site gates it as `if (reduce) snap() else ChangeMotion.tween(...)`,
+     *  the form ThemeMotionTest's door guard reads). */
+    fun <T> tween(kind: Kind): TweenSpec<T> = androidx.compose.animation.core.tween(millis(kind), easing = easing(kind))
+
+    /** The spec of [kind], a cut when [reduced]: the twin of iOS's `animation(_:reduced:)` (nil when reduced). Never
+     *  reads power saving. */
+    fun <T> spec(kind: Kind, reduced: Boolean): FiniteAnimationSpec<T> = if (reduced) snap() else tween(kind)
+
+    /** The fill's ease: [WelcomeProgress.eased], so the meter and the ring sweep exactly as the welcome's line does. */
+    val FillEasing: Easing = Easing { WelcomeProgress.eased(it.toDouble()).toFloat() }
+}
+
+/** D-250: where a page goes when the shell's route changes: a push slides in from the trailing edge over the page (which
+ *  shifts a third), back reverses it, a sheet rises from the bottom and falls back. The twin of what iOS's
+ *  NavigationStack and `.sheet` do by themselves. */
+enum class PageMove { PUSH, BACK, RISE, FALL, CUT }
+
+/** D-250: the direction of a route change, pure. Null is the tabs. A sheet is a route iOS presents as one
+ *  ([ToastCover.covers]); a back is a move to the route's parent ([HomeRoutes.parent]). */
+object PageMotion {
+    fun move(from: String?, to: String?): PageMove {
+        if (from == to) return PageMove.CUT
+        val fromSheet = ToastCover.covers(from)
+        val toSheet = ToastCover.covers(to)
+        // A route leaving for its parent (or the tabs) goes back: a sheet falls, a page slides back out.
+        if (from != null && (to == null || HomeRoutes.parent(from) == to)) return if (fromSheet && !toSheet) PageMove.FALL else PageMove.BACK
+        if (to != null && (from == null || HomeRoutes.parent(to) == from)) return if (toSheet && !fromSheet) PageMove.RISE else PageMove.PUSH
+        // Elsewhere: into a sheet rises, out of one falls, page to page pushes.
+        return when {
+            toSheet && !fromSheet -> PageMove.RISE
+            fromSheet && !toSheet -> PageMove.FALL
+            else -> PageMove.PUSH
+        }
+    }
+
+    /** A page inside a tab (a group's page, Your spending) over the tab's root: [from] and [to] are what the tab shows
+     *  (null: its root). Another tab is a cut (a tab switch never slides, as on iOS). */
+    fun tabMove(sameTab: Boolean, from: String?, to: String?): PageMove = when {
+        !sameTab || from == to -> PageMove.CUT
+        from == null -> PageMove.PUSH
+        to == null -> PageMove.BACK
+        else -> PageMove.PUSH
+    }
+}
+
+/** D-250: rows that come and go ([MovingRows]): the rows to draw, the new ones in order, each one that left kept where
+ *  it was (after the row it followed) until its slide out ends. Pure, so the keys' order is pinned by a JVM test. */
+object RowsMotion {
+    fun <K> merge(before: List<K>, now: List<K>): List<K> {
+        val out = now.toMutableList()
+        val present = now.toHashSet()
+        var last: K? = null
+        for (k in before) {
+            if (k in present) {
+                last = k
+                continue
+            }
+            val at = if (last == null) 0 else out.indexOf(last) + 1
+            out.add(at, k)
+            last = k
+        }
+        return out
+    }
+}
+
+/** D-250: an amount that changes rolls per character ([MoneyText]), the twin of iOS's `numericText`. */
+object MoneyChange {
+    /** Down when the new value is below the one shown (the first value counts up). The value is core's integer behind
+     *  the words (minor units, a count, basis points): never a Double made from money (ADR-0002). */
+    fun countsDown(last: Long?, value: Long): Boolean = value < (last ?: value)
+
+    /** The character slots of [text], keyed from the right (0 is the last character), so the digits that did not change
+     *  keep their slot and do not move. */
+    fun slots(text: String): List<Pair<Int, Char>> = text.mapIndexed { i, c -> (text.length - 1 - i) to c }
+}
+
+/** D-250: a meter or You's ring filling, from what was shown to what is now ([rememberFill]). */
+object FillMotion {
+    /** It sweeps only from a value already shown, and only with motion; the first value lands at once. */
+    fun sweeps(reduced: Boolean, seen: Double?): Boolean = !reduced && seen != null
+
+    /** The last share each [rememberFill] with a memory key drew, for as long as the app runs (memory only): You's ring
+     *  is drawn afresh when you come back from a page of You (Android's route), so it sweeps from what it showed, as
+     *  iOS's You does under its push. */
+    internal val shown = HashMap<String, Double>()
+}
+
+/** D-250: rows that have no id of their own (Home's people: one per name and currency) keyed by what they show, each
+ *  repeat numbered, so every key is unique and a row keeps its key while the rows around it come and go. The twin of
+ *  iOS's `MotionKeys`. */
+object MotionKeys {
+    fun unique(base: List<String>): List<String> {
+        val seen = HashMap<String, Int>()
+        return base.map { key ->
+            val n = seen[key] ?: 0
+            seen[key] = n + 1
+            if (n == 0) key else "$key#$n"
+        }
+    }
 }

@@ -255,7 +255,7 @@ class D248FixesTest {
         assertEquals(added, added.afterReturn(42).first)
         // The screen wires it: Next on every person row, the new row focused once composed, an empty last row closes.
         val create = src("GroupScreens.kt")
-        assertTrue("focus = rowFocus.getOrPut(r.id) { FocusRequester() },\n                                onNext = { returned(r.id) }," in create)
+        assertTrue("focus = rowFocus.getOrPut(r.id) { FocusRequester() },\n                        onNext = { returned(r.id) }," in create)
         assertTrue("val (next, row) = people.afterReturn(id)" in create)
         assertTrue("runCatching { rowFocus[id]?.requestFocus() }" in create)
         assertTrue("KeyboardActions(onNext = { onNext() })" in create)
