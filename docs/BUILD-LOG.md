@@ -300,6 +300,7 @@ surface; 0026 the WebAuthn relying-party ID, superseded by 0027: the RP ID is `s
 | D-247 | **Settle up's other amount and Undo, the settled words, the ring without a passcode, the creator fall-back (the founder's 167 to 170; mine 182, 183, 201).** Each Settle card gains "Another amount" ("How much was paid?", prefilled with the debt, capped at it against the live debt at the tap, parsed and checked by core). Every settle is held 5 s (12 s with a screen reader) behind the toast's Undo and checked by core and the ledger's placing rules before it is held; it lands at the timeout, the next Settle, leaving Settle up, the group page or the removal flow, or the app leaving the front; Undo writes nothing. "All settled" only when core says the whole group is; when you owe nothing but others still do, "You're settled in {group}" / "You don't owe anything here."; the count is the fewest-payments plan's ("1 payment to go"). The You ring drops its app-lock step on a phone that cannot lock (the app lock's own signal). A group this phone created shows its creator's options until the server's roles arrive (display only). Stage 1 iOS, stage 2 Android twin, a review fix wave (one settlement check for hold and append, a failed landing keeps its words and shows on the group page, the removal flow lands a held settle first, Android lands on pause too, the iOS toast takes touches only on Undo). | A crash inside the hold loses the settle; Settle up's cards are pairwise while the count is the plan's; not on a real phone. | `.drafts/u29/calls.md`, `.drafts/d246/plan.md` (its D-246 section is this unit), `.drafts/d247/` (stage reports, review, fixwave, look/, sab/, gate.log) |
 | D-248 | **The small bugs and friction (U29 to U31; decisions 184 to 186 and 202 to 204).** A typed amount follows the phone's decimal mark through a new core parser (`ffi_money_parse_typed(text, currency, decimal_mark)`; a comma is decimal only on a comma phone, an ambiguous "1.234" refused on one; files keep the strict parser) with prefills and the example in the phone's mark from core (`ffi_money_typed_digits`) and the words "Enter an amount like 12.50."; Return on the last New group row adds a person; a new expense focuses its amount; the "0" hint in the floored ground colour; "Add your name first." / "Create a group first."; blank tax, tip and item amounts are 0 and a blank exact row names its person; the delete Undo is a toast wherever an expense is deleted ("Not restored." if it fails); a new group opens its page; PlaceLost in words on iOS; bar titles and bar buttons stay between 17 and 20 on both phones, measured as each draws them against the back button and a growing Cancel, which also ends iOS Norse's "APPEARAN..." cut (a stale title width too). Not reproduced: "No groups yet" after the first group, the Aurora tile's square halo. Two implementer stages, a review fix wave (the review's I1: "1,234" read as 1.234 KD on a dot phone), a title wave and a bar-button wave from the looks. | Not on a real phone; the delete Undo restores within the toast's window only. | `.drafts/u29/calls.md`, `.drafts/d246/plan.md` (its D-247 section is this unit), `.drafts/d248/` (stage reports, review, fixwave, titles-report, look/, sab-ios/, stage2/, fix/, gate.log) |
 | D-249 | **Just me and All my spending (the founder's U10: 163 to 166, 175, 176, 180, 193; mine 187 to 191, 205 to 208).** Expenses that belong to no group: the existing Expense record in the personal scope (group none, payer you, shares [you: total]), never in Balance, the hero, People, Settle up or the group count; synced only through your own log (no rules or Functions change, no deploy). Home gains a full-width "Your spending" section below Your ledgers (ᛁ in Norse, your picture elsewhere; a Just me / All my spending switch; this month's total and a category bar), hidden by You > Appearance "Spending on Home" (both local to the phone). The page "Your spending": month switcher, totals per currency never converted, Where the money went with a table, the list, and in All my spending your share of every group expense, counted per group with that group's own "you" (core `ffi_spending`). Add expense's Ledger row puts Just me first and hides the split; the Ledger page shows each ledger's tile and "Since {Month Year} · {n} people" / "Only you". The Expenses tab's Just me section, Edit for Just me, Export Just me (personal only, dated), a Wallet file into Just me, the CSV's `category` column appended last, the no-group hero asking to start a group, and the welcome's last line naming Just me. Every expense write checks its people belong to its ledger (decision 208). | Moving an expense between Just me and a group is not offered (delete and add again); your share in a group you left is not counted; a real Wallet file not imported on a device; not on a real phone. | `.drafts/u10/brief.md`, `.drafts/d248/plan.md` (the D-249 spec, folder named before a renumbering), `.drafts/d248/u10-stage1-report.recovered.md`, `.drafts/d249/` (stage reports, review, fixwave, look/, sab-ios/, stage3/, fw/, gate.log), mock-up https://claude.ai/artifact/FwwzuzRkyyxiuGvJKNMPCG (v2) |
+| D-250 | **The fluidity sweep (the founder's 194; mine 209, 215).** Things move instead of jumping, on both phones and identically: `ChangeMotion` names the UI changes from values that already existed (change 0.2 s, number 0.2 s, page 0.25 s, fill 0.9 s, fade 0.15 s); amounts roll by core's integers (counting up or down, left-to-right single lines only, else a cut); rows slide in and out on stable keys (Settle up's cards, the group page, Home's people, Expenses, New group, the split section); lines and errors rise in; meters and the You ring fill as the welcome's road does; pills slide (Just me/All, Chart/Table, Light/Dark); the theme change crossfades (never over the lock); buttons brighten and dim; Android's pages push and return like iOS's (their own layers, the leaving page recorded once, the tab bar dropping outside the slide, the outgoing page taking no taps). Every helper is a cut under Reduce Motion or Less motion and never stilled by power saving. New Group's ungated `withAnimation` now passes the door. | Android pushes measure p90 27 to 32 ms on the emulator (a full-window slide's cost there): the real-phone check is owed (decision 215); predictive back not wired. | `.drafts/d249/plan.md` and `audit.md` (the D-250 plan), `.drafts/d250/` (stage reports, review, fixwave, rec/ (iOS and Android clips), stage2/, fix/gfx/, sab/, gate.log) |
 | D-55 | **The networking boundary + OTP sign-in, end to end against the real relay.** The largest architectural gap closed: the relay is complete (auth, passkeys, subject-owned authz, restart-proven persistence — 163 tests) and the iOS app contained ZERO networking code. Boundary: `RelayTransport` protocol — URLSessionRelayTransport (real, localhost:8080) and a stub both satisfy it; screens talk to IdentityService, never to URLSession (ADR-0025's rule applied to networking). **D-27's contract is structural in the error type:** the 401 rejection maps to ONE `.rejected` case covering unknown accounts and wrong codes — the app cannot distinguish them and the UI copy never suggests which. OTP is the first leg landed (simpler transport — no entitlements); §4.2 makes passkeys the primary path and they follow over the SAME transport, recorded plainly. Tests: stub suite (uniform rejection across unknown/wrong-code shapes, 429/5xx mapping, malformed body → badResponse, session decode with explicit snake_case keys per D-18's wire format) + an E2E against a REAL running relay that SKIPS honestly when the relay is down (D-23: a skip is recorded, never mistaken for a pass). The E2E proved the request path + uniform rejection against the real axum handlers; a SUCCESSFUL verify is not provable from the test host (the relay never exposes the code — it goes out-of-band), covered server-side by the relay's own suite. ATS: NSAllowsLocalNetworking for the simulator's localhost; production rides the TLS deployment story | §4.2 makes passkeys primary; §5.8's deep-link hand-off and the D-41 subject-owned sync both need a signed-in subject, which this delivers | `ios/Skipti/Relay/IdentityService.swift`, `ios/Skipti/App/SignInScreen.swift`, `ios/SkiptiTests/RelayClientTests.swift` |
 | D-56 | **SyncService — the transport between the vault and the relay.** Pushes and pulls OPAQUE sealed blobs (hex-encoded) to/from the subject-owned bucket. D-18's cursor semantics respected (exclusive, 409 = normal); D-41's namespace (bucket = subject_id); §10.3 offline = default (.offline returned, local ledger stays authoritative). The E2E tests prove the transport against a real relay: unauthenticated push rejected by the auth gate, unauthenticated pull returns empty, request well-formed enough to route. The full push→pull round trip with a valid session is NOT provable here (the relay never exposes the OTP code — it goes out-of-band); covered server-side by the relay's own suite and locally by the vault tests. **The mnemonic golden flake (§5.6 recurrence):** the ffi.rs mnemonic golden called ffi_mnemonic_generate for a RANDOM kit, tampered word 0, and asserted validation fails — BIP-39's 4-bit checksum survives that ~1/16 of draws. Fixed by pinning the negative to entropy [0x42; 16] (the same fix mnemonic.rs got in D-49); the generate path is tested POSITIVELY only. AGENTS.md §7 gains the rule so it lives where sessions read | §6.4: the relay parses nothing; §10.3: offline is the default; D-18/D-41 respected, not reimplemented | `ios/Skipti/App/SyncService.swift`, `core/src/ffi.rs` (mnemonic golden), `AGENTS.md` (§7), `ios/SkiptiTests/SyncE2ETests.swift` |
 | D-57 | **Passkeys on iOS — §4.2's primary path over the same transport as D-55's OTP leg.** `PasskeyAuthService` is transport-only: register/authenticate start parse `challenge_id` + `publicKeyOptions` through webauthn-rs 0.5's REAL serde shape — options sit one level down under `publicKey` (the browser CredentialCreationOptions shape), camelCase inside (`pubKeyCredParams`), base64url unpadded; finish bodies match `RegisterPublicKeyCredential`/`PublicKeyCredential` field renames exactly (`rawId`/`clientDataJSON`/`attestationObject`/`authenticatorData`/`userHandle`), verified against the vendored crate source and pinned by capture-the-request tests on fixed bytes. Assertion finish carries optional `device_label` (D-34 parity: labels optional on both sign-in paths). D-27 stays structural: every 401 maps to ONE `.rejected` case across all four routes — the app cannot decompose it. `PasskeyCeremony` builds `ASAuthorizationPlatformPublicKeyCredential` requests from parsed options (provider keyed by RP ID; challenge/userID decoded; `excludeCredentials` gated to iOS 17.4 where the platform API exists) and maps results back into wire shapes. **Honest limit:** the controller ceremony cannot run until the associated-domains entitlement (`webcredentials:skipti.vardrlabs.com`), an AASA file served from https://skipti.vardrlabs.com, and TLS exist (ADR-0027) — no test claims otherwise; recorded in §4.4. E2E drives all four routes against a REAL relay: register/start returns parseable options whose RP ID is the dev default `localhost`; fabricated attestation / unknown account / garbage assertion reject uniformly. ALSO fixed here, found while wiring: the Xcode project file had `A10026` defined twice — committed HEAD failed `make ios-app` outright (SyncE2ETests compiled into the app target, XCTest unresolvable there) and in no resolution did SyncE2ETests ever run; unique IDs plus the missing test-phase entry brought its three tests to life against the live relay (incident §5.9). Full suite: **27 passed / 0 failed / 0 skipped** with the relay up | §4.2 makes passkeys primary; D-55 landed OTP first deliberately — same transport, same rejection contract | `ios/Skipti/Relay/{PasskeyAuthService,PasskeyCeremony}.swift`, `ios/SkiptiTests/PasskeyServiceTests.swift`, `ios/Skipti.xcodeproj/project.pbxproj` |
@@ -23382,6 +23383,74 @@ first pass 13 EXACT, 2 LISTED, 4 SURVIVED (the card's switch setter, the export'
 two-line summary), pinned in fd04fd7, re-run EXACT; fix wave 11 rows (3 core, 3 iOS, 5 Android). All red on their
 tests, 0 compile errors.
 
+### D-250: the fluidity sweep, 2026-10-21
+
+The full gate on the tree committed with this record (branch `d250-fluidity`; `.drafts/d250/gate.log`):
+
+```
+GATE PASSED: 23 passed, 0 skipped
+
+Evidence (paste into docs/BUILD-LOG.md §3 when claiming progress):
+
+  gate: full  ·  2026-10-21T18:03:42Z  ·  branch d250-fluidity  ·  commit 5bff9b7
+  cargo fmt --all -- --check                                 exit 0
+  cargo clippy --workspace --all-targets -- -D warnings      exit 0
+  float audit (ADR-0002: no f32/f64 in core/src)             exit 0
+  buildlog structure (D-number contiguity, fences)           exit 0
+  swift interpolation (no literal backslash-paren in UI strings) exit 0
+  swift autolink (no email/URL in string-literal UI titles)  exit 0
+  swift list rows (no styled button as a clear list row)     exit 0
+  em dashes (D-228: no U+2014 or U+2013 on the public surface) exit 0
+  gate self-test (D-137 heavy-leg proof and hook routing)    exit 0
+  cargo test --workspace                                     418 passed, 0 failed
+  cargo build -p skipti-core --target wasm32-unknown-unknown exit 0
+  cargo test --workspace --release -- --ignored              exit 0 (~40s sweeps)
+  bindings freshness (regenerate == committed)               exit 0 (byte-identical)
+  kotlin bindings compile standalone (bytes != buildable)    KOTLIN BINDINGS COMPILE OK
+  cargo audit                                                exit 0
+  cargo deny check (ADR-0012 banned SDK scan)                exit 0
+  SBOM generation (cargo cyclonedx)                          exit 0
+  firebase rules (emulators: every refusal tested)           RULES TESTS PASSED
+  npm audit (Cloud Functions' dependencies)                  exit 0 (no high or critical)
+  make ios-app (build + simulator tests)                     TEST SUCCEEDED
+  make android-app (core .so + APK packaging)                BUILD SUCCESSFUL
+  make android-test (JVM goldens against real core)          per-class tally printed; exits non-zero on any failure
+  licence inventory (regenerate == committed)                exit 0 (current)
+```
+
+cargo test 418 passed, 0 failed; iOS Executed 987 tests, with 0 failures (0 unexpected); JVM 1184 tests, 0 failed, one variant (play debug; XML written 14:03:41). On the way: stage 1 iOS 985; stage 2 JVM 1176; fix wave iOS 987, JVM 1184;
+sabotage pin +0 tests (an assertion widened).
+
+**Built.** iOS (ThemeMotion.swift): `ChangeMotion` and the door-reading helpers `RowsMotion`, `Reveal`, `MoneyChange`
+(`.contentTransition(.numericText(countsDown:))` keyed by core's integer), `FillMotion` (on `WelcomeProgress.eased`),
+`.cardLeaves`, `ThemeCrossfade` (gated, never above the lock); stable card ids; New group's rows through the door.
+Android (ThemeMotion.kt, MotionViews.kt, AppRoot.kt): the twins, a per-character roll drawn left to right only for a
+one-line left-to-right amount, `PageMotion` (pushes slide from the trailing edge, Back reverses, sheets rise, each page
+on its own layer, the leaving page recorded once with its art held, one opaque ground per tab slide, touches swallowed
+on the outgoing page, the tab bar outside the slide dropping and fading 0.2 s), a 100 ms hold for a group page's first
+read, MovingRows' divider fix; the door guard taught AnimatedContent, animateContentSize and animateEnterExit in gated
+forms (count 14 to 32).
+
+**Looks (recordings).** iOS on `d214-look` (15 clips, `.drafts/d250/rec/ios/`), Android on AVD `d250-look` (10 clips +
+v2 after the fix wave, `.drafts/d250/rec/android/`), Aurora and Norse: a push and back, a sheet, the hero rolling 8,750
+to 9,425 after an add, delete and Undo, a settle with the held card sliding out, Just me/All, the theme and mode
+crossfades, the ring and Norse runes lighting one by one; a Reduce Motion / Less motion clip on each shell shows
+one-frame cuts with the art still. The looks caught: deleted rows and settled cards fading under rows moving up (now
+sliding out first), both Android pages drawing into one backdrop, see-through tab pages, a settled card growing
+before it left, the spending card's content cutting.
+
+**Performance** (`.drafts/d250/stage2/gfx-*.txt`, `.drafts/d250/fix/gfx/`): Android push p90 main 20/21 ms, stage 2
+34/32, after the fix wave 32/27; controls: the leaving page not drawn 32/32, both pages as textures 32/30, the slide cut
+21/23: the remaining cost is any full-window slide on the host-GPU emulator (decision 215; a real phone decides).
+
+**Review** (Opus): 4 Important (Android push cost; the roll drawn backwards in RTL and squeezing the two-line ledger
+line; the outgoing page tappable; the tab bar sliding diagonally) and 16 Minors; fixed in 3370c17 except M7 predictive
+back, M8 the non-lazy Expenses list and three items left for the founder's eye (residue).
+
+**Sabotage** (`.drafts/d250/sab/`, two worktree lanes on 3370c17): 40 rows (18 iOS, 22 Android) plus one added (the
+leaving page's picture taken once): first pass 39 EXACT, 1 SURVIVED (A21: Android's card slide flipped to the leading
+edge in RTL), pinned in 5bff9b7 and re-run EXACT: 40 EXACT, 0 compile errors.
+
 ## 4. Gap register (open, honest)
 
 ### 4.1 Blocking store-policy compliance later
@@ -26684,6 +26753,12 @@ tests, 0 compile errors.
   (e) Fable's pass: a group record naming non-members is still accepted by ingest and the rules (decision 208 checks
   only this app's own writes).
   (f) Not on a real phone.
+- **D-250's residue, stated not implied:**
+  (a) Android pushes measure p90 27 to 32 ms on the emulator (decision 215): a real-phone check is owed at release.
+  (b) Predictive back (Android 14+) is not wired to the page slide; the non-lazy Expenses list is unchanged.
+  (c) Left for your eye: the roll's direction for a signed amount, a blur on the roll, dimming the page under a push.
+  (d) Android 12+'s mode pill sliding across the activity restart is coded and tested but was not looked at on screen.
+  (e) Error lines on screens outside the sweep, tab switches and the app lock curtain still cut.
 - **No local profile name.** The no-account path has nothing a user can open
   and later attach an account to. When an account is added its name should
   seed the profile and stay editable.
@@ -29510,3 +29585,5 @@ t and import (D-119): GUARANTEES #4 is now true
 2026-10-21 (D-248): amounts can be typed with a decimal comma where the phone uses one; New group adds the next person when you press Return; a new expense opens with the amount ready to type; deleting an expense offers Undo right there; making a group opens it; screen titles and bar buttons stay whole and look the same on both phones at every text size. Several small messages now say what to do instead of naming the wrong tab.
 
 2026-10-21 (D-249): Just me: keep what you spend on your own, next to your groups. Add an expense to Just me from the +, and see this month's spending on Home under your ledgers, by category, or switch to All my spending to add your share of every group. It never changes who owes whom. Spending on Home can be switched off under Appearance. The export gains a category column, and a Wallet file can go into Just me.
+
+2026-10-21 (D-250): things move instead of jumping: amounts roll when they change, rows slide in and out, meters and the You ring fill, pills slide, the theme changes with a crossfade, and Android's pages now push and return the way iPhone's do. Reduce Motion and Less motion turn it all into plain cuts.
