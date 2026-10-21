@@ -15,6 +15,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -55,9 +56,12 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
@@ -69,6 +73,7 @@ import androidx.compose.ui.semantics.expand
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -382,10 +387,22 @@ fun ThemeSwitch(isOn: Boolean, dark: Boolean, enabled: Boolean = true, modifier:
     }
 }
 
+/** D-253 (the store look, shot 4): what a field row shows. A LABELLED row (a split kind's person row: Exact, Percent,
+ *  Shares, Adjustment) keeps its label, the person's name, at its start whatever is typed, and its field trails, so
+ *  "1500" never stands alone with the placeholder gone; its prompt is the placeholder's first words ("Amount" of
+ *  "Amount for Meera"), and TalkBack still hears the whole placeholder. A row with no label is today's. The twin of
+ *  iOS's `FieldRowShows` in ListRows.swift. */
+object FieldRowShows {
+    /** The prompt in the field: the placeholder, or for a labelled row the words before " for ". */
+    fun prompt(placeholder: String, label: String?): String =
+        if (label == null || " for " !in placeholder) placeholder else placeholder.substringBefore(" for ")
+}
+
 /** D-225 (Designs 1, 11, 12): a field as a list row: a plain field padded `rowPadV` at the 48 dp minimum, the
  *  [placeholder] in `textFaint` (and its name to TalkBack), the accent caret, an optional [trailing] piece (a clear
- *  cross) a row gap after it. The padding and the minimum height sit INSIDE the field's decoration box (T3 review), so a
- *  tap anywhere in the 48 dp row focuses the field, as iOS's row does. [spoken] names the field to TalkBack when the
+ *  cross) a row gap after it. The padding and the minimum height sit INSIDE the field's decoration box (T3 review), and
+ *  the [label] and the field share one tap area that focuses the field (D-253 review M3), so a tap anywhere in the 48 dp
+ *  row but the trailing piece focuses the field, as iOS's row does. [spoken] names the field to TalkBack when the
  *  placeholder alone would not (D-225 T7: New group's "Person 2", iOS's `accessibilityLabel`). The twin of iOS's
  *  `FieldRow`. */
 @Composable
@@ -406,32 +423,54 @@ fun FieldRow(
     /** D-248 (U29.2): the text field's own modifier (a form that moves the keyboard between rows hangs its
      *  `focusRequester` here; [modifier] is the whole row's). */
     fieldModifier: Modifier = Modifier,
+    /** D-253: the person's name before the field, drawn whatever is typed; null for an unlabelled row. */
+    label: String? = null,
 ) {
+    val trails = label != null
+    val prompt = FieldRowShows.prompt(placeholder, label)
+    val focus = remember { FocusRequester() }
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        BasicTextField(
-            value = value,
-            onValueChange = onValueChange,
-            singleLine = true,
-            textStyle = style,
-            cursorBrush = SolidColor(Tok.accent(dark)),
-            keyboardOptions = keyboard,
-            keyboardActions = actions,
-            modifier = Modifier.weight(1f).then(fieldModifier).semantics { contentDescription = spoken },
-            decorationBox = { field ->
-                Box(
-                    Modifier
-                        .heightIn(min = ThemeArt.m("touchTarget").dp)
-                        .then(if (centred) Modifier.fillMaxWidth() else Modifier)
-                        .padding(vertical = ThemeArt.m("rowPadV").dp),
-                    contentAlignment = Alignment.CenterStart,
-                    // D-245: centred, the placeholder and the typed text both span the row, so the style centres them.
-                    propagateMinConstraints = centred,
-                ) {
-                    if (value.isEmpty()) Text(placeholder, style = style.copy(color = Tok.textFaint(dark)))
-                    field()
-                }
-            },
-        )
+        // D-253 review (M3): the name and the field are one tap area that focuses the field (iOS's row tap); the field
+        // takes its own taps first, and the clear cross after them keeps its own.
+        Row(
+            Modifier.weight(1f).pointerInput(focus) { detectTapGestures { focus.requestFocus() } },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // D-253: the person's name, as a list row's title (`Type.name(dark, 16)`), sharing the row half and half with the
+            // field (a value row's layout), typed into or not; TalkBack hears the field's whole name instead.
+            label?.let { shown ->
+                Text(
+                    shown, style = Type.name(dark, 16).copy(color = Tok.text(dark)), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f).clearAndSetSemantics {},
+                )
+                Spacer(Modifier.width(ThemeArt.m("rowGap").dp))
+            }
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                singleLine = true,
+                textStyle = if (trails) style.copy(textAlign = TextAlign.End) else style,
+                cursorBrush = SolidColor(Tok.accent(dark)),
+                keyboardOptions = keyboard,
+                keyboardActions = actions,
+                modifier = Modifier.weight(1f).focusRequester(focus).then(fieldModifier).semantics { contentDescription = spoken },
+                decorationBox = { field ->
+                    Box(
+                        Modifier
+                            .heightIn(min = ThemeArt.m("touchTarget").dp)
+                            .then(if (centred || trails) Modifier.fillMaxWidth() else Modifier)
+                            .padding(vertical = ThemeArt.m("rowPadV").dp),
+                        // D-253: a labelled row's prompt and words sit at the row's end.
+                        contentAlignment = if (trails) Alignment.CenterEnd else Alignment.CenterStart,
+                        // D-245: centred, the placeholder and the typed text both span the row, so the style centres them.
+                        propagateMinConstraints = centred,
+                    ) {
+                        if (value.isEmpty()) Text(prompt, style = style.copy(color = Tok.textFaint(dark)))
+                        field()
+                    }
+                },
+            )
+        }
         if (trailing != null) {
             Spacer(Modifier.width(ThemeArt.m("rowGap").dp))
             trailing()

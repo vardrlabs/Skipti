@@ -292,6 +292,26 @@ final class StoreShotsTests: XCTestCase {
 
     // MARK: - Home from the seed (core's numbers, pinned once against .drafts/d251/expected.py)
 
+    /// D-253: the seeded groups keep the seed's fixed ids (Android's StoreShotsTest compares them with its own), so
+    /// their tiles take the same tones on both phones on every capture: Goa trip teal, Flat 4B pink, Paris blue. The
+    /// negative: a group built by core alone gets a random id, never the seed's.
+    func testTheSeededGroupsKeepTheirFixedIdsAndTones() throws {
+        let store = LedgerStore(path: tempDir().appendingPathComponent("v.db").path)
+        try StoreShots.seed(store, nowMs: late, timeZone: utc)
+        let named = try store.namedGroups()
+        XCTAssertEqual(named.map(\.group.id), StoreShots.groups.map(\.id))
+        XCTAssertEqual(named.map { GroupTone.of($0.group.id) }, [.teal, .pink, .blue])
+        XCTAssertEqual(named.map { GroupTone.allCases.firstIndex(of: GroupTone.of($0.group.id)) }, [2, 5, 1])
+        XCTAssertEqual(Set(named.map(\.group.id)).count, 3, "three different ids")
+        for g in named {
+            XCTAssertNotNil(g.group.id.range(of: "^[0-9a-f]{32}$", options: .regularExpression), g.group.id)
+        }
+        let me = try store.ensureSelf()
+        let random = try ffiCreateNamedGroup(name: "Goa trip", settlementCurrency: "INR",
+                                             selfMember: MemberWire(id: me.id, name: "Sam"), otherNames: ["Meera"])
+        XCTAssertFalse(StoreShots.groups.map(\.id).contains(random.group.id), "core's id is random")
+    }
+
     func testTheSeededVaultGivesHomeItsNumbers() throws {
         let store = LedgerStore(path: tempDir().appendingPathComponent("v.db").path)
         try StoreShots.seed(store, nowMs: late, timeZone: utc)

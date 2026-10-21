@@ -617,7 +617,7 @@ foldable on Android 16 or later still turns, and the lock (G6) holds there too.
 Settled card with a missing amount (the "-" is spoken "none", decision 43), Home's line, a group card, a Lately item.
 *Expect:* the two phones say the same words in the same order.
 
-**G14. Appearance details (D-234).** The text-size sample reads "Lunch at Shake Shack, $48.00" on both phones, whatever
+**G14. Appearance details (D-234).** The text-size sample reads "Lunch with Luna, $48.00" on both phones, whatever
 the default currency; it grows and shrinks with the slider. App icon is one row that opens to its four choices.
 
 **G15. Haptics and the celebration (iPhone).** Taps on tab switches, on a save, and before something that cannot be

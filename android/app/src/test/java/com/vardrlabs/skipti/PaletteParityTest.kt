@@ -47,4 +47,33 @@ class PaletteParityTest {
             for ((i, c) in columns(case, 7).withIndex()) assertEquals("$tone letter ${sets[i]}", c, tone.letterOf(sets[i]))
         }
     }
+
+    /** D-253 (the store look: the same seeded groups in different tones on the two phones): a group's tone is picked
+     *  by one function on both shells, the id's first byte modulo six into the same six tones. iOS's `GroupTone.of` is
+     *  read here, and fixed ids pick the same tone index on both (worked by hand: 0x02 -> 2 teal, 0x05 -> 5 pink, 0x01
+     *  -> 1 blue, 0xa1 = 161 -> 5 pink, 0xff = 255 -> 3 amber, a non-hex start -> 0 coral). */
+    @Test
+    fun a_groups_tone_is_picked_as_ios_picks_it() {
+        val src = ios.resolve("GroupsScreen.swift").readText()
+        val of = src.substringAfter("static func of(_ groupID: String) -> GroupTone {").substringBefore("\n    }\n")
+        assertEquals(
+            "iOS's pick, verbatim",
+            "\n        let byte = Int(groupID.prefix(2), radix: 16) ?? 0\n        return allCases[byte % allCases.count]",
+            of,
+        )
+        val kt = java.io.File("src/main/java/com/vardrlabs/skipti/GroupsTab.kt").readText()
+            .substringAfter("fun of(groupId: String): GroupTone {").substringBefore("\n        }\n")
+        assertEquals(
+            "Android's pick, the same steps",
+            "\n            val byte = groupId.take(2).toIntOrNull(16) ?: 0\n            return entries[byte % entries.size]",
+            kt,
+        )
+        val tail = "8c2fba8e39317ca229dc1fd08e9854"
+        for ((start, index) in listOf("02" to 2, "05" to 5, "01" to 1, "a1" to 5, "ff" to 3, "zz" to 0)) {
+            assertEquals(start, index, GroupTone.of(start + tail).ordinal)
+        }
+        // The negative: one byte apart is another tone.
+        assertEquals(GroupTone.TEAL, GroupTone.of("02$tail"))
+        assertEquals(GroupTone.AMBER, GroupTone.of("03$tail"))
+    }
 }

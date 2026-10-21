@@ -217,10 +217,11 @@ extension LedgerStore {
     }
 
     /// D-166: keeps a group built elsewhere (an import builds it with
-    /// `ffiCreateNamedGroup` before anything is saved), and selects it.
-    func adopt(_ created: NamedGroupWire) throws {
+    /// `ffiCreateNamedGroup` before anything is saved), and selects it. D-253: `nowMs` is the save's clock (the
+    /// store seed keeps its groups at their rows' times, as `createGroup` does).
+    func adopt(_ created: NamedGroupWire, nowMs: UInt64 = UInt64(Date().timeIntervalSince1970 * 1000)) throws {
         let existing = try namedGroups()
-        try save(existing + [created])
+        try save(existing + [created], nowMs: nowMs)
         try selectGroup(id: created.group.id)
     }
 

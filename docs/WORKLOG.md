@@ -138,6 +138,9 @@ then ONE round of pop-ups for every call of his, then build in his order with de
 - **D-252 DONE** (fix wave 9211143; sabotage 26 rows clean; gate 23/23 4m58s; RECORDED, JVM carried forward;
   decisions 220-223). Merging. The Functions change is NOT deployed (ships with 0.5.1 after Fable). NEXT: D-253 app
   polish for the store shots (`.drafts/u32/plan.md` "After the first capture"), re-capture 4/7/9, U33, release prep.
+- **D-253 DONE** (ef63d85 + review fixes 6b2fab2; gate 23/23; RECORDED; decisions 224-227: "Lunch with Luna",
+  Luna a play on his Runa). Merging. NEXT: re-capture store shots 4, 7, 9 (and Aurora ones) with the fixed seed,
+  publish the set for his approval; U33 film; release prep; Fable opener in chat.
 - **FOUNDER BUG (0.5.0, 2026-10-21, high priority):** an owner deletes a group on one phone; the account's OTHER phone
   still shows it and can add expenses to it; the same for other members. Expected: ended everywhere (archived /
   read-only at most). Root-cause investigation dispatched (systematic debugging, no fixes yet; server-level emulator

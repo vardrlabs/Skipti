@@ -2271,6 +2271,28 @@ class ThemeArtTest {
         }
     }
 
+    /** D-253 review (M3): a labelled row's name is inside the field's tap area: the name and the field sit in one inner
+     *  Row whose tap requests the field's focus (iOS's inner HStack with its content shape and tap), the field carries that
+     *  requester, and the trailing piece sits after the inner Row, keeping its own taps. A source assertion (this suite
+     *  has no Compose UI test harness, and no new dependency is added for one); the twin of iOS's
+     *  AppearanceTests.testTheWholeFieldRowFocusesItsField. */
+    @Test
+    fun the_whole_field_row_name_included_focuses_its_field() {
+        val row = rows("fun FieldRow(")
+        assertTrue("one requester for the row", "val focus = remember { FocusRequester() }" in row)
+        val tap = row.indexOf("Modifier.weight(1f).pointerInput(focus) { detectTapGestures { focus.requestFocus() } },")
+        assertTrue("the inner Row's tap focuses the field", tap >= 0)
+        val close = row.indexOf("\n        }\n        if (trailing != null) {")
+        assertTrue("the trailing piece after the inner Row", close > tap)
+        for (s in listOf("{ shown ->", "BasicTextField(", ".focusRequester(focus)")) {
+            val at = row.indexOf(s)
+            assertTrue("inside the tap area: $s", at in tap..close)
+        }
+        assertTrue("the field carries the requester", "modifier = Modifier.weight(1f).focusRequester(focus).then(fieldModifier)" in row)
+        assertEquals("one tap area", 1, Regex("pointerInput\\(").findAll(row).count())
+        assertFalse("the trailing piece is outside it", "trailing()" in row.substring(tap, close))
+    }
+
     private companion object {
         // D-221: + the Settled card's "Settled" (one block, or above several) and each block's currency kicker.
         // D-223: "By group" out, "Your ledgers" and Lately's label (inside its card) in: 49 - 1 + 2.

@@ -1539,6 +1539,15 @@ https://claude.ai/artifact/FwwzuzRkyyxiuGvJKNMPCG (v1); briefs `.drafts/u9/brief
 - **Why:** 0.5.0 saved such an expense, the cloud refused it, and it sat as "One change could not sync".
 - **Status:** in D-252.
 
+### The D-253 chain, 224 to 227: store-shot polish
+
+- **224 (mine):** no edited pixels in store art; shot 9 uses the clean status-bar frames on both phones.
+- **225 (mine):** store shot 6 uses the You page's rune ring, not the dimmed celebration frame.
+- **226 (mine):** D-253 fixes what the first capture showed before the re-capture: the sample line, Exact split rows
+  losing their names, Aurora's tile tones differing between the phones.
+- **227 (yours, pop-up 2026-10-21):** Appearance's text-size sample "Lunch at Shake Shack" (your D-234 pick) becomes a
+  neutral line: "Lunch with Luna" ($48.00 unchanged; Luna, a play on Runa, another repo of yours), both phones and the store shot.
+
 ### Siri and Gemini, 210 to 213: your answers (pop-up, 2026-10-21)
 
 - **210 (U15, U16):** Siri and Gemini come in **0.5.2**, not 0.5.1.

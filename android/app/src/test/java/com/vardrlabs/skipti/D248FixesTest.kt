@@ -260,7 +260,7 @@ class D248FixesTest {
         assertTrue("runCatching { rowFocus[id]?.requestFocus() }" in create)
         assertTrue("KeyboardActions(onNext = { onNext() })" in create)
         assertTrue("fieldModifier = focus?.let { Modifier.focusRequester(it) } ?: Modifier," in create)
-        assertTrue("the field row's own modifier", "modifier = Modifier.weight(1f).then(fieldModifier).semantics { contentDescription = spoken }," in src("ListRows.kt"))
+        assertTrue("the field row's own modifier", "modifier = Modifier.weight(1f).focusRequester(focus).then(fieldModifier).semantics { contentDescription = spoken }," in src("ListRows.kt"))
     }
 
     // ---- U29.3 the amount is focused on a new expense ----
