@@ -666,13 +666,19 @@ class AppearanceTest {
             }
         }
         // D-243 (.drafts/d214/motion.py section 5, 1c, 1c', 1c''): the art at the top of its glow, the twin of iOS's. A page
-        // rune at the top of its flare (RuneGlow.PAGE_FLARE) over its halo (RuneGlow.HALO) over each Norse ground, gold and
-        // silver; a hero rune at HERO_FLARE over its halo over each hero stop; the ᚠ at its glow (WatermarkGlow.PEAK) over
-        // its halo. The worst of each pinned to motion.py's printout (8-bit); textDim's headroom is 0.034.
+        // rune at the top of its flare (RuneGlow.PAGE_FLARE) over its glow over each Norse ground, gold and silver; a hero
+        // rune at HERO_FLARE over its glow over each hero stop; the ᚠ at its glow (WatermarkGlow.PEAK) over its own. D-246
+        // (amended on purpose; D-243's was the disc halo's alpha): a glow's pixel is its alpha x the blurred mask's peak
+        // (motion.py 5a, the floors' model: the peak under the full core), page 0.145 x 0.3430, hero 0.345 x 0.2657, the ᚠ
+        // 0.305 x 0.2319. The worst of each pinned to motion.py's printout (8-bit); textDim's headroom is 0.034.
         val runeColours = listOf(ArtDraw.RUNE_GOLD, ArtDraw.RUNE_SILVER).map { rgb(it) }
-        fun flaring(core: Double, grounds: List<DoubleArray>) =
-            grounds.flatMap { g -> runeColours.map { blend(it, core, blend(it, RuneGlow.HALO, g, normal), normal) } }
-        val flarePage = flaring(RuneGlow.PAGE_FLARE, norseGrounds)
+        val pageGlowPixel = RuneGlow.PAGE_GLOW * GlyphGlowGoldens.PAGE
+        val heroGlowPixel = RuneGlow.HERO_GLOW * GlyphGlowGoldens.HERO
+        assertEquals("motion.py 5a: the page glow's largest pixel", 0.0497, pageGlowPixel, 0.0001)
+        assertEquals("motion.py 5a: the hero glow's largest pixel", 0.0917, heroGlowPixel, 0.0001)
+        fun flaring(core: Double, glow: Double, grounds: List<DoubleArray>) =
+            grounds.flatMap { g -> runeColours.map { blend(it, core, blend(it, glow, g, normal), normal) } }
+        val flarePage = flaring(RuneGlow.PAGE_FLARE, pageGlowPixel, norseGrounds)
         for ((t, floor, want) in listOf(Triple(Tok.text, 7.0, 8.904), Triple(Tok.textDim, 4.5, 4.534), Triple(Tok.groundFaint, 4.5, 4.534),
             Triple(Tok.accent, 4.5, 5.300), Triple(Tok.groundAccent, 4.5, 5.300))) {
             val worst = flarePage.minOf { ratio(rgb(t.of(ThemeSet.NORSE)), it) }
@@ -680,7 +686,7 @@ class AppearanceTest {
             assertEquals("norse ${t.name} over a flaring rune: motion.py's value", want, worst, 0.002)
         }
         // The negative: a flare a hundredth over the cap (0.20) leaves the labels under their floor (motion.py: 4.41).
-        val tooBright = flaring(RuneGlow.PAGE_FLARE + 0.01, norseGrounds).minOf { ratio(rgb(Tok.textDim.of(ThemeSet.NORSE)), it) }
+        val tooBright = flaring(RuneGlow.PAGE_FLARE + 0.01, pageGlowPixel, norseGrounds).minOf { ratio(rgb(Tok.textDim.of(ThemeSet.NORSE)), it) }
         assertTrue("a flare over the cap fails textDim: $tooBright", tooBright < 4.5)
         assertEquals(4.41, tooBright, 0.002)
         // D-243 (T7, motion.py 1f, plan test 9): Norse's card-edge glow (accent at a band's alpha) over a flaring rune, page
@@ -700,10 +706,16 @@ class AppearanceTest {
         val heroStops = listOf(Tok.heroStart, Tok.heroMid, Tok.heroEnd).map { rgb(it.of(ThemeSet.NORSE)) }
         val accent = rgb(Tok.accent.of(ThemeSet.NORSE))
         val fehu = heroStops.map { g ->
-            blend(accent, WatermarkGlow.PEAK * strength("norseHero"), blend(accent, WatermarkGlow.HALO * strength("norseHero"), g, normal), normal)
+            blend(accent, WatermarkGlow.PEAK * strength("norseHero"),
+                blend(accent, WatermarkGlow.GLYPH_GLOW * GlyphGlowGoldens.FEHU * strength("norseHero"), g, normal), normal)
         }
-        for ((name, pixels, wants) in listOf(Triple("a hero rune", flaring(RuneGlow.HERO_FLARE, heroStops), 8.377 to 5.834),
-            Triple("the glowing ᚠ", fehu, 7.681 to 5.349))) {
+        // The negative: a hero glow one step over motion.py 5a's cap (0.515), 0.52, takes onHero under 7 over a flaring
+        // hero rune (motion.py: 6.955).
+        val heroTooBright = flaring(RuneGlow.HERO_FLARE, 0.52 * GlyphGlowGoldens.HERO, heroStops).minOf { ratio(norseOnHero, it) }
+        assertTrue("over the hero's cap the floor breaks: $heroTooBright", heroTooBright < 7.0)
+        assertEquals(6.955, heroTooBright, 0.002)
+        for ((name, pixels, wants) in listOf(Triple("a hero rune", flaring(RuneGlow.HERO_FLARE, heroGlowPixel, heroStops), 7.738 to 5.389),
+            Triple("the glowing ᚠ", fehu, 8.107 to 5.646))) {
             val on = pixels.minOf { ratio(norseOnHero, it) }
             val dim = pixels.minOf { ratio(norseDim, it) }
             assertTrue("norse hero text over $name is $on", on >= 7.0)

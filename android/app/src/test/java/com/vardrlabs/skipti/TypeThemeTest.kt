@@ -354,9 +354,13 @@ class TypeThemeTest {
      *  theme switch rebuilds it), and every Material theme must pass a typography. */
     @Test
     fun no_visible_text_uses_the_system_face() {
-        // D-215 B5: every rune is drawn through `Type.rune(` (Vardr Runes) and the Paint proof is retired: nothing is
-        // allowed. The mechanism stays (file-scoped, counted) for the next site that must be named.
-        val allowed = emptyMap<String, String>()
+        // D-215 B5: every rune is drawn through `Type.rune(` (Vardr Runes) and the Paint proof is retired. The mechanism
+        // stays (file-scoped, counted). D-246 names the one site: GlyphGlow's raster fills a rune's OUTLINE
+        // (`Paint.getTextPath`, in the Typeface Compose resolves for `Type.runes`) into the glow's mask, once a process;
+        // it draws no text, so no system face can reach the screen through it.
+        val allowed = mapOf(
+            "ThemeMotion.kt|android.graphics.Paint(" to "D-246: the glyph glow's mask, a rune's outline in Vardr Runes, never text",
+        )
         val used = mutableMapOf<String, Int>()
         val dir = java.io.File("src/main/java/com/vardrlabs/skipti")
         val sources = dir.walkTopDown().filter { it.isFile && it.name.endsWith(".kt") }.toList()

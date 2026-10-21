@@ -20,10 +20,9 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.IntOffset
@@ -190,10 +189,10 @@ fun CompletionRing(done: Int, total: Int, dark: Boolean) {
 /** D-221 (Design 4, L39): Norse's ring, the 24 runes of the Elder Futhark in order, centred on `runeRingRadius`, 15
  *  degrees apart from 12 o'clock clockwise, each turned by its angle (tops outward), in the rune face at
  *  `runeRingSize` (fixed, as every rune drawn as art); the first [RuneRing.lit] in `ring` (gold), the rest `runeUnlit`.
- *  D-243: each lit rune over a static halo of `ring` at [RingTurn.LIT_HALO], clear at [RingTurn.LIT_HALO_RADIUS] x the
- *  rune's size, centred on the rune's box (one remembered unit brush, drawn behind the runes); [modifier] lets You's
- *  hero turn the ring ([artTurn]); the done check turns it on its moment's own clock. Decorative: hidden from TalkBack.
- *  The twin of iOS's `RuneRing` view. */
+ *  D-246: each lit rune over a static glow, its own shape blurred ([GlyphGlow]'s cached mask, built once) in `ring` at
+ *  [RingTurn.LIT_GLOW], drawn behind the rune on the rune's own turned layer with its glyph on the rune's (D-243's disc
+ *  halo is gone); [modifier] lets You's hero turn the ring ([artTurn]); the done check turns it on its moment's own
+ *  clock. Decorative: hidden from TalkBack. The twin of iOS's `RuneRing` view. */
 @Composable
 fun RuneRing(done: Int, total: Int, dark: Boolean, modifier: Modifier = Modifier) {
     val density = LocalDensity.current
@@ -201,31 +200,35 @@ fun RuneRing(done: Int, total: Int, dark: Boolean, modifier: Modifier = Modifier
     val radius = ThemeArt.m("runeRingRadius")
     val style = Type.rune(runeSize("runeRingSize", density))
     val ring = Tok.ring(dark)
-    val halo = remember(ring) { Brush.radialGradient(listOf(ring, ring.copy(alpha = 0f)), center = Offset.Zero, radius = 1f) }
-    val lights = Modifier.drawBehind {
-        val r = radius.dp.toPx()
-        val disc = (RingTurn.LIT_HALO_RADIUS * ThemeArt.m("runeRingSize")).toFloat().dp.toPx()
-        for (i in 0 until lit.coerceAtMost(Runes.FUTHARK.size)) {
-            val rad = Math.toRadians(i * 360.0 / Runes.FUTHARK.size)
-            withTransform({
-                translate(center.x + (r * sin(rad)).roundToInt(), center.y + (-r * cos(rad)).roundToInt())
-                scale(disc, disc, Offset.Zero)
-            }) { drawCircle(halo, radius = 1f, center = Offset.Zero, alpha = RingTurn.LIT_HALO.toFloat()) }
-        }
+    // D-246: the lit runes' glows, GlyphGlow's masks at the ring's rune size (built once a process), one tint, and each
+    // rune's baseline from its own layout (its glow's glyph goes on it).
+    val raster = rememberGlyphRaster()
+    val glows = remember(raster, lit) {
+        List(lit.coerceAtMost(Runes.FUTHARK.size)) { GlyphGlow.mask(Runes.FUTHARK[it], ThemeArt.m("runeRingSize").toDouble(), RuneGlow.BLUR, raster) }
     }
-    Box(modifier.size(ThemeArt.m("ringBox").dp).clearAndSetSemantics {}.then(lights), contentAlignment = Alignment.Center) {
+    val tint = remember(ring) { ColorFilter.tint(ring) }
+    val baselines = remember { FloatArray(Runes.FUTHARK.size) }
+    Box(modifier.size(ThemeArt.m("ringBox").dp).clearAndSetSemantics {}, contentAlignment = Alignment.Center) {
         Runes.FUTHARK.forEachIndexed { i, rune ->
             val angle = i * 360f / Runes.FUTHARK.size
             val rad = Math.toRadians(angle.toDouble())
             Text(
                 rune,
                 style = style.copy(color = if (i < lit) Tok.ring(dark) else ThemeArt.color("runeUnlit")),
+                onTextLayout = { baselines[i] = it.firstBaseline },
                 modifier = Modifier
                     .offset {
                         val r = radius.dp.toPx()
                         IntOffset((r * sin(rad)).roundToInt(), (-r * cos(rad)).roundToInt())
                     }
-                    .rotate(angle),
+                    .rotate(angle)
+                    .then(
+                        if (i < glows.size) {
+                            Modifier.drawBehind { with(ArtDraw) { glyphGlow(glows[i], 0f, baselines[i], RingTurn.LIT_GLOW.toFloat(), tint) } }
+                        } else {
+                            Modifier
+                        },
+                    ),
             )
         }
     }

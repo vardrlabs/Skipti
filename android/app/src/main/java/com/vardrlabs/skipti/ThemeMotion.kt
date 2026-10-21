@@ -32,6 +32,9 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.addOutline
@@ -54,6 +57,7 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFontFamilyResolver
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextMeasurer
@@ -360,17 +364,30 @@ object RuneDrift {
 /** D-243 (U24, the founder's approved Vibrant mock-up, 2026-10-20; .drafts/d214/motion.py sections 5 and 6): Norse's
  *  runes glow as they rise and flare now and then, applied after the rise (RuneDrift's poses do not move). A rune's core
  *  is its rise envelope (the pose's opacity over [RuneDrift.PEAK]) times its rest ([RuneDrift.PEAK] x its layer's
- *  strength) lifted toward its layer's top by the flare; its halo, a radial disc of [HALO_RADIUS] x its size, is [HALO]
- *  at the top of a flare and in proportion below it. The flare: 0 at rest, eased in and out ([EASE], each half its own
+ *  strength) lifted toward its layer's top by the flare. D-246 (decision 195, the founder 2026-10-20: "make the actual
+ *  rune glow"; motion.py 5a): its glow is the glyph's own shape blurred ([GlyphGlow], a Gaussian of sigma [BLUR] x its
+ *  size) under the crisp glyph, its alpha [PAGE_GLOW] or [HERO_GLOW] at the top of a flare and in proportion below it
+ *  (D-243's radial disc halo is gone). The flare: 0 at rest, eased in and out ([EASE], each half its own
  *  segment) up from [RISE] of its cycle to 1 at [TOP], back to 0 at [FALL]. Page rune i flares on a [cycle] s cycle led
  *  by [lead] s; the hero's runes carry their own ([HeroRunes]). Still: the still pose's opacity times the strength, no
- *  flare and no halo. [core] and [halo] allocate nothing (the renderers' calls); [alphas] pairs them. The twin of iOS's
+ *  flare and no glow. [core] and [glow] allocate nothing (the renderers' calls); [alphas] pairs them. The twin of iOS's
  *  `RuneGlow`; ThemeMotionTest reads its constants. */
 object RuneGlow {
     const val PAGE_FLARE = 0.19
     const val HERO_FLARE = 0.20
-    const val HALO = 0.05
-    const val HALO_RADIUS = 0.8
+
+    /** D-246: the glow's Gaussian sigma, a fraction of the rune's size (the ᚠ's and the ring's too). */
+    const val BLUR = 0.18
+
+    /** D-246: the glow's alpha at the top of a flare: the lesser of the disc's light over the layer's mean ink and the
+     *  floors' cap with the blurred mask's peak under the full core (page: 1c, 1e and 1f's 6 dp; hero: 1c'). */
+    const val PAGE_GLOW = 0.145
+    const val HERO_GLOW = 0.345
+
+    /** D-246: how far a glow is seen from its rune's centre, x its size (its ink's reach plus the Gaussian's tail to one
+     *  8-bit step): the stacking rules' reach where D-243's disc radius (0.8) stood. */
+    const val PAGE_REACH = 0.8043
+    const val HERO_REACH = 0.8567
     const val RISE = 0.62
     const val TOP = 0.76
     const val FALL = 0.90
@@ -395,21 +412,22 @@ object RuneGlow {
     /** Page rune [i]'s flare at [t]. */
     fun flare(i: Int, t: Double): Double = flare(t, cycle(i), lead(i))
 
-    /** A rune's core alpha at its pose's [opacity], its layer's [strength], the layer's flare [top] and the flare [glow]. */
-    fun core(opacity: Double, strength: Double, top: Double, glow: Double, still: Boolean): Double {
+    /** A rune's core alpha at its pose's [opacity], its layer's [strength], the layer's flare [top] and the [flare]. */
+    fun core(opacity: Double, strength: Double, top: Double, flare: Double, still: Boolean): Double {
         val envelope = opacity / RuneDrift.PEAK
         val rest = RuneDrift.PEAK * strength
-        return envelope * (rest + (top - rest) * (if (still) 0.0 else glow))
+        return envelope * (rest + (top - rest) * (if (still) 0.0 else flare))
     }
 
-    /** The halo's alpha under a rune of [core] alpha on a layer whose flare tops at [top]; none when still. */
-    fun halo(core: Double, top: Double, still: Boolean): Double = if (still) 0.0 else HALO * core / top
+    /** D-246: the glow's alpha under a rune of [core] alpha on a layer whose flare tops at [top], the layer's glow at
+     *  the top of a flare [glowTop] ([PAGE_GLOW] or [HERO_GLOW]); none when still. */
+    fun glow(core: Double, top: Double, glowTop: Double, still: Boolean): Double = if (still) 0.0 else glowTop * core / top
 
-    data class Alphas(val core: Double, val halo: Double)
+    data class Alphas(val core: Double, val glow: Double)
 
-    fun alphas(opacity: Double, strength: Double, top: Double, glow: Double, still: Boolean): Alphas {
-        val c = core(opacity, strength, top, glow, still)
-        return Alphas(c, halo(c, top, still))
+    fun alphas(opacity: Double, strength: Double, top: Double, flare: Double, glowTop: Double, still: Boolean): Alphas {
+        val c = core(opacity, strength, top, flare, still)
+        return Alphas(c, glow(c, top, glowTop, still))
     }
 }
 
@@ -458,9 +476,10 @@ object HeroRunes {
 }
 
 /** D-243: the Norse hero's ᚠ glows now and then: [REST] (today's 0.16) up to [PEAK] on a [CYCLE] s cycle (rising from
- *  [RISE] of it, top at [TOP], rest again at [FALL], each half [RuneGlow.EASE]), with a radial halo of [HALO_RADIUS] x its
- *  size centred on its box, [HALO] at the top of the glow (motion.py 1c''). Still: [REST], no halo, today's ᚠ. The
- *  renderer multiplies both by `Strength.of("norseHero")`. The twin of iOS's `WatermarkGlow`. */
+ *  [RISE] of it, top at [TOP], rest again at [FALL], each half [RuneGlow.EASE]). D-246: under it its own shape blurred
+ *  ([GlyphGlow], sigma [RuneGlow.BLUR] x its size), [GLYPH_GLOW] at the top of the glow (motion.py 5a: the disc's light
+ *  over its ink, within 1c''s cap), seen no further than [GLOW_LEFT] x its size left of its box's centre. Still: [REST],
+ *  no glow, today's ᚠ. The renderer multiplies both by `Strength.of("norseHero")`. The twin of iOS's `WatermarkGlow`. */
 object WatermarkGlow {
     const val REST = 0.16
     const val PEAK = 0.208
@@ -468,8 +487,8 @@ object WatermarkGlow {
     const val RISE = 0.55
     const val TOP = 0.70
     const val FALL = 0.88
-    const val HALO = 0.10
-    const val HALO_RADIUS = 0.5
+    const val GLYPH_GLOW = 0.305
+    const val GLOW_LEFT = 0.6052
 
     fun glow(t: Double): Double {
         val u = t / CYCLE
@@ -478,17 +497,17 @@ object WatermarkGlow {
 
     fun alpha(t: Double, still: Boolean): Double = if (still) REST else REST + (PEAK - REST) * glow(t)
 
-    fun haloAlpha(t: Double, still: Boolean): Double = if (still) 0.0 else HALO * glow(t)
+    fun glyphGlowAlpha(t: Double, still: Boolean): Double = if (still) 0.0 else GLYPH_GLOW * glow(t)
 }
 
 /** D-243: the Futhark ring round You's picture (D-221's RuneRing) turns clockwise, one turn per [PERIOD] seconds of
- *  turning, from upright each time it starts; still it is upright. Each lit rune carries a static radial halo of the ring
- *  colour at [LIT_HALO], radius [LIT_HALO_RADIUS] x the ring's rune size. The twin of iOS's `RingTurn`. */
+ *  turning, from upright each time it starts; still it is upright. D-246: each lit rune glows from its own shape
+ *  ([GlyphGlow], sigma [RuneGlow.BLUR] x the ring's rune size) in the ring colour at [LIT_GLOW], static (motion.py 5a:
+ *  D-243's disc's light over the mean ink; nothing is written over the ring). The twin of iOS's `RingTurn`. */
 object RingTurn {
     const val PERIOD = 90.0
     const val STILL = 0.0
-    const val LIT_HALO = 0.35
-    const val LIT_HALO_RADIUS = 0.5
+    const val LIT_GLOW = 0.995
 
     /** The ring's turn in degrees, clockwise, in 0 until 360, after [seconds] of turning; not finite is upright. */
     fun degrees(seconds: Double): Double {
@@ -496,6 +515,160 @@ object RingTurn {
         val u = seconds / PERIOD
         return 360 * (u - floor(u))
     }
+}
+
+/** D-246 (decision 195, the founder 2026-10-20: "make the actual rune glow"): a rune's glow is its own shape, blurred.
+ *  The glyph's OUTLINE is filled ONCE into an 8-bit coverage mask ([Raster]: on the phone `Paint.getTextPath` on a
+ *  software canvas, never the GPU) and blurred ONCE by a Gaussian of sigma `blur` x its size (motion.py 5a's kernel, cut
+ *  at 4 sigma, our own separable pass, so the shells and motion.py blur alike), and kept as a white [ImageBitmap] the art
+ *  tints gold, silver, the accent or the ring's colour ([ArtDraw.glyphGlow]) and draws UNDER the crisp glyph on the
+ *  glyph's own turned layer at the layer's glow alpha. One mask per glyph, size bucket (the size rounded to a whole dp)
+ *  and blur, built the first time a rune layer, the hero or the ring is composed and never again in the process
+ *  ([builds] counts them); a frame only draws the cached image. The mask is the glyph's box (its advance by the font's
+ *  ascent to descent) with 4 sigma on every side, at [scale] pixels a dp; [originX] and [baseline] are where the glyph's
+ *  origin sits in it, so the draw puts the glow's glyph exactly on the crisp glyph's. No disc, no per-frame blur. The twin
+ *  of iOS's `GlyphGlow` (ThemeMotionTest reads its constants). */
+object GlyphGlow {
+    /** The mask is blurred at this many pixels a sigma (a blurred glyph is smooth), never finer than 3 pixels a dp. */
+    const val PIXELS_PER_SIGMA = 6.0
+
+    data class Key(val glyph: String, val size: Int, val blur: Double)
+
+    /** A built mask: its [image] (white, alpha the blurred coverage; null where the raster makes none, the JVM tests),
+     *  its [width] x [height] pixels at [scale] pixels a dp, the glyph's origin at ([originX], [baseline]) pixels, its
+     *  blurred [alpha] (0..1, row-major) and [peak] (motion.py's peak: the floors take it under the full core). */
+    class Mask(
+        val image: ImageBitmap?,
+        val width: Int,
+        val height: Int,
+        val scale: Double,
+        val originX: Double,
+        val baseline: Double,
+        val alpha: DoubleArray,
+        val peak: Double,
+    )
+
+    /** How a glyph's coverage is drawn: on the phone [AndroidRaster]; the JVM tests draw it with java.awt. */
+    interface Raster {
+        /** The glyph's advance, ascent and descent (both positive) at an em of [em] pixels. */
+        fun metrics(glyph: String, em: Double): DoubleArray
+
+        /** The glyph's filled outline at an em of [em] pixels, its origin at ([x], [baseline]), as 0..255 coverage. */
+        fun coverage(glyph: String, em: Double, width: Int, height: Int, x: Double, baseline: Double): IntArray
+
+        /** The blurred mask as a white image whose alpha is [alpha]; null where there is no image (tests). */
+        fun image(alpha: DoubleArray, width: Int, height: Int): ImageBitmap?
+    }
+
+    private val lock = Any()
+    private val cache = HashMap<Key, Mask>()
+    private var built = 0
+
+    /** How many masks this process has built (the tests' counter: a second ask for a key builds nothing). */
+    val builds: Int get() = synchronized(lock) { built }
+
+    /** Pixels a dp for a mask of [size] dp blurred by [blur]: six pixels a sigma, at most 3 (iOS's formula). */
+    fun scale(size: Int, blur: Double): Double = min(3.0, PIXELS_PER_SIGMA / (blur * size))
+
+    /** The cached mask of [glyph] at [size] dp (rounded to a whole dp) blurred by [blur] x that size; built on the first
+     *  ask, through [raster]. */
+    fun mask(glyph: String, size: Double, blur: Double, raster: Raster): Mask {
+        val key = Key(glyph, size.roundToInt(), blur)
+        synchronized(lock) {
+            cache[key]?.let { return it }
+            val made = build(key, raster)
+            cache[key] = made
+            built += 1
+            return made
+        }
+    }
+
+    private fun build(key: Key, raster: Raster): Mask {
+        val scale = scale(key.size, key.blur)
+        val em = key.size * scale
+        val s = key.blur * key.size * scale
+        val pad = 4 * s
+        val (advance, ascent, descent) = raster.metrics(key.glyph, em).let { Triple(it[0], it[1], it[2]) }
+        val width = kotlin.math.ceil(advance + 2 * pad).toInt()
+        val height = kotlin.math.ceil(ascent + descent + 2 * pad).toInt()
+        // The glyph's box centred in the mask (iOS's layout): its origin at the box's left, its baseline ascent below
+        // the box's top.
+        val originX = (width - advance) / 2
+        val baseline = (height - ascent - descent) / 2 + ascent
+        val coverage = raster.coverage(key.glyph, em, width, height, originX, baseline)
+        val alpha = blur(coverage, width, height, s)
+        return Mask(raster.image(alpha, width, height), width, height, scale, originX, baseline, alpha, alpha.maxOrNull() ?: 0.0)
+    }
+
+    /** motion.py 5a's blur: a separable Gaussian of sigma [s] pixels, cut at 4 sigma, zero outside the mask, over
+     *  0..255 [coverage]; 0..1 out. Pure (the JVM tests run it). */
+    fun blur(coverage: IntArray, width: Int, height: Int, s: Double): DoubleArray {
+        val r = kotlin.math.ceil(4 * s).toInt()
+        val kernel = DoubleArray(2 * r + 1) { kotlin.math.exp(-((it - r) * (it - r)) / (2 * s * s)) }
+        val total = kernel.sum()
+        for (k in kernel.indices) kernel[k] /= total
+        val across = DoubleArray(width * height)
+        for (y in 0 until height) for (x in 0 until width) {
+            var v = 0.0
+            for (k in max(-r, -x)..min(r, width - 1 - x)) v += kernel[k + r] * coverage[y * width + x + k]
+            across[y * width + x] = v / 255
+        }
+        val out = DoubleArray(width * height)
+        for (y in 0 until height) for (x in 0 until width) {
+            var v = 0.0
+            for (k in max(-r, -y)..min(r, height - 1 - y)) v += kernel[k + r] * across[(y + k) * width + x]
+            out[y * width + x] = v
+        }
+        return out
+    }
+
+    /** The phone's raster: the rune face's [typeface] (Vardr Runes Carved, the one Compose draws the runes with), the
+     *  glyph's outline from `Paint.getTextPath` (no hinting, no pixel snapping: text drawing would snap the baseline to a
+     *  whole pixel, iOS's centroid finding), filled anti-aliased on a SOFTWARE bitmap, once per mask. */
+    class AndroidRaster(private val typeface: android.graphics.Typeface) : Raster {
+        private fun paint(em: Double) = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            typeface = this@AndroidRaster.typeface
+            textSize = em.toFloat()
+            hinting = android.graphics.Paint.HINTING_OFF
+            isLinearText = true
+            color = android.graphics.Color.WHITE
+            style = android.graphics.Paint.Style.FILL
+        }
+
+        override fun metrics(glyph: String, em: Double): DoubleArray {
+            val p = paint(em)
+            val m = p.fontMetrics
+            return doubleArrayOf(p.measureText(glyph).toDouble(), -m.ascent.toDouble(), m.descent.toDouble())
+        }
+
+        override fun coverage(glyph: String, em: Double, width: Int, height: Int, x: Double, baseline: Double): IntArray {
+            val bitmap = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
+            val p = paint(em)
+            val outline = android.graphics.Path()
+            p.getTextPath(glyph, 0, glyph.length, x.toFloat(), baseline.toFloat(), outline)
+            android.graphics.Canvas(bitmap).drawPath(outline, p)
+            val px = IntArray(width * height)
+            bitmap.getPixels(px, 0, width, 0, 0, width, height)
+            bitmap.recycle()
+            for (i in px.indices) px[i] = px[i] ushr 24
+            return px
+        }
+
+        override fun image(alpha: DoubleArray, width: Int, height: Int): ImageBitmap {
+            val colors = IntArray(width * height) { (((alpha[it] * 255).roundToInt().coerceIn(0, 255)) shl 24) or 0xFFFFFF }
+            val bitmap = android.graphics.Bitmap.createBitmap(colors, width, height, android.graphics.Bitmap.Config.ARGB_8888)
+            bitmap.prepareToDraw()
+            return bitmap.asImageBitmap()
+        }
+    }
+}
+
+/** D-246: the phone's glyph raster for [GlyphGlow], in the rune face Compose resolves for [Type.runes] (the same
+ *  Typeface the crisp runes are drawn in), remembered with the resolver. */
+@Composable
+fun rememberGlyphRaster(): GlyphGlow.Raster {
+    val resolver = LocalFontFamilyResolver.current
+    return remember(resolver) { GlyphGlow.AndroidRaster(resolver.resolve(Type.runes).value as android.graphics.Typeface) }
 }
 
 data class Floater(
@@ -997,21 +1170,41 @@ object ArtDraw {
 
     /** D-243: a rune layer's drawing, laid out once (decision 79: nothing measured or allocated per frame): each rune's
      *  [glyphs] in the rune face at its size (measured in composition, again only when the density or the font scale
-     *  changes), and the halos' two unit radial brushes, gold and silver, full at the centre and clear at radius 1 (each
-     *  halo scales one to its own radius: the burst dot's technique). The twin of iOS's halo symbols. */
-    class RuneGlowCache(internal val glyphs: List<TextLayoutResult>) {
-        internal val gold: Brush = Brush.radialGradient(listOf(RUNE_GOLD, RUNE_GOLD.copy(alpha = 0f)), center = Offset.Zero, radius = 1f)
-        internal val silver: Brush = Brush.radialGradient(listOf(RUNE_SILVER, RUNE_SILVER.copy(alpha = 0f)), center = Offset.Zero, radius = 1f)
+     *  changes). D-246 (D-243's two unit radial brushes, the halos, are gone): each rune's [glows], [GlyphGlow]'s cached
+     *  blurred mask of its own glyph (built once a process), and the two tints, gold and silver. The twin of iOS's glow
+     *  symbols. */
+    class RuneGlowCache(internal val glyphs: List<TextLayoutResult>, internal val glows: List<GlyphGlow.Mask>) {
+        internal val gold: ColorFilter = ColorFilter.tint(RUNE_GOLD)
+        internal val silver: ColorFilter = ColorFilter.tint(RUNE_SILVER)
 
         companion object {
             /** The page's sixteen runes. */
-            fun page(measurer: TextMeasurer, density: Density) =
-                RuneGlowCache(List(RuneDrift.COUNT) { measureRune(measurer, density, RuneDrift.still(it, 0f, 0f)) })
+            fun page(measurer: TextMeasurer, density: Density, raster: GlyphGlow.Raster) = RuneGlowCache(
+                List(RuneDrift.COUNT) { measureRune(measurer, density, RuneDrift.still(it, 0f, 0f)) },
+                List(RuneDrift.COUNT) { glowOf(RuneDrift.still(it, 0f, 0f), raster) },
+            )
 
             /** The Norse hero's seven. */
-            fun hero(measurer: TextMeasurer, density: Density) =
-                RuneGlowCache(List(HeroRunes.COUNT) { measureRune(measurer, density, HeroRunes.still(it, 0f, 0f)) })
+            fun hero(measurer: TextMeasurer, density: Density, raster: GlyphGlow.Raster) = RuneGlowCache(
+                List(HeroRunes.COUNT) { measureRune(measurer, density, HeroRunes.still(it, 0f, 0f)) },
+                List(HeroRunes.COUNT) { glowOf(HeroRunes.still(it, 0f, 0f), raster) },
+            )
         }
+    }
+
+    /** D-246: a rune's glow, its glyph at its size blurred by [RuneGlow.BLUR] (GlyphGlow's cache: built once). */
+    private fun glowOf(p: RunePose, raster: GlyphGlow.Raster): GlyphGlow.Mask = GlyphGlow.mask(p.glyph, p.size, RuneGlow.BLUR, raster)
+
+    /** D-246: [mask] (GlyphGlow's cached blurred glyph) drawn with its glyph's origin at ([x], [baseline]) in this
+     *  scope, scaled from its pixels to this density, tinted by [tint] at [alpha]: a cached image drawn, no blur, no disc.
+     *  The page's and the hero's runes, the ᚠ and the ring's lit runes all glow through it. */
+    fun DrawScope.glyphGlow(mask: GlyphGlow.Mask, x: Float, baseline: Float, alpha: Float, tint: ColorFilter) {
+        val image = mask.image ?: return
+        val f = density / mask.scale.toFloat()
+        withTransform({
+            translate(x - mask.originX.toFloat() * f, baseline - mask.baseline.toFloat() * f)
+            scale(f, f, Offset.Zero)
+        }) { drawImage(image, alpha = alpha, colorFilter = tint) }
     }
 
     /** A rune's glyph in the rune face at its size (fixed through the density, as every rune drawn as art). */
@@ -1019,12 +1212,12 @@ object ArtDraw {
         with(density) { measurer.measure(p.glyph, Type.rune(p.size.toFloat().dp.toSp())) }
 
     /** Norse's runes, each centred on its pose (the twin of iOS), the still layout when [still]. D-243: at
-     *  [RuneGlow.core] over its halo (the flare toward [RuneGlow.PAGE_FLARE]); still: 0.10 x the strength, no halo. */
+     *  [RuneGlow.core] over its glow (D-246; the flare toward [RuneGlow.PAGE_FLARE]); still: 0.10 x the strength, no glow. */
     fun DrawScope.runes(t: Double, still: Boolean, strength: Float, glow: RuneGlowCache) {
         for (i in 0 until RuneDrift.COUNT) {
             val p = if (still) RuneDrift.still(i, size.width, size.height) else RuneDrift.pose(i, t, size.width, size.height)
             val core = RuneGlow.core(p.opacity, strength.toDouble(), RuneGlow.PAGE_FLARE, if (still) 0.0 else RuneGlow.flare(i, t), still)
-            glowingRune(p, glow.glyphs[i], glow, core, RuneGlow.halo(core, RuneGlow.PAGE_FLARE, still))
+            glowingRune(p, glow.glyphs[i], glow.glows[i], glow, core, RuneGlow.glow(core, RuneGlow.PAGE_FLARE, RuneGlow.PAGE_GLOW, still))
         }
     }
 
@@ -1035,45 +1228,39 @@ object ArtDraw {
         for (i in 0 until HeroRunes.COUNT) {
             val p = if (still) HeroRunes.still(i, size.width, size.height) else HeroRunes.pose(i, t, size.width, size.height)
             val core = RuneGlow.core(p.opacity, strength, RuneGlow.HERO_FLARE, if (still) 0.0 else HeroRunes.flare(i, t), still)
-            glowingRune(p, glow.glyphs[i], glow, core, RuneGlow.halo(core, RuneGlow.HERO_FLARE, still))
+            glowingRune(p, glow.glyphs[i], glow.glows[i], glow, core, RuneGlow.glow(core, RuneGlow.HERO_FLARE, RuneGlow.HERO_GLOW, still))
         }
     }
 
-    /** D-243: a rune at its pose: its halo ([RuneGlow.HALO_RADIUS] x its size, centred on it) at [halo], then its glyph
-     *  at [core]. */
-    private fun DrawScope.glowingRune(p: RunePose, glyph: TextLayoutResult, glow: RuneGlowCache, core: Double, halo: Double) {
+    /** D-243: a rune at its pose, on its own turned layer: (D-246) its glow, the glyph's cached blurred [mask] with its
+     *  glyph on the crisp glyph's (so it turns with it), at [glow], then its glyph at [core]. */
+    private fun DrawScope.glowingRune(
+        p: RunePose, glyph: TextLayoutResult, mask: GlyphGlow.Mask, cache: RuneGlowCache, core: Double, glow: Double,
+    ) {
         if (core <= 0.0) return
-        val x = p.x.toFloat()
-        val y = p.y.toFloat()
-        if (halo > 0.0) {
-            val r = (RuneGlow.HALO_RADIUS * p.size).toFloat().dp.toPx()
-            withTransform({
-                translate(x, y)
-                scale(r, r, Offset.Zero)
-            }) { drawCircle(if (p.silver) glow.silver else glow.gold, radius = 1f, center = Offset.Zero, alpha = halo.toFloat()) }
-        }
         withTransform({
-            translate(x, y)
+            translate(p.x.toFloat(), p.y.toFloat())
             rotate(p.rotationDegrees.toFloat(), Offset.Zero)
         }) {
-            drawText(
-                glyph, color = if (p.silver) RUNE_SILVER else RUNE_GOLD,
-                topLeft = Offset(-glyph.size.width / 2f, -glyph.size.height / 2f), alpha = core.toFloat(),
-            )
+            val left = -glyph.size.width / 2f
+            val top = -glyph.size.height / 2f
+            if (glow > 0.0) glyphGlow(mask, left, top + glyph.firstBaseline, glow.toFloat(), if (p.silver) cache.silver else cache.gold)
+            drawText(glyph, color = if (p.silver) RUNE_SILVER else RUNE_GOLD, topLeft = Offset(left, top), alpha = core.toFloat())
         }
     }
 
     /** D-243: what the Norse hero draws with, kept between frames (no per-frame Path, Brush or measure): the two-stop
      *  gradient, the notch's clip and the inner frame's interior for its size, density, font scale and direction (filled
-     *  by heroArt when [stale]), the ᚠ's halo brush, and the glyphs ([runes], [fehu]) measured in composition. */
-    class NorseHeroCache(internal val runes: RuneGlowCache, internal val fehu: TextLayoutResult) {
+     *  by heroArt when [stale]), the ᚠ's tint (D-246; D-243's halo brush), and the glyphs ([runes], [fehu]) measured in
+     *  composition, with the ᚠ's cached glow ([fehuGlow], GlyphGlow's blurred ᚠ). */
+    class NorseHeroCache(internal val runes: RuneGlowCache, internal val fehu: TextLayoutResult, internal val fehuGlow: GlyphGlow.Mask) {
         private var key: Size = Size.Unspecified
         private var density = 0f
         private var fontScale = 0f
         private var direction: androidx.compose.ui.unit.LayoutDirection? = null
         private var shape: Shape? = null
         internal var gradient: Brush = SolidColor(Color.Transparent)
-        internal var fehuHalo: Brush = SolidColor(Color.Transparent)
+        internal var fehuTint: ColorFilter = ColorFilter.tint(Color.Transparent)
         internal val notch = Path()
         internal var interior = Rect.Zero
 
@@ -1250,8 +1437,10 @@ private fun Modifier.runesGround(dark: Boolean, bleed: State<Bleed>): Modifier =
     val motion = rememberMotionState()
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
-    // D-243: the sixteen glyphs and the halos' brushes, once per density and font scale (never per frame).
-    val halos = remember(measurer, density) { ArtDraw.RuneGlowCache.page(measurer, density) }
+    // D-243: the sixteen glyphs and (D-246) their glows, once per density and font scale (never per frame); the masks
+    // are GlyphGlow's, built once a process.
+    val raster = rememberGlyphRaster()
+    val glows = remember(measurer, density, raster) { ArtDraw.RuneGlowCache.page(measurer, density, raster) }
     val still = RuneLayer.isStill(motion.reduce, motion.lowPower)
     val strength = Strength.of("norsePageRunes")
     val bg = Tok.bg(dark)
@@ -1275,7 +1464,7 @@ private fun Modifier.runesGround(dark: Boolean, bleed: State<Bleed>): Modifier =
             }
         }
     }.artCanvas(0.0, motion) { t ->
-        bled(bleed.value) { with(ArtDraw) { runes(t, still, strength, halos) } }
+        bled(bleed.value) { with(ArtDraw) { runes(t, still, strength, glows) } }
     }
 }
 
@@ -1336,11 +1525,13 @@ fun Modifier.heroArt(dark: Boolean, shape: Shape): Modifier = composed {
             val k = Strength.of("norseHero")
             val start = Tok.heroStart(dark)
             val end = Tok.heroEnd(dark)
+            val raster = rememberGlyphRaster()
             // Keyed on the colours the cache's brushes are filled from (fix wave M6), not on `dark` alone.
-            val cache = remember(measurer, density, start, end, accent) {
-                // ᚠ at heroWatermark dp (fixed through the density), measured once.
+            val cache = remember(measurer, density, raster, start, end, accent) {
+                // ᚠ at heroWatermark dp (fixed through the density), measured once; D-246: its glow, GlyphGlow's.
                 val glyph = with(density) { measurer.measure(Runes.BALANCE, Type.rune(ThemeArt.m("heroWatermark").dp.toSp())) }
-                ArtDraw.NorseHeroCache(ArtDraw.RuneGlowCache.hero(measurer, density), glyph)
+                val fehuGlow = GlyphGlow.mask(Runes.BALANCE, ThemeArt.m("heroWatermark").toDouble(), RuneGlow.BLUR, raster)
+                ArtDraw.NorseHeroCache(ArtDraw.RuneGlowCache.hero(measurer, density, raster), glyph, fehuGlow)
             }
             // The gradient, the notch and the interior for this size (again only when the size, density, font scale,
             // direction or shape changes).
@@ -1358,7 +1549,7 @@ fun Modifier.heroArt(dark: Boolean, shape: Shape): Modifier = composed {
                 // The inner frame's interior: inset heroFrameInset and its 1 dp line.
                 val inner = (ThemeArt.m("heroFrameInset") + 1).dp.toPx()
                 cache.interior = Rect(inner, inner, size.width - inner, size.height - inner)
-                cache.fehuHalo = Brush.radialGradient(listOf(accent, accent.copy(alpha = 0f)), center = Offset.Zero, radius = 1f)
+                cache.fehuTint = ColorFilter.tint(accent)
             }
             Modifier
                 // D-243 (T7): Norse's edge glow, outside the clipped art and beneath it (ThemeArt.kt's norseEdgeGlow).
@@ -1375,18 +1566,13 @@ fun Modifier.heroArt(dark: Boolean, shape: Shape): Modifier = composed {
                     }
                     clipPath(cache.notch) {
                         // ᚠ's right edge heroWatermarkTrailing in, its top at heroWatermarkTop (above the top: D-226 scaled
-                        // 92, 10, -6 by 1.28), at WatermarkGlow's alpha over its halo while it glows (still: 0.16, no halo).
+                        // 92, 10, -6 by 1.28), at WatermarkGlow's alpha over its glow (D-246: its own shape blurred, on its
+                        // glyph) while it glows (still: 0.16, no glow).
                         val glyph = cache.fehu
                         val left = size.width - ThemeArt.m("heroWatermarkTrailing").dp.toPx() - glyph.size.width
                         val top = ThemeArt.m("heroWatermarkTop").dp.toPx()
-                        val halo = (WatermarkGlow.haloAlpha(t, still) * k).toFloat()
-                        if (halo > 0f) {
-                            val r = (WatermarkGlow.HALO_RADIUS * ThemeArt.m("heroWatermark")).toFloat().dp.toPx()
-                            withTransform({
-                                translate(left + glyph.size.width / 2f, top + glyph.size.height / 2f)
-                                scale(r, r, Offset.Zero)
-                            }) { drawCircle(cache.fehuHalo, radius = 1f, center = Offset.Zero, alpha = halo) }
-                        }
+                        val glow = (WatermarkGlow.glyphGlowAlpha(t, still) * k).toFloat()
+                        if (glow > 0f) with(ArtDraw) { glyphGlow(cache.fehuGlow, left, top + glyph.firstBaseline, glow, cache.fehuTint) }
                         drawText(glyph, color = accent, alpha = (WatermarkGlow.alpha(t, still) * k).toFloat(), topLeft = Offset(left, top))
                     }
                 }
