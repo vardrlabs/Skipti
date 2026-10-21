@@ -429,6 +429,17 @@ export function placeHeld(creatorUids, invited) {
   return creator.length > 0 || Boolean(invited?.uid) || invited?.contested === true;
 }
 
+/** D-252 (decision 218): who is told that a group was deleted: every member,
+ *  the deleting account included (its other phones learn it only from this
+ *  notice), once each; the deleting account is `quiet`: its notice is stored
+ *  for its phones to read, and none of them is pushed (the phone that deleted
+ *  already shows it). */
+export function deletionAudience(memberUids, caller) {
+  const members = Array.isArray(memberUids) ? memberUids.filter((u) => typeof u === 'string' && u) : [];
+  const told = [...new Set(typeof caller === 'string' && caller ? [...members, caller] : members)];
+  return { told, quiet: typeof caller === 'string' && caller ? [caller] : [] };
+}
+
 export function noticeBody(kind, n) {
   switch (kind) {
     case 'request': return n.toPerson ? `${n.byName} asked to remove you` : `${n.byName} asked to remove ${n.memberName}`;

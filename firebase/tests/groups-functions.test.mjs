@@ -6,6 +6,9 @@
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import * as groups from '../functions/groups.js';
+import * as push from '../functions/push.js';
 
 const PROJECT = 'demo-skipti';
 const FS = `http://127.0.0.1:${process.env.FIRESTORE_PORT ?? 8180}`;
@@ -393,7 +396,7 @@ async function stored(path) {
   return r.status;
 }
 
-test('deleteGroup: the owner alone; everything goes, everyone else is told', async () => {
+test('deleteGroup: the owner alone; everything goes, every member is told, the owner\'s account too', async () => {
   await call('requestRemoval', 'me', ask());
   assert.equal(await upload('ow', `groups/${G}/picture.jpg`), 200);
   assert.equal(await stored(`groups/${G}/picture.jpg`), 200);
@@ -405,14 +408,39 @@ test('deleteGroup: the owner alone; everything goes, everyone else is told', asy
   assert.deepEqual(await list(`groups/${G}/records`), []);
   assert.deepEqual(await list(`groups/${G}/requests`), []);
   assert.equal(await stored(`groups/${G}/picture.jpg`), 404);
-  for (const uid of ['ad', 'me', 'sam']) {
+  // D-252 (decision 218): the other members are still told, and so is the owner's own account (the request
+  // notice is cleared): its other phones learn of the delete only from this notice. `byUid` names the deleter.
+  for (const uid of ['ad', 'me', 'sam', 'ow']) {
     const n = await notices(uid);
     assert.deepEqual(n.map((x) => x.kind.stringValue), ['deleted'], uid);
     assert.equal(n[0].byName.stringValue, 'Ola');
     assert.equal(n[0].groupName.stringValue, 'Goa trip');
+    assert.equal(n[0].groupId.stringValue, G);
+    assert.equal(n[0].byUid.stringValue, 'ow', `${uid}: whose delete it was`);
   }
-  assert.deepEqual(await notices('ow'), [], 'the request notice is cleared, and the owner is not told');
   assert.deepEqual(await call('deleteGroup', 'ow', { groupId: G, groupName: 'Goa trip', byName: 'Ola' }), { error: 'NOT_FOUND' });
+  assert.equal((await notices('ow')).length, 1, 'a second try tells nobody again');
+});
+
+test('D-252: deleteGroup pushes to the other members only; the deleting account is told quietly (stored, no push)', () => {
+  const audience = groups.deletionAudience(['ow', 'ad', 'me', 'sam'], 'ow');
+  assert.deepEqual(audience.told, ['ow', 'ad', 'me', 'sam'], 'every member has the notice, the deleter included');
+  assert.deepEqual(audience.quiet, ['ow']);
+  // What tell pushes to (push.loud, the one filter tell uses): never the deleter's phones.
+  assert.deepEqual(push.loud(audience.told, audience.quiet), ['ad', 'me', 'sam']);
+  assert.ok(!push.loud(audience.told, audience.quiet).includes('ow'), 'no push to the caller');
+  // An owner missing from memberUids (an old group) is still told, still quietly; a member listed twice, once.
+  assert.deepEqual(groups.deletionAudience(['me', 'me'], 'ow'), { told: ['me', 'ow'], quiet: ['ow'] });
+  assert.deepEqual(push.loud(['me', 'ow'], ['ow']), ['me']);
+  // index.js wires exactly this: deleteGroup tells the audience with its quiet list, and tell pushes through push.loud.
+  const source = readFileSync(new URL('../functions/index.js', import.meta.url), 'utf8');
+  const del = source.slice(source.indexOf('export const deleteGroup'), source.indexOf('export const adoptRemovals'));
+  assert.match(del, /const audience = groups\.deletionAudience\(members, uid\);/);
+  assert.match(del, /tell\('deleteGroup', audience\.told, \{ kind: 'deleted', groupId, groupName, byName, byUid: uid \}, \{ quiet: audience\.quiet \}\)/);
+  assert.equal((del.match(/tell\(/g) ?? []).length, 1, 'one notice step');
+  const tellBody = source.slice(source.indexOf('async function tell('), source.indexOf('async function forgetRequest('));
+  assert.match(tellBody, /const loud = push\.loud\(to, quiet\);/);
+  assert.match(tellBody, /loud\.map\(async \(u\) =>/, 'only the loud accounts\' phones are read for a push');
 });
 
 test('deleteGroup without a picture, in an old group (its creator owns it)', async () => {
