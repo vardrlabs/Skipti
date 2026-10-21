@@ -66,7 +66,6 @@ object SettledCopy {
     const val NOTHING_LEFT = "Nothing left to settle"
     const val HUNDRED = "100 expenses together"
     const val YEAR = "A year together"
-    const val LAST_ONE = "The last one"
     const val SETTLE = "Settle"
     const val SETTLING = "Settling"
 
@@ -76,7 +75,8 @@ object SettledCopy {
     /** [date] is `AppDate.day` of the group's first expense. */
     fun since(date: String): String = "Since $date. Rare, and only once."
 
-    fun paymentsToGo(n: Int): String = "$n payments to go"
+    /** D-247 (decision 168): the fewest-payments plan's length, "1 payment to go" at one. */
+    fun paymentsToGo(n: Int): String = if (n == 1) "1 payment to go" else "$n payments to go"
 }
 
 object SettledSummary {
@@ -105,31 +105,13 @@ object GroupNext {
             .sortedWith(compareByDescending<Pick> { it.amountMinor }.thenBy { it.currencyCode }.thenBy { it.entry.id })
             .firstOrNull()
 
-    /** D-221 fix wave (S2, WORKLOG decision 17): every payment still open in the group's PAIRWISE view (after core's
-     *  loop cancelling), the one model Settle up's cards show and record. [frames] holds each person's own lines (core's
-     *  `ffiBalanceLine` with that person as viewer); a debt shows in both people's frames with opposite signs, so each
-     *  nonzero entry is counted once per (currency, the pair). The plan's transfers are never counted. The twin of iOS's
-     *  `GroupNext.remaining(frames:)`. */
-    fun remaining(frames: Map<String, List<BalanceLineOut>>): Int {
-        val pairs = HashSet<Triple<String, String, String>>()
-        for ((viewer, lines) in frames) {
-            for (line in lines) {
-                for (e in line.entries) {
-                    if (e.minorUnits != 0L) pairs.add(Triple(line.currencyCode, minOf(viewer, e.id), maxOf(viewer, e.id)))
-                }
-            }
-        }
-        return pairs.size
-    }
+    /** D-247 (decision 168, D-221 b; overturns D-221 S2's pairwise count): the payments still to go are the
+     *  fewest-payments plan Settle up shows (core's `transfers`, section 5.8's plan), one list per currency. Counting the
+     *  plan's items is not money arithmetic: every amount stays core's. The twin of iOS's `GroupNext.planCount`. */
+    fun planCount(lines: List<BalanceLineOut>): Int = lines.sumOf { it.transfers.size }
 
-    /** The group's open payments, read through core once per distinct person: every member and every removed person
-     *  (D-210 keeps one who still holds a balance in the pairwise view, so a debt between two removed people is still
-     *  open). [linesOf] reads that person's frame. The twin of iOS's `remaining(members:removed:lines:)`. */
-    fun remaining(members: List<String>, removed: List<String>, linesOf: (String) -> List<BalanceLineOut>): Int =
-        remaining((members + removed).distinct().associateWith(linesOf))
-
-    /** The muted line under the sentence: "The last one" exactly at one, else "N payments to go". */
-    fun remainingLine(n: Int): String = if (n == 1) SettledCopy.LAST_ONE else SettledCopy.paymentsToGo(n)
+    /** The muted line under the sentence: "1 payment to go", or "N payments to go". */
+    fun remainingLine(n: Int): String = SettledCopy.paymentsToGo(n)
 }
 
 /** D-221 fix wave (S1): the Settle tap's latch, the twin of iOS's `SettleLatch`. A tap holds the payment it records:
@@ -225,15 +207,20 @@ object SettledSpeech {
 
 /** D-221 (Design 1, 11): what the group page reads for its Settled card and its milestone, off the main thread. */
 object GroupProgress {
-    /** D-224 fix wave (F7): whether the group is all settled now, by the page's own rule ([SettledSummary.allSettled]). */
-    fun allSettled(store: LedgerStore, groupId: String): Boolean = SettledSummary.allSettled(progress(store, groupId))
+    /** D-224 fix wave (F7): whether the group is all settled now, by the page's own rule ([SettledSummary.allSettled]).
+     *  D-247: [held], a settle waiting out its Undo window ([SettleHold]), counts as recorded. */
+    fun allSettled(store: LedgerStore, groupId: String, held: List<SettlementDTO> = emptyList()): Boolean =
+        SettledSummary.allSettled(progress(store, groupId, held))
 
-    /** Core's settled progress per currency of the group (integer money; the shells never add it). */
-    fun progress(store: LedgerStore, groupId: String): List<SettledProgressOut> =
-        ffiSettledProgress(
-            store.loadExpenses().map { it.toInput() }, store.loadSettlements().map { it.toInput() },
-            store.loadRedistributions(), groupId,
-        )
+    /** Core's settled progress per currency of the group (integer money; the shells never add it). D-247: [held] counts
+     *  as recorded. */
+    fun progress(store: LedgerStore, groupId: String, held: List<SettlementDTO> = emptyList()): List<SettledProgressOut> =
+        progressOver(store, groupId, (store.loadSettlements() + held).map { it.toInput() })
+
+    /** The same over settlements the caller read (the group page reads them once, with the held one, under the hold's
+     *  lock: [SettleHold.counting]). */
+    fun progressOver(store: LedgerStore, groupId: String, settlements: List<uniffi.skipti_core.SettlementInput>): List<SettledProgressOut> =
+        ffiSettledProgress(store.loadExpenses().map { it.toInput() }, settlements, store.loadRedistributions(), groupId)
 
     /** The milestone shown now, over the group's live expenses (core's projection: edits applied, deletions out). */
     fun milestone(store: LedgerStore, groupId: String, nowMs: Long): Milestones.Shown? =
@@ -397,9 +384,10 @@ fun MilestoneCard(shown: Milestones.Shown, dark: Boolean) {
 }
 
 /** D-221 (L41, Q17 a, Design 8): the group's next card: the viewer's largest open payment ("Sam pays you ₹560.00"),
- *  the muted count of what is left, §11.6's sentence, and "Settle" (Settling while it records). It records through
- *  Settle up's own function ([SettleAll.record]), then the page reloads ([SyncStatus.changed]). Never shown for a
- *  read-only copy (the page decides). The twin of iOS's `GroupNextCard`. */
+ *  the muted count of the plan's payments ([GroupNext.planCount], D-247), §11.6's sentence, and "Settle" (Settling
+ *  while it records). It holds through Settle up's own hold ([SettleHold], D-247: written after the Undo window), and
+ *  the page reloads on the hold's revision. Never shown for a read-only copy (the page decides). The twin of iOS's
+ *  `GroupNextCard`. */
 @Composable
 fun GroupNextCard(
     vaultPath: String,
@@ -424,27 +412,29 @@ fun GroupNextCard(
             if (settling) SettledCopy.SETTLING else SettledCopy.SETTLE, dark, enabled = !settling, compact = true, modifier = m,
         ) {
             if (!latch.begin(pick)) return@PrimaryAction
-            scope.launch {
-                val outcome = withContext(Dispatchers.IO) {
-                    runCatching { SettleAll.record(vaultPath, pick.entry, pick.currencyCode, named, askSettled = true) }
-                }
-                val failure = outcome.exceptionOrNull()
-                if (failure == null) {
-                    // The latch keeps "Settling" until the reloaded page picks another payment.
-                    onError(null)
-                    // D-224 fix wave (F7): the payment settled the group: its toast gives way and the celebration is
-                    // marked now (iOS's start), before the page's own read, which takes about a second here. Posted to
-                    // the main looper like the record's own toast, so it runs after that post, never before it.
-                    val settled = outcome.getOrDefault(false)
-                    if (settled) MainThread.executor.execute {
-                        DoneCenter.clear()
+            // D-247 (decision 182): held for Undo, as Settle up's cards are ([SettleHold], the one write path).
+            val failure = runCatching {
+                SettleHold.shared.hold(SettleAll.settlement(pick.entry, pick.currencyCode, named), other, vaultPath)
+            }.exceptionOrNull()
+            if (failure == null) {
+                // The latch keeps "Settling" until the reloaded page picks another payment.
+                onError(null)
+                // D-224 fix wave (F7): the payment settled the group (the held one counted): the celebration is marked
+                // now (iOS's start), before the page's own read; a toast that offers Undo stays ([DoneCenter.giveWay]).
+                scope.launch {
+                    val settled = withContext(Dispatchers.IO) {
+                        runCatching {
+                            SettleHold.shared.counting { held -> GroupProgress.allSettled(LedgerStore(vaultPath), named.group.id, held) }
+                        }.getOrDefault(false)
+                    }
+                    if (settled) {
+                        DoneCenter.giveWay()
                         onAllSettled()
                     }
-                    SyncStatus.changed()
-                } else {
-                    latch.failed()
-                    onError("Could not record the settlement. ${failure.message ?: failure}")
                 }
+            } else {
+                latch.failed()
+                onError("Could not record the settlement. ${failure.message ?: failure}")
             }
         }
     }
@@ -564,8 +554,9 @@ fun CelebrationOverlay(play: CelebrationPlay, groupName: String, dark: Boolean, 
     LaunchedEffect(play) {
         spoken = Celebration.announcement(groupName)
         // D-224 (Design 9): a settle's toast posted a moment before gives way, and the celebration plays the success
-        // (through the door's gate, so a settle that completes the group buzzes once).
-        DoneCenter.clear()
+        // (through the door's gate, so a settle that completes the group buzzes once). D-247: a toast that carries an
+        // action (a held settle's Undo) stays reachable.
+        DoneCenter.giveWay()
         Haptics.play(view, HapticKind.SUCCESS)
         play.run()
         onDone()

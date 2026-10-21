@@ -158,7 +158,9 @@ class DoneMomentsTest {
         assertEquals("Name saved", DoneCopy.NAME_SAVED)
         assertEquals("Username saved", DoneCopy.USERNAME_SAVED)
         assertEquals("Signed out", DoneCopy.SIGNED_OUT)
-        assertEquals("Settled with Asha", DoneCopy.settledWith("Asha"))
+        assertEquals("Settled with Asha. No money moved.", DoneCopy.settledWith("Asha"))
+        assertEquals("Undo", DoneCopy.UNDO)
+        assertEquals("Not recorded.", DoneCopy.NOT_RECORDED)
         assertEquals("Group name saved", DoneCopy.GROUP_NAME_SAVED)
         assertEquals("Group deleted", DoneCopy.GROUP_DELETED)
         assertEquals("Haptics", DoneCopy.HAPTICS_TITLE)
@@ -371,13 +373,18 @@ class DoneMomentsTest {
         return src.substring(at!!.range.first).substringBefore("\n}\n")
     }
 
-    /** GUARANTEES #2 (the twin of testTheMomentsNeverTakeATouch): the toast, its host and the overlay never take a touch
-     *  and open no window: no click, toggle or pointer modifier and no dialog or popup anywhere in DoneMoments.kt, so the
-     *  + and every control under a moment keep working. */
+    /** GUARANTEES #2 (the twin of testTheMomentsNeverTakeATouch): the toast's words, its host and the overlay never take a
+     *  touch and open no window: no click, toggle or pointer modifier and no dialog or popup anywhere in DoneMoments.kt,
+     *  so the + and every control under a moment keep working. D-247: the file's one control is a toast's action (a held
+     *  settle's Undo), Material's TextButton in `DoneToastAction`, drawn only when the line carries one; it never waits
+     *  on anyone (the moment ends on its clock either way). */
     @Test
     fun the_moments_never_take_a_touch() {
         val src = kt("DoneMoments.kt")
-        for (name in listOf("DoneToast", "DoneToastHost", "DoneOverlay", "DoneCheck")) body(src, name)
+        for (name in listOf("DoneToast", "DoneToastHost", "DoneOverlay", "DoneCheck", "DoneToastAction")) body(src, name)
+        assertEquals("one control in the file", 1, Regex("""\b(Text|Outlined|Icon)?Button\(""").findAll(src).count())
+        assertTrue("the toast's action", "androidx.compose.material3.TextButton(" in body(src, "DoneToastAction"))
+        assertTrue("drawn only for a line with an action", "line.action?.let { DoneToastAction(it, dark, onAction) }" in body(src, "DoneToast"))
         for (word in listOf(
             """\bclickable\b""", """\bcombinedClickable\b""", """\btoggleable\b""", """\bselectable\b""", """\bpointerInput\b""",
             """\bdraggable\b""", """(?<![A-Za-z])Dialog\(""", """\bAlertDialog\(""", """\bPopup\(""", """\bModalBottomSheet\(""",
@@ -430,8 +437,9 @@ class DoneMomentsTest {
         assertFalse("never under the toast's alpha", "graphicsLayer" in node)
         val toast = body(src, "DoneToast")
         assertFalse("the faded toast is not the live region", "liveRegion" in toast)
-        val row = toast.substringAfter("Row(").substringBefore("verticalAlignment")
-        assertTrue("the faded toast is hidden from TalkBack", ".clearAndSetSemantics {}" in row)
+        // D-247: the words' row is hidden from TalkBack; the action (Undo) stays reachable.
+        val row = toast.substringAfter("// The words:").substringAfter("Row(").substringBefore("verticalAlignment")
+        assertTrue("the faded words are hidden from TalkBack", ".clearAndSetSemantics {}" in row)
         val overlay = body(src, "DoneOverlay")
         assertTrue("the overlay's words are a polite live region", "liveRegion = LiveRegionMode.Polite" in overlay)
         assertTrue("it speaks the spoken form, once per moment", "DoneCenter.claimSpoken(serial)" in overlay && "DoneCopy.spoken(" in overlay)
@@ -581,7 +589,7 @@ class DoneMomentsTest {
         val icons = kt("TabIcons.kt")
         assertTrue("the toast's check is Lucide's check at toastCheckStroke", Regex("""val ToastCheck: ImageVector by lazy \{ lucide\("check", \*PATHS\.getValue\("check"\)\.toTypedArray\(\), stroke = ThemeArt\.m\("toastCheckStroke"\)\) \}""").containsMatchIn(icons))
         val host = body(kt("DoneMoments.kt"), "DoneToastHost")
-        for (want in listOf("ToastPlace.bottom(barShown)", "WindowInsets.navigationBars", "ThemeArt.m(\"toastInset\")", "ToastMotion.TOTAL", "Haptics.target(view)")) {
+        for (want in listOf("ToastPlace.bottom(barShown)", "WindowInsets.navigationBars", "ThemeArt.m(\"toastInset\")", "DoneMoments.toastSeconds(small.line)", "Haptics.target(view)")) {
             assertTrue("DoneToastHost reads $want", want in host)
         }
     }
@@ -739,7 +747,6 @@ class DoneMomentsTest {
             "OverviewTab.kt" to (1 to listOf("DoneCopy.GROUP_PICTURE_REMOVED", "DoneCopy.GROUP_PICTURE_SAVED")),
             "UsernameStep.kt" to (2 to listOf("DoneCopy.USERNAME_SAVED, PeopleCopy.handle(h)", "DoneCopy.USERNAME_SAVED, PeopleCopy.handle(saved)")),
             "AccountHubScreen.kt" to (1 to listOf("DoneCopy.SIGNED_OUT")),
-            "SettleAll.kt" to (1 to listOf("DoneCopy.settledWith(")),
         )
         val found = mutableMapOf<String, Int>()
         for (f in mainSources()) {
@@ -776,10 +783,16 @@ class DoneMomentsTest {
         assertTrue("a local centre", "val localDone = remember { DoneMomentCenter() }" in people)
         assertTrue("its own host, no bar", "DoneToastHost(barShown = false, center = localDone)" in people)
         assertFalse("the inline done line is gone", "Text(\"✓" in people)
-        // The settle post is in the one record function, so Settle up and the group's next card both say it.
-        val record = kt("SettleAll.kt").substringAfter("fun record(vaultPath: String,").substringBefore("\n    }\n")
-        assertTrue("the shared record posts, on the main thread", "MainThread.run { DoneCenter.post(DoneMoments.line(DoneCopy.settledWith(" in record)
-        assertTrue("its amount is core's", "DoneMoments.amount(" in record)
+        // D-247: the settle posts are the hold's (its own centre, the app's by default), so Settle up's cards and the group's
+        // next card both say them: the held settle with its Undo, and Undo's "Not recorded.". The name keeps a removed
+        // person's (the history's), read by both callers.
+        val settle = kt("SettleAll.kt")
+        val hold = settle.substringAfter("class SettleHold(").substringBefore("\n}\n")
+        assertEquals("two posts, both the hold's", 2, hold.split("center.post(").size - 1)
+        assertTrue("center.post(DoneMoments.lineWithAction(DoneCopy.settledWith(other), DoneCopy.UNDO), clock(), onAction = { undo(id) })" in hold)
+        assertTrue("center.post(DoneMoments.line(DoneCopy.NOT_RECORDED), clock())" in hold)
+        assertFalse("nothing else in Settle up posts", "DoneCenter.post(" in settle)
+        assertTrue("a removed person keeps their name", "LedgerStore.label(entry.id, section.named, section.history)" in settle)
         // A removal's job says so; the review step's job is a decline, which removes nobody.
         assertTrue("never for a decline", "if (step != \"review\") ctx?.let { DoneCenter.post(" in kt("RemovalFlow.kt"))
         // The username step posts only outside the sign-in flow (inside it, the signed-in screen follows).
@@ -920,18 +933,17 @@ class DoneMomentsTest {
     fun the_celebration_clears_and_buzzes() {
         val settled = kt("Settled.kt")
         val start = body(settled, "CelebrationOverlay").substringAfter("LaunchedEffect(play) {").substringBefore("play.run()")
-        assertTrue("clears the toast", "DoneCenter.clear()" in start)
+        assertTrue("clears the toast (D-247: unless it offers Undo)", "DoneCenter.giveWay()" in start)
         assertTrue("plays the success", "Haptics.play(view, HapticKind.SUCCESS)" in start)
         assertEquals("the celebration's haptic only", 1, Regex("""Haptics\.""").findAll(settled).count())
         assertFalse("the milestone card plays nothing", "Haptics" in body(settled, "MilestoneCard"))
     }
 
-    /** Fix wave (F7): the last settle from the group page's next card starts the celebration as iOS's does, from the
-     *  record itself rather than a second read of the whole page (Android's reload took about 1 s after the settle's own
-     *  write; iOS reloads in the same turn): `SettleAll.record` reads whether the group is now all settled (only when
-     *  asked, in its own store, before its toast is posted); the card then gives the toast way, marks the play at once
-     *  and lets the page reload, which never plays it twice. Never on a page not yet loaded, a copy, or a group already
-     *  settled (`Celebration.plays`). */
+    /** Fix wave (F7), D-247: the last settle from the group page's next card starts the celebration as iOS's does, from
+     *  the settle itself rather than waiting on the page's whole read: once the card's settle is held, it reads whether
+     *  the group is now all settled with the held one counted (under the hold's lock, off the main thread); the card
+     *  then gives the toast way (a toast offering Undo stays), marks the play at once and the page's reload never plays
+     *  it twice. Never on a page not yet loaded, a copy, or a group already settled (`Celebration.plays`). */
     @Test
     fun the_last_settle_celebrates_at_once() {
         val s = CelebrationState().apply { before = false }
@@ -942,17 +954,58 @@ class DoneMomentsTest {
         assertFalse("never on a page not yet loaded", CelebrationState().apply { settledHere(isCopy = false) }.pending)
         assertFalse("never in a copy", CelebrationState().apply { before = false; settledHere(isCopy = true) }.pending)
         assertFalse("never for a group already settled", CelebrationState().apply { before = true; settledHere(isCopy = false) }.pending)
-        val record = kt("SettleAll.kt").substringAfter("    fun record(").substringBefore("\n    }\n")
-        assertTrue("asked for only", "askSettled: Boolean = false" in record)
-        val read = record.indexOf("GroupProgress.allSettled(store, named.group.id)")
-        assertTrue("read in its own store before the toast is posted", read in 0 until record.indexOf("DoneCenter.post("))
-        assertTrue("only when asked", "askSettled && " in record)
         val card = body(kt("Settled.kt"), "GroupNextCard")
-        assertTrue("the card asks", "askSettled = true" in card)
-        val done = card.substringAfter("if (settled) MainThread.executor.execute {").substringBefore("}")
-        assertTrue("the toast gives way and the play is marked, after the record's post", "DoneCenter.clear()" in done && "onAllSettled()" in done)
-        assertTrue("before the page reloads", card.indexOf("if (settled) MainThread.executor.execute {") in 0 until card.indexOf("SyncStatus.changed()"))
+        val held = card.indexOf("SettleHold.shared.hold(")
+        val read = card.indexOf("SettleHold.shared.counting { held -> GroupProgress.allSettled(LedgerStore(vaultPath), named.group.id, held) }")
+        assertTrue("read with the held one, after it is held", held in 0 until read)
+        val done = card.substringAfter("if (settled) {").substringBefore("}")
+        assertTrue("the toast gives way and the play is marked", "DoneCenter.giveWay()" in done && "onAllSettled()" in done)
         assertTrue("the page marks its play", "onAllSettled = { celebration.settledHere(isCopy) }" in kt("OverviewTab.kt"))
+    }
+
+    /** D-247: a toast's action runs once, only for the moment that offered it; a newer post or a clear makes an old tap
+     *  do nothing; a toast with an action stays the action's whole window; a celebration gives way only to a plain toast.
+     *  The twin of iOS's testTheToastsActionRunsOnceForItsOwnMoment. */
+    @Test
+    fun the_toasts_action_runs_once_for_its_own_moment() {
+        val c = DoneMomentCenter()
+        var ran = 0
+        c.post(DoneMoments.lineWithAction("Settled with Ana. No money moved.", "Undo"), now = 1_000L, onAction = { ran += 1 })
+        val first = c.serial
+        assertEquals(DoneCenter.ACTION_SECONDS, DoneMoments.toastSeconds(DoneLine("x", emptyList(), "Undo")), 0.0)
+        assertEquals(ToastMotion.TOTAL, DoneMoments.toastSeconds(DoneLine("x", emptyList())), 0.0)
+        assertEquals(5.0, DoneCenter.ACTION_SECONDS, 0.0)
+        c.act(first - 1)
+        assertEquals("an old serial does nothing", 0, ran)
+        c.giveWay()
+        assertTrue("a celebration leaves the Undo toast", c.current != null)
+        c.act(first)
+        c.act(first)
+        assertEquals("once", 1, ran)
+        c.post(DoneMoments.lineWithAction("Settled with Ana. No money moved.", "Undo"), now = 2_000L, onAction = { ran += 1 })
+        c.post(DoneMoments.line("Expense added"), now = 2_100L)
+        c.act(c.serial)
+        assertEquals("the newer toast offers nothing", 1, ran)
+        c.giveWay()
+        assertNull("a plain toast gives way", c.current)
+        c.post(DoneMoments.lineWithAction("Settled with Ana. No money moved.", "Undo"), now = 3_000L, onAction = { ran += 1 })
+        val third = c.serial
+        c.clear()
+        c.act(third)
+        assertEquals("a cleared toast offers nothing", 1, ran)
+        c.post(DoneMoments.lineWithAction("x", "Undo"), now = 4_000L, onAction = { ran += 1 })
+        c.post(DoneMoments.line("y"), now = 4_100L)
+        c.clear(ifStill = c.serial - 1)
+        assertEquals("a clear for an older moment leaves the newer one", "y", c.current?.title)
+        // The pose lasts the asked time; the fades are the same.
+        assertTrue(ToastMotion.pose(4.0, still = false, total = 5.0) != null)
+        assertNull(ToastMotion.pose(4.0, still = false))
+        assertNull(ToastMotion.pose(5.0, still = false, total = 5.0))
+        // The host keeps a toast with an action for the action's window and passes the tap to the centre.
+        val host = body(kt("DoneMoments.kt"), "DoneToastHost")
+        assertTrue("val total = DoneMoments.toastSeconds(small.line)" in host)
+        assertTrue("ToastMotion.pose(play.elapsed(stillAt = 0.0), play.still, total)" in host)
+        assertTrue("onAction = { center.act(serial) }" in host)
     }
 
     /** Design 7 (the twin of testExportAndImportBuzz): export and import show their own result and add only the success. */

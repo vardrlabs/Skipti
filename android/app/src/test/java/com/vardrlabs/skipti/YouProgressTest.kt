@@ -20,7 +20,7 @@ class YouProgressTest {
 
     @Test
     fun the_steps_without_an_account_are_the_five_and_never_mention_one() {
-        assertEquals(noAccount, SetupSteps.steps(signedIn = false))
+        assertEquals(noAccount, SetupSteps.steps(signedIn = false, lockAvailable = true))
         // GUARANTEES #5: an account is never implied or nudged for; no step's words name signing in or an account.
         for (step in SetupStep.entries) {
             for (words in listOf(StepCopy.title(step), StepCopy.why(step))) {
@@ -37,7 +37,45 @@ class YouProgressTest {
 
     @Test
     fun the_steps_signed_in_are_the_seven() {
-        assertEquals(noAccount + listOf(SetupStep.USERNAME, SetupStep.NOTIFICATIONS), SetupSteps.steps(signedIn = true))
+        assertEquals(noAccount + listOf(SetupStep.USERNAME, SetupStep.NOTIFICATIONS), SetupSteps.steps(signedIn = true, lockAvailable = true))
+    }
+
+    /** D-247 (decision 169, D-221 h): a phone that cannot lock (no screen lock: `AppLock.available` false) has no app lock
+     *  step, so the ring completes at "4 of 4" (6 of 6 signed in); with a lock the step is back. The capability is the pure
+     *  function's input; nothing else about the steps changes. The twin of iOS's testThePhoneWithoutALockDropsTheAppLockStep. */
+    @Test
+    fun the_phone_without_a_lock_drops_the_app_lock_step() {
+        assertEquals(noAccount - SetupStep.APP_LOCK, SetupSteps.steps(signedIn = false, lockAvailable = false))
+        assertEquals(
+            noAccount - SetupStep.APP_LOCK + listOf(SetupStep.USERNAME, SetupStep.NOTIFICATIONS),
+            SetupSteps.steps(signedIn = true, lockAvailable = false),
+        )
+        var facts = all.copy(signedIn = false, lockAvailable = false)
+        assertEquals("every step done: the ring completes", 4 to 4, SetupSteps.progress(facts))
+        assertEquals("4 of 4 done", StepCopy.pill(4, 4))
+        assertNull("nothing left to ask", SetupSteps.next(facts))
+        facts = facts.copy(hasGroup = false)
+        assertEquals("the app lock is never the next step without a lock", SetupStep.FIRST_GROUP, SetupSteps.next(facts))
+        assertEquals(6 to 6, SetupSteps.progress(all.copy(lockAvailable = false)))
+        // The negative: with a lock the step counts again, and undone it is asked for.
+        var locking = SetupFacts(lockAvailable = true, lockTimeout = LockTimeout.OFF, hasName = true, hasPicture = true, storedCurrency = "INR")
+        assertEquals(3 to 5, SetupSteps.progress(locking))
+        assertEquals(SetupStep.APP_LOCK, SetupSteps.next(locking))
+        locking = locking.copy(lockAvailable = false)
+        assertEquals(3 to 4, SetupSteps.progress(locking))
+        assertEquals(SetupStep.FIRST_GROUP, SetupSteps.next(locking))
+    }
+
+    /** The hub reads the capability again when SKIPTI comes to the front (a screen lock set in the phone's Settings):
+     *  the facts are read on every resume, and the capability is the lock's own (`AppLock.available`). */
+    @Test
+    fun the_hub_reads_the_lock_again_on_the_front() {
+        val hub = java.io.File("src/main/java/com/vardrlabs/skipti/AccountHubScreen.kt").readText()
+        assertTrue("LifecycleResumeEffect(Unit) {\n        resumes++" in hub)
+        assertTrue("facts = withContext(Dispatchers.IO) { SetupFacts.read(context, LedgerStore(vaultPath), hasUsername) }" in hub)
+        assertTrue("SetupSteps.steps(signedIn, lockAvailable)" in hub)
+        val you = java.io.File("src/main/java/com/vardrlabs/skipti/YouProgress.kt").readText()
+        assertTrue("lockAvailable = AppLock.available(context) && !SettleLook.noLock()," in you)
     }
 
     @Test
@@ -105,11 +143,13 @@ class YouProgressTest {
 
     @Test
     fun progress_counts_the_done_steps_of_the_list() {
-        assertEquals(0 to 7, SetupSteps.progress(none))
+        // D-247: `none`'s phone has no lock, so it has no app lock step; with a lock the step counts (undone).
+        assertEquals(0 to 6, SetupSteps.progress(none))
+        assertEquals(0 to 7, SetupSteps.progress(none.copy(lockAvailable = true)))
         assertEquals(7 to 7, SetupSteps.progress(all))
         assertEquals(6 to 7, SetupSteps.progress(all.copy(hasPicture = false)))
         assertEquals(4 to 5, SetupSteps.progress(all.copy(signedIn = false, hasGroup = false)))
-        assertEquals(0 to 5, SetupSteps.progress(none.copy(signedIn = false)))
+        assertEquals(0 to 5, SetupSteps.progress(none.copy(signedIn = false, lockAvailable = true)))
     }
 
     /** art.py section 18: (done, total) -> lit, the Look Book's Math.round(24 x done / total), half up. */

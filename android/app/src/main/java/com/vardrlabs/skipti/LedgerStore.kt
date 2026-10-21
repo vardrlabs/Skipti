@@ -515,6 +515,18 @@ class LedgerStore(
          * payer's participant id, which conflated who paid with which
          * device wrote.
          */
+        /** D-247 (decision 170): the groups this phone created: a create record authored by this device (its id, never
+         *  another phone's of the same account). Read only: a vault with no device id yet authored nothing (no id is
+         *  made here). A record core cannot decode is passed over. The creator fall-back's input ([CreatorFallBack]),
+         *  display only. The twin of iOS's `LedgerStore.Sync.createdHere`. */
+        fun createdHere(store: LedgerStore): Set<String> {
+            val device = store.rawKvGet(DEVICE_KEY)?.let { HexCodec.encode(it) } ?: return emptySet()
+            return store.allRecords()
+                .filter { it.recordType == GROUP_OP_TYPE && it.authorDeviceId == device }
+                .mapNotNull { (runCatching { uniffi.skipti_core.ffiDecodeGroupOp(it.blob) }.getOrNull() as? uniffi.skipti_core.GroupOpIn.Create)?.groupId }
+                .toSet()
+        }
+
         fun deviceId(store: LedgerStore): String = synchronized(deviceIdLock) {
             store.rawKvGet(DEVICE_KEY)?.let { return HexCodec.encode(it) }
             val fresh = ByteArray(16).also { random.nextBytes(it) }

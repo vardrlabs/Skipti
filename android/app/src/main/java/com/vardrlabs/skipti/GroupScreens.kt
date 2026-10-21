@@ -427,6 +427,7 @@ fun PeopleScreen(
         PeopleRoles.rows(
             it.members, it.selfId, people.viewerYou, people.claims, GroupRoles.roles[groupId],
             yourPlaces = GroupRoles.roles[groupId]?.places?.you, otherYouIds = people.otherYouIds, readOnly = isCopy,
+            createdHere = people.createdHere,
         )
     } ?: emptyList()
     val cards = if (named != null && people.shared && !isCopy) RequestCards.cards(Notices.requests(groupId), rows) else emptyList()

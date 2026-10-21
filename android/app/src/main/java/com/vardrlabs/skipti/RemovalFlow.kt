@@ -497,17 +497,22 @@ object PeopleRoles {
      *  every caller passes it, as on iOS), else from every id of the account
      *  ([viewerYou] and [otherYouIds]). M-f: a row this phone knows no claim
      *  for is never offered a role change (the Functions need the person's
-     *  own word for itself, which the phone does not have yet). */
+     *  own word for itself, which the phone does not have yet). D-247 (decision 170): [createdHere], this phone wrote
+     *  the group's create record ([LedgerStore.Sync.createdHere]). Until the cloud's roles for the group are known
+     *  ([roles] null), such a group shows the viewer as its owner, with the owner's options (never "Ask to be removed").
+     *  Display only: every action still goes to the Functions, which decide; no rule changes. The cloud's answer, once
+     *  cached, always wins. */
     fun rows(
         members: List<MemberWire>, selfId: String, viewerYou: String?, claims: Map<String, String>,
         roles: RoleRules.Roles?, yourPlaces: List<String>? = null, otherYouIds: List<String> = emptyList(),
-        readOnly: Boolean = false,
+        readOnly: Boolean = false, createdHere: Boolean = false,
     ): List<PersonRow> {
         val known = roles ?: RoleRules.Roles(null, emptyList())
+        val creatorFallBack = CreatorFallBack.applies(roles, createdHere)
         fun you(id: String): String? = if (id == selfId) viewerYou ?: claims[id] else claims[id]
         val ownPlace = selfPlace(selfId, listOfNotNull(viewerYou) + otherYouIds, claims, yourPlaces)
         fun place(id: String): String = if (id == selfId) ownPlace else id
-        val viewer = RoleRules.role(viewerYou, ownPlace, known)
+        val viewer = if (creatorFallBack) RoleRules.Role.OWNER else RoleRules.role(viewerYou, ownPlace, known)
         return members.map { m ->
             val isSelf = m.id == selfId
             // A copy of a group (removed from, or deleted): the roles shown
@@ -518,7 +523,7 @@ object PeopleRoles {
                 )
                 PersonRow(m, you(m.id), RoleRules.Role.MEMBER, isSelf, none, place(m.id))
             } else {
-                val role = RoleRules.role(you(m.id), place(m.id), known)
+                val role = if (isSelf && creatorFallBack) RoleRules.Role.OWNER else RoleRules.role(you(m.id), place(m.id), known)
                 val offer = RoleRules.offer(viewer, role, isSelf).let {
                     if (you(m.id) != null) it else it.copy(makeAdmin = false, removeAdmin = false, makeOwner = false)
                 }
@@ -528,6 +533,13 @@ object PeopleRoles {
     }
 
     fun viewerRole(rows: List<PersonRow>): RoleRules.Role = rows.firstOrNull { it.isSelf }?.role ?: RoleRules.Role.MEMBER
+}
+
+/** D-247 (decision 170, D-210 residue (o)): the display-only "this phone made this group" fall-back. The twin of iOS's
+ *  `CreatorFallBack`. */
+object CreatorFallBack {
+    /** Only while the cloud's roles for the group are unknown, and only for a group this phone created. */
+    fun applies(roles: RoleRules.Roles?, createdHere: Boolean): Boolean = roles == null && createdHere
 }
 
 // ---- What this phone knows about a group's people ----
@@ -544,6 +556,8 @@ data class GroupPeople(
     /** D-227: the other ids this account's phones wrote as "you" (D-153), so
      *  the viewer's own place is found under any of them. */
     val otherYouIds: List<String> = emptyList(),
+    /** D-247 (decision 170): this phone wrote the group's create record (the creator fall-back's input). */
+    val createdHere: Boolean = false,
 ) {
     companion object {
         fun load(store: LedgerStore, groupId: String): GroupPeople {
@@ -555,6 +569,7 @@ data class GroupPeople(
                 otherYouIds = projection.otherYouIds,
                 claims = claims.associate { it.memberId to it.youId },
                 readOnly = store.readOnlyChecked()[groupId],
+                createdHere = groupId in LedgerStore.Sync.createdHere(store),
             )
         }
     }

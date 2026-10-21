@@ -268,6 +268,9 @@ class MainActivity : ComponentActivity() {
      *  SKIPTI leaving the front, so it is not time away. */
     override fun onStop() {
         super.onStop()
+        // D-247 (decision 182): a settle held for Undo lands as SKIPTI leaves the front (before onStop returns: the
+        // process may be ended from Recents with no further word). Not for a re-creation: the person is still here.
+        if (!isChangingConfigurations) SettleHold.shared.commit()
         if (proofArg() == null) AppLock.wentToBackground(isChangingConfigurations)
     }
 }
@@ -390,8 +393,27 @@ fun AppRoot(
             return
         }
         "groups-proof" -> {
-            // D-179: three groups, then the ordinary tabs on Groups.
-            GroupsProof(vaultPath) { HomeShell(vaultPath = vaultPath, startOn = HomeTab.GROUPS) }
+            // D-179: three groups, then the ordinary tabs on Groups. D-247: `--settle-look <step>` (a look's surface, in
+            // the debuggable builds proofs run in): the step's ledger state, then You's page for the ring, Flat 4B's page
+            // for the count, else Settle up.
+            SettleLook.step = SettleLook.parse(args)
+            GroupsProof(vaultPath) {
+                var looked by remember { mutableStateOf(SettleLook.step == null) }
+                var flat by remember { mutableStateOf<String?>(null) }
+                LaunchedEffect(Unit) {
+                    if (!looked) {
+                        flat = SettleLook.apply(vaultPath)
+                        looked = true
+                    }
+                }
+                if (!looked) return@GroupsProof
+                when (SettleLook.step) {
+                    null -> HomeShell(vaultPath = vaultPath, startOn = HomeTab.GROUPS)
+                    "ring", "ring-nolock" -> AccountHubScreen(vaultPath = vaultPath, onOpenSignIn = {}, onBack = {})
+                    "group" -> HomeShell(vaultPath = vaultPath, startOn = HomeTab.GROUPS, pushedGroup = flat)
+                    else -> HomeShell(vaultPath = vaultPath, startOn = HomeTab.SETTLE)
+                }
+            }
             return
         }
         "balance" -> {
