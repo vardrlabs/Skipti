@@ -225,8 +225,8 @@ struct ExpenseListView: View {
                 .auroraBackground() // D-176
             }
         }
-        // D-250: the last delete (or its Undo) crosses the empty state and the list over.
-        .rowsMotion(expenses.isEmpty)
+        // D-250 fix wave (M13): no page-level motion here (a Group hands it to each branch, so the swap itself never
+        // moved); the empty state and the list cut, as on Android.
         .navigationTitle("Expenses")
         .navigationBarTitleDisplayMode(.large)
         .navigationDestination(isPresented: $openSpending) { SpendingScreen(fromJustMeHeader: true) } // decision 206

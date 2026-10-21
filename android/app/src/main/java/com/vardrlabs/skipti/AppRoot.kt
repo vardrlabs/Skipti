@@ -11,8 +11,12 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
@@ -56,6 +60,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.async
+import kotlinx.coroutines.withTimeoutOrNull
 import uniffi.skipti_core.skiptiCoreVersion
 import java.io.File
 
@@ -660,17 +666,9 @@ internal object SpendingOpen {
         (open == CARD && tab == HomeTab.BALANCE) || (open == HEADER && tab == HomeTab.EXPENSES)
 }
 
-/** D-250: the last page move the shell made (read by the tab bar, which stays put under a sheet). Not state: noted by
- *  the page transition as it is chosen, read by the bar in the same pass. */
-internal class PageMoves {
-    var last: PageMove = PageMove.CUT
-        private set
-
-    fun note(move: PageMove): PageMove {
-        last = move
-        return move
-    }
-}
+/** D-250 fix wave (I4): the route the shell last composed, so the composition a route changes in works out its move
+ *  ([PageMotion.move]) before the pages and the tab bar read it. */
+internal class RouteMemo(var route: String?)
 
 /** D-250: what a tab shows: its root, or a page over it ([over]: a group's page, Your spending), for [PageMotion.tabMove]. */
 internal data class TabPage(val tab: HomeTab, val group: String?, val spending: String?) {
@@ -680,6 +678,10 @@ internal data class TabPage(val tab: HomeTab, val group: String?, val spending: 
             SpendingOpen.covers(spending, tab) -> "spending"
             else -> null
         }
+
+    /** D-250 fix wave (M1): what the tab SHOWS, the page's identity: a group left open on Balance, cleared while Expenses
+     *  shows, changes nothing Expenses draws, so its root is neither composed again nor reloaded. */
+    val key: Pair<HomeTab, String?> get() = tab to over
 }
 
 /** D-143: where system Back goes from each route over the tabs. Pure, so a
@@ -765,6 +767,8 @@ private fun HomeShell(
      *  waiting celebration), so a group settled while its page was off screen plays when the page is next on screen.
      *  Memory only: never stored, never after a relaunch. */
     val celebrations = remember { HashMap<String, CelebrationState>() }
+    /** D-250 fix wave (M3): each group's page's last read, kept the same way, so a page opened again slides in drawn. */
+    val groupPages = remember { HashMap<String, GroupPageKeep>() }
     /** D-223 fix wave (F6): Home's place (its last read and its scroll offset) across a pushed route, a group's page
      *  or another tab, as iOS's stack keeps it. The offset is saved like `route`; the read is memory only. */
     val homeScroll = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) }
@@ -878,6 +882,21 @@ private fun HomeShell(
             glyphAvatar = runCatching { store.loadAvatar() }.getOrDefault(Avatar.None)
         }
     }
+    /** D-250 fix wave (M3): opens a group's page over the tab. A page read before slides in at once, drawn from that
+     *  read; a first visit is read first, the slide waiting at most [GroupPageKeep.HOLD_MS] for it (past that it slides in
+     *  and its cards fade in as they arrive). */
+    fun openGroupPage(id: String) {
+        val keep = groupPages.getOrPut(id) { GroupPageKeep() }
+        if (!GroupPageKeep.holds(kept = keep.last != null)) {
+            openGroup = id
+            return
+        }
+        shellScope.launch {
+            val read = async(Dispatchers.IO) { runCatching { GroupPageKeep.read(vaultPath, id) }.getOrNull() }
+            withTimeoutOrNull(GroupPageKeep.HOLD_MS) { read.await() }?.let { if (keep.last == null) keep.last = it }
+            openGroup = id
+        }
+    }
     // D-245 (U9): the welcome's "Start a group" opens New group over Balance (iOS's `.skiptiStartGroup`).
     LaunchedEffect(StartGroupRequest.pending) {
         if (StartGroupRequest.pending) {
@@ -910,13 +929,51 @@ private fun HomeShell(
     // from the bottom and falls back ([PageMotion], [pageTransform]); a cut when motion is reduced. Each page reads the
     // route it was composed for (`shown`), so the page leaving keeps drawing itself, and its state, while it slides out.
     val reduce = rememberMotionState().reduce
-    val pageMoves = remember { PageMoves() }
+    // D-250 fix wave (I4): the move of this route change, worked out as it is composed (state, not a note from the
+    // transition), for the bar.
+    val routeMemo = remember { RouteMemo(route) }
+    val move = remember(route) { PageMotion.move(routeMemo.route, route).also { routeMemo.route = route } }
+    // D-250 fix wave (I4): the shell's backdrop and tab bar, above the route switch: the bar is drawn over the pages
+    // (dropping away with a push, fading, as iOS's), and the tab content under a sheet draws its own copy of it.
+    val shellBackdrop = rememberBackdrop()
+    val shellView = LocalView.current
+    val tabBar: @Composable () -> Unit = {
+        // D-179: SKIPTI's own bar with the raised + (the founder's canvas).
+        SkiptiTabBar(
+            dark = dark,
+            selected = selectedTab,
+            onSelect = { tapped ->
+                // D-205 (TabTap): a group's page and (D-249) Your spending are the pages under the bar.
+                val covered = if (openGroup != null || SpendingOpen.covers(spendingOpen, selectedTab)) setOf(selectedTab) else emptySet()
+                when (val tap = TabTap.decide(selectedTab, tapped, covered)) {
+                    is TabTap.SwitchTo -> {
+                        // D-224 (Design 3): a tap that switches tabs, and only that, plays the light haptic.
+                        Haptics.play(shellView, HapticKind.LIGHT)
+                        selectedName = tap.tab.name
+                        openGroup = null
+                        spendingOpen = null
+                    }
+                    is TabTap.PopToRoot -> {
+                        openGroup = null
+                        spendingOpen = null
+                    }
+                    is TabTap.ScrollToTop -> scrollTop = scrollTop + (tap.tab to ((scrollTop[tap.tab] ?: 0) + 1))
+                }
+            },
+            // D-249: the + over Your spending opens Add expense on Just me.
+            onAdd = { route = if (SpendingPresence.shown) "add/justme" else "add" },
+        )
+    }
+    Box(Modifier.fillMaxSize()) {
     AnimatedContent(
         targetState = route,
         modifier = Modifier.fillMaxSize(),
-        transitionSpec = { pageTransform(pageMoves.note(PageMotion.move(initialState, targetState)), reduce) },
+        transitionSpec = { pageTransform(PageMotion.move(initialState, targetState), reduce) },
         label = "page",
     ) { shown ->
+    // D-250 fix wave (I1, I3): each page its own layer; the page leaving drawn from one picture of it and taking no touch.
+    SlidingPage page@{
+    val routeSlide = LocalPageSlide.current
     when (shown) {
         // D-206: You ("account") and its four groups (account/…).
         "account", "account/profile", "account/appearance", "account/security", "account/data" -> {
@@ -951,19 +1008,19 @@ private fun HomeShell(
                 }
                 DoneOverlay(youPlay, dark)
             }
-            return@AnimatedContent
+            return@page
         }
         // C2: the username step opened from a card or Find me: it can be
         // left (Cancel, Back), and returns where it was opened.
         "username", "username/you", "username/find-me" -> {
             val back = HomeRoutes.parent(shown)
             UsernameStep(vaultPath, dark, onCancel = { route = back }) { route = back }
-            return@AnimatedContent
+            return@page
         }
         // D-198: SPEC §3.5 and §4.4.
         "devices" -> {
             PhonesScreen(vaultPath, onBack = { route = HomeRoutes.parent("devices") })
-            return@AnimatedContent
+            return@page
         }
         "delete-account" -> {
             DeleteAccountScreen(
@@ -972,38 +1029,38 @@ private fun HomeShell(
                 onDone = { route = HomeRoutes.parent("delete-account") },
                 onBack = { route = HomeRoutes.parent("delete-account") },
             )
-            return@AnimatedContent
+            return@page
         }
         // D-225 (Design 4): Security → Erase this phone's ledger.
         "erase" -> {
             EraseScreen(vaultPath, onBack = { route = HomeRoutes.parent("erase") })
-            return@AnimatedContent
+            return@page
         }
         "delete-export" -> {
             ExportScreen(LedgerStore(vaultPath), onBack = { route = "delete-account" })
-            return@AnimatedContent
+            return@page
         }
         "other-account" -> {
             OtherAccountScreen(vaultPath, onBack = { route = "account" }, onOpenExport = { route = "export" })
-            return@AnimatedContent
+            return@page
         }
         "about" -> {
             AboutScreen(vaultPath, onBack = { route = "account" }, onOpenLicences = { route = "licences" })
-            return@AnimatedContent
+            return@page
         }
         "licences" -> {
             LicencesScreen(onBack = { route = "about" }, onOpen = { route = "licence/$it" })
-            return@AnimatedContent
+            return@page
         }
         "profile" -> {
             // D-145: the on-device profile.
             ProfileScreen(vaultPath = vaultPath, onBack = { route = "account" })
-            return@AnimatedContent
+            return@page
         }
         "export" -> {
             // D-144: GUARANTEES #4's one tap, from Settings.
             ExportScreen(LedgerStore(vaultPath), onBack = { route = HomeRoutes.parent("export") })
-            return@AnimatedContent
+            return@page
         }
         // D-172: a success shows its confirmation first (the founder,
         // 2026-09-26), then Done returns to Settings.
@@ -1073,7 +1130,7 @@ private fun HomeShell(
                         contentAlignment = androidx.compose.ui.Alignment.Center,
                     ) { androidx.compose.material3.CircularProgressIndicator(color = Tok.accent(dark)) }
                 }
-                return@AnimatedContent
+                return@page
             }
             SignInScreen(vaultPath, onBack = { route = HomeRoutes.parent(shown) }) { outcome, method ->
                 // D-191: a Firebase sign-in; D-168: another account's ledger
@@ -1089,7 +1146,7 @@ private fun HomeShell(
                     is Account.Outcome.Failed -> Unit
                 }
             }
-            return@AnimatedContent
+            return@page
         }
         // D-172/D-195: Join a group from Balance's empty state or the group
         // list, for everyone (the founder, 2026-09-26). Without an account it
@@ -1105,7 +1162,7 @@ private fun HomeShell(
                 onBack = { route = null },
                 onOpenSignIn = { route = "signin/join" },
             )
-            return@AnimatedContent
+            return@page
         }
         // D-166: import, from Balance's empty state or Settings. Done lands on
         // Balance with every tab reading the ledger again.
@@ -1119,7 +1176,7 @@ private fun HomeShell(
                     generation++
                 },
             )
-            return@AnimatedContent
+            return@page
         }
         // D-179: the Groups tab replaced the group list route; its People
         // page is a route over the tabs.
@@ -1136,7 +1193,7 @@ private fun HomeShell(
                 onBack = { route = null },
                 startOnJustMe = shown == "add/justme",
             )
-            return@AnimatedContent
+            return@page
         }
         // D-221: "new-group/you" is You's next card's "Start a group": back and a new group both return to You.
         "new-group", "new-group/you" -> {
@@ -1160,7 +1217,7 @@ private fun HomeShell(
                 },
                 onBack = { route = HomeRoutes.parent(shown) },
             )
-            return@AnimatedContent
+            return@page
         }
         "your-name" -> {
             YourNameScreen(
@@ -1168,7 +1225,7 @@ private fun HomeShell(
                 onSaved = { route = null },
                 onBack = { route = null },
             )
-            return@AnimatedContent
+            return@page
         }
         else -> {
             // D-143: one expense, and the form that edits it.
@@ -1182,7 +1239,7 @@ private fun HomeShell(
                     onEdit = { route = "expense-edit/$id/detail" },
                     onDeleted = { route = null },
                 )
-                return@AnimatedContent
+                return@page
             }
             // D-223 fix wave (I2): an expense opened from an Activity screen, going back to that Activity.
             val opened = ActivityExpenseRoute.parse(r)
@@ -1194,7 +1251,7 @@ private fun HomeShell(
                     onEdit = { route = "expense-edit/${opened.expense}/from/$r" },
                     onDeleted = { route = opened.activity },
                 )
-                return@AnimatedContent
+                return@page
             }
             // D-197: an invitation sent to this account, joined through its link.
             if (r == "join-invite") {
@@ -1210,14 +1267,14 @@ private fun HomeShell(
                         generation++
                     }, onBack = { route = null }, asSheet = true)
                 }
-                return@AnimatedContent
+                return@page
             }
             if (r == "invitations") {
                 InvitationsScreen(vaultPath, dark, onJoin = {
                     joiningInvite = it
                     route = "join-invite"
                 }, onBack = { route = null })
-                return@AnimatedContent
+                return@page
             }
             // D-223 A1: the whole ledger's Activity, from Home's Lately (orphaned since D-196 took the bell away).
             if (r == "activity") {
@@ -1225,7 +1282,7 @@ private fun HomeShell(
                     vaultPath, dark, group = null,
                     onOpenExpense = { route = ActivityExpenseRoute.of(r, it) }, onBack = { route = null },
                 )
-                return@AnimatedContent
+                return@page
             }
             // D-196: a group's Recent activity; an expense opens over it.
             if (r != null && r.startsWith("activity/")) {
@@ -1233,7 +1290,7 @@ private fun HomeShell(
                     vaultPath, dark, group = r.removePrefix("activity/"),
                     onOpenExpense = { route = ActivityExpenseRoute.of(r, it) }, onBack = { route = null },
                 )
-                return@AnimatedContent
+                return@page
             }
             if (r != null && r.startsWith("pushed/")) {
                 val (groupId, expense) = r.removePrefix("pushed/").split("/", limit = 2).let { it[0] to it.getOrElse(1) { "" } }
@@ -1244,7 +1301,7 @@ private fun HomeShell(
                     onEdit = { route = "expense-edit/$expense/detail" },
                     onDeleted = { route = null },
                 )
-                return@AnimatedContent
+                return@page
             }
             // C2: Find me's one change, for the handle it was opened with.
             if (r != null && r.startsWith("username/change/")) {
@@ -1262,7 +1319,7 @@ private fun HomeShell(
                     onUsed = { route = back },
                     onCancel = { route = back },
                 )
-                return@AnimatedContent
+                return@page
             }
             if (r != null && r.startsWith("people/")) {
                 PeopleScreen(
@@ -1276,7 +1333,7 @@ private fun HomeShell(
                         selectedName = HomeTab.SETTLE.name
                     },
                 )
-                return@AnimatedContent
+                return@page
             }
             // D-210: taking a person out (settle first, or redistribute); Back
             // and Done return to People, or to the group's page.
@@ -1284,7 +1341,7 @@ private fun HomeShell(
             if (removal != null) {
                 val back = HomeRoutes.parent(r)
                 RemovalFlowScreen(vaultPath, removal, dark, onBack = { route = back }, onFinished = { route = back })
-                return@AnimatedContent
+                return@page
             }
             // D-210: a group's name, picture and currency, and deleting it.
             if (r != null && r.startsWith("group-settings/")) {
@@ -1297,24 +1354,24 @@ private fun HomeShell(
                         openGroup = null
                     },
                 )
-                return@AnimatedContent
+                return@page
             }
             // D-249: Your spending's "Export Just me" (the personal scope only); back to the page.
             if (r == "export-justme") {
                 ExportScreen(LedgerStore(vaultPath), onBack = { route = null }, justMe = true)
-                return@AnimatedContent
+                return@page
             }
             // D-210: a read-only copy exports its own group.
             if (r != null && r.startsWith("export-group/")) {
                 ExportScreen(LedgerStore(vaultPath), onBack = { route = HomeRoutes.parent(r) }, group = r.removePrefix("export-group/"))
-                return@AnimatedContent
+                return@page
             }
             if (r != null && r.startsWith("licence/")) {
                 LicenceDetailScreen(
                     index = r.removePrefix("licence/").toIntOrNull() ?: -1,
                     onBack = { route = "licences" },
                 )
-                return@AnimatedContent
+                return@page
             }
             if (r != null && r.startsWith("expense-edit/")) {
                 val back = HomeRoutes.parent(r)
@@ -1324,7 +1381,7 @@ private fun HomeShell(
                     editingId = r.removePrefix("expense-edit/").substringBefore("/"),
                     onBack = { route = back },
                 )
-                return@AnimatedContent
+                return@page
             }
         }
     }
@@ -1332,12 +1389,10 @@ private fun HomeShell(
     // D-220 (L-D217-3): the tab bar overlays the page (iOS's sits over its stacks), so the page runs under its glass;
     // one backdrop for the shell: the tab root on screen (or a group's page) records into it, the tab bar and the
     // page's own bar draw it blurred. The page keeps the bar's measured height clear at its end.
-    val shellBackdrop = rememberBackdrop()
     val tabBarInset = with(LocalDensity.current) { tabBarPx.toDp() }
     // D-224 (Design 3, 6): the root's view for the tab switch's light haptic; the first group's big moment over the tab
     // content, which dims under it, ground and all (fix wave F2: the dim's scrim covers the ground drawn here too), while
     // the bar stays bright.
-    val view = LocalView.current
     val doneMotion = rememberMotionState()
     val donePlay = rememberDoneOverlay(doneMotion)
     Box(
@@ -1367,22 +1422,28 @@ private fun HomeShell(
                 key(generation) {
                     // D-250: a group's page and Your spending push over their tab's root (the bar stays, as on iOS) and
                     // Back reverses it; a tab switch stays a cut. Each page reads the place it was composed for (`page`).
+                    val tabTarget = TabPage(selectedTab, openGroup, spendingOpen)
                     AnimatedContent(
-                        targetState = TabPage(selectedTab, openGroup, spendingOpen),
+                        targetState = tabTarget,
                         modifier = Modifier.fillMaxSize(),
                         transitionSpec = { pageTransform(PageMotion.tabMove(initialState.tab == targetState.tab, initialState.over, targetState.over), reduce) },
+                        // D-250 fix wave (M1): keyed by what the tab shows, so a field it does not show never re-composes it.
+                        contentKey = { it.key },
                         label = "tabPage",
                     ) { page ->
+                    SlidingPage {
                     // D-250 (the look): two pages record into one backdrop while one slides over the other, and a layer
                     // drawn by reference shows its LAST recording on both. Only the page the tab is going to records into
                     // the shell's (the tab bar blurs it); the page leaving draws through its own.
                     val leavingBackdrop = rememberBackdrop()
-                    val current = page == TabPage(selectedTab, openGroup, spendingOpen)
-                    // A tab's pages sit on the shell's ground (transparent); while one slides over another each takes the
-                    // ground itself, so the page under it never shows through.
-                    val sliding = transition.currentState != transition.targetState
+                    val slide = LocalPageSlide.current
+                    val current = slide != PageSlide.LEAVING
+                    // A tab's pages sit on the shell's ground (transparent); while one slides over another only the page on
+                    // top takes the ground itself (fix wave I1: one opaque ground a slide), so the page under it never
+                    // shows through it.
+                    val ownGround = PageMotion.ownGround(slide, tabTarget.over)
                     CompositionLocalProvider(LocalShellBackdrop provides if (current) shellBackdrop else leavingBackdrop) {
-                    Box(if (sliding) Modifier.fillMaxSize().auroraBackground(dark) else Modifier.fillMaxSize()) {
+                    Box(if (ownGround) Modifier.fillMaxSize().auroraBackground(dark) else Modifier.fillMaxSize()) {
                     when (page.tab) {
                         // D-180: a group's page opens inside Balance or Groups, so
                         // the bar stays under it (iOS and the canvas).
@@ -1406,6 +1467,7 @@ private fun HomeShell(
                                 },
                                 onExport = { route = "export-group/$it" },
                                 celebration = celebrations.getOrPut(id) { CelebrationState() },
+                                keep = groupPages.getOrPut(id) { GroupPageKeep() },
                             )
                         } ?: if (page.tab == HomeTab.BALANCE && page.spending == SpendingOpen.CARD) {
                             // D-249: Your spending, opened from Home's card, under the tab bar as a group's page.
@@ -1421,7 +1483,7 @@ private fun HomeShell(
                                 vaultPath = vaultPath,
                                 dark = dark,
                                 onSettle = { selectedName = HomeTab.SETTLE.name },
-                                onOpenGroup = { openGroup = it },
+                                onOpenGroup = ::openGroupPage,
                                 onCreateGroup = { route = "new-group" },
                                 onOpenAccount = ::openYou,
                                 onAddYourName = { route = "your-name" },
@@ -1444,7 +1506,7 @@ private fun HomeShell(
                                     selectedName = HomeTab.BALANCE.name
                                     SyncStatus.changed()
                                 },
-                                onOpenGroup = { openGroup = it },
+                                onOpenGroup = ::openGroupPage,
                                 onOpenAccount = ::openYou,
                                 onCreate = { route = "new-group" },
                                 onJoin = { route = "join" },
@@ -1482,53 +1544,45 @@ private fun HomeShell(
                     }
                     }
                     }
+                    }
                 }
             }
         }
         // D-224 (Design 6, 11): the first group's check and words, over the content and under the bar; no touch.
         DoneOverlay(donePlay, dark)
-        // D-179: SKIPTI's own bar with the raised + (the founder's canvas).
-        // D-250: the bar slides away with a push and back with Back (iOS's bar hides on a push); under a sheet it stays.
-        val barStays = reduce || pageMoves.last == PageMove.RISE || pageMoves.last == PageMove.FALL || route != null && ToastCover.covers(route)
-        Box(
-            Modifier
-                .align(Alignment.BottomCenter)
-                .onSizeChanged { tabBarPx = it.height }
-                .animateEnterExit(
-                    enter = if (reduce || barStays) EnterTransition.None else slideInVertically(ChangeMotion.tween(ChangeMotion.Kind.PAGE)) { it },
-                    exit = if (reduce || barStays) ExitTransition.None else slideOutVertically(ChangeMotion.tween(ChangeMotion.Kind.PAGE)) { it },
-                ),
-        ) {
-        androidx.compose.runtime.DisposableEffect(Unit) {
-            ShellBarShown.value = true
-            onDispose { ShellBarShown.value = false }
-        }
-        SkiptiTabBar(
-            dark = dark,
-            selected = selectedTab,
-            onSelect = { tapped ->
-                // D-205 (TabTap): a group's page and (D-249) Your spending are the pages under the bar.
-                val covered = if (openGroup != null || SpendingOpen.covers(spendingOpen, selectedTab)) setOf(selectedTab) else emptySet()
-                when (val tap = TabTap.decide(selectedTab, tapped, covered)) {
-                    is TabTap.SwitchTo -> {
-                        // D-224 (Design 3): a tap that switches tabs, and only that, plays the light haptic.
-                        Haptics.play(view, HapticKind.LIGHT)
-                        selectedName = tap.tab.name
-                        openGroup = null
-                        spendingOpen = null
-                    }
-                    is TabTap.PopToRoot -> {
-                        openGroup = null
-                        spendingOpen = null
-                    }
-                    is TabTap.ScrollToTop -> scrollTop = scrollTop + (tap.tab to ((scrollTop[tap.tab] ?: 0) + 1))
-                }
-            },
-            // D-249: the + over Your spending opens Add expense on Just me.
-            onAdd = { route = if (SpendingPresence.shown) "add/justme" else "add" },
-        )
+        // D-250 fix wave (I4): under a sheet (rising, up, or falling back) the shell draws the bar itself, so the sheet
+        // covers it as iOS's does; otherwise the shell's bar is the one drawn over the pages, below.
+        if (PageMotion.barUnderSheet(route, move, entering = routeSlide == PageSlide.ENTERING)) {
+            Box(Modifier.align(Alignment.BottomCenter)) { tabBar() }
         }
       }
+    }
+    }
+    }
+    // D-250 fix wave (I4): the tab bar, over the pages and outside them (it never slides sideways with the tabs): it
+    // drops away with a fade when a page is pushed and comes back up with Back, over iOS's 0.2 s ([PageMotion.barShows],
+    // [PageMotion.barMove]); a sheet swaps it for the shell's own copy under the sheet.
+    val barMove = PageMotion.barMove(move)
+    AnimatedVisibility(
+        visible = PageMotion.barShows(route),
+        modifier = Modifier.align(Alignment.BottomCenter),
+        enter = if (reduce) EnterTransition.None else when (barMove) {
+            PageMotion.BarMove.DROP -> slideInVertically(ChangeMotion.tween(ChangeMotion.Kind.CHANGE)) { it } + fadeIn(ChangeMotion.tween(ChangeMotion.Kind.CHANGE))
+            PageMotion.BarMove.AFTER_SHEET -> fadeIn(androidx.compose.animation.core.snap(delayMillis = ChangeMotion.millis(ChangeMotion.Kind.PAGE)))
+            else -> EnterTransition.None
+        },
+        exit = if (reduce) ExitTransition.None else when (barMove) {
+            PageMotion.BarMove.DROP -> slideOutVertically(ChangeMotion.tween(ChangeMotion.Kind.CHANGE)) { it } + fadeOut(ChangeMotion.tween(ChangeMotion.Kind.CHANGE))
+            else -> ExitTransition.None
+        },
+    ) {
+        Box(Modifier.onSizeChanged { tabBarPx = it.height }) {
+            androidx.compose.runtime.DisposableEffect(Unit) {
+                ShellBarShown.value = true
+                onDispose { ShellBarShown.value = false }
+            }
+            CompositionLocalProvider(LocalShellBackdrop provides shellBackdrop) { tabBar() }
+        }
     }
     }
 }

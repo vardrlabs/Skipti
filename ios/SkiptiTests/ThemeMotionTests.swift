@@ -1,5 +1,6 @@
 import CoreText
 import SwiftUI
+import UIKit
 import XCTest
 @testable import Skipti
 
@@ -1462,14 +1463,15 @@ final class ThemeMotionTests: XCTestCase {
     func testYouRingTurnsAndTheDoneRingKeepsItsOwnClock() throws {
         let profile = try appSource("Profile.swift")
         let ringed = try XCTUnwrap(profile.components(separatedBy: "private var ringed: some View {").last?.components(separatedBy: "\n    }\n").first)
+        // D-250 fix wave (M12): inside the ring's own Group (the sweep's scope), four further in.
         XCTAssertTrue(ringed.contains("""
-                        ArtTurn {
-                            RuneRing(done: shown.done, total: shown.total)
-                        }
+                            ArtTurn {
+                                RuneRing(done: shown.done, total: shown.total)
+                            }
         """), "the ring turns inside ArtTurn")
         XCTAssertEqual(ringed.components(separatedBy: "ArtTurn {").count - 1, 1)
         let avatar = try XCTUnwrap(ringed.range(of: "AvatarView(avatar: avatar, name: name, size: 104)"))
-        let turnEnd = try XCTUnwrap(ringed.range(of: "RuneRing(done: shown.done, total: shown.total)\n                }"))
+        let turnEnd = try XCTUnwrap(ringed.range(of: "RuneRing(done: shown.done, total: shown.total)\n                    }"))
         XCTAssertGreaterThan(avatar.lowerBound, turnEnd.upperBound, "the picture sits outside the turn")
         let turn = try motionSection("struct ArtTurn<Content: View>: View {", to: "\n}\n")
         XCTAssertTrue(turn.contains("let tick = MotionClock.artTicks(reduceMotion: reduceMotion, active: phase == .active && visible && onScreen)"),
@@ -1550,6 +1552,18 @@ final class ThemeMotionTests: XCTestCase {
         XCTAssertFalse(MoneyChange.countsDown(from: 5, to: 10))
         XCTAssertFalse(MoneyChange.countsDown(from: 5, to: 5))
         XCTAssertTrue(MoneyChange.countsDown(from: 0, to: -300), "a balance going negative counts down")
+        // Fix wave (M11): a DOWN roll stays down through the passes after the change. The change's own pass reads the
+        // value shown before it; once `onChange` has moved `last` to the new value, the direction kept from the change
+        // decides (the old formula, countsDown(from: new, to: new), read "up" there: the negative).
+        XCTAssertTrue(MoneyChange.direction(last: 1_350, value: 900, down: false), "the change's own pass: down")
+        XCTAssertTrue(MoneyChange.direction(last: 900, value: 900, down: MoneyChange.countsDown(from: 1_350, to: 900)),
+                      "after onChange: still down")
+        XCTAssertFalse(MoneyChange.countsDown(from: 900, to: 900), "what the old pass read: up")
+        XCTAssertFalse(MoneyChange.direction(last: 900, value: 1_350, down: true), "a rise after a fall counts up")
+        XCTAssertFalse(MoneyChange.direction(last: nil, value: 500, down: false), "the first value counts up")
+        let money = try? motionSection("struct MoneyChange: ViewModifier {", to: "\n}\n")
+        XCTAssertTrue(money?.contains(".numericText(countsDown: Self.direction(last: last, value: value, down: down))") == true)
+        XCTAssertTrue(money?.contains("down = Self.countsDown(from: old, to: new)") == true)
         XCTAssertFalse(FillMotion.sweeps(reduced: false, seen: nil), "the first read lands at once")
         XCTAssertTrue(FillMotion.sweeps(reduced: false, seen: 0.3))
         XCTAssertFalse(FillMotion.sweeps(reduced: true, seen: 0.3), "reduced: a cut")
@@ -1582,10 +1596,44 @@ final class ThemeMotionTests: XCTestCase {
 
     /// Rows with no id of their own get unique keys: each repeat numbered. Negative: no two keys alike.
     func testRowsWithoutIdsGetUniqueKeys() {
-        XCTAssertEqual(MotionKeys.unique(["a", "b", "a", "a"]), ["a", "b", "a#1", "a#2"])
+        XCTAssertEqual(MotionKeys.unique(["a", "b", "a", "a"]), ["a", "b", "a\u{1F}1", "a\u{1F}2"])
         XCTAssertEqual(MotionKeys.unique([]), [])
         let keys = MotionKeys.unique(["Sam/INR", "Sam/INR", "Ana/INR", "Sam/USD"])
         XCTAssertEqual(Set(keys).count, keys.count)
+        // Fix wave (M15): a person named "Sam#1" beside two "Sam"s no longer shares a key (it did with "#").
+        let named = MotionKeys.unique(["Sam", "Sam", "Sam#1"])
+        XCTAssertEqual(Set(named).count, 3, "\(named)")
+    }
+
+    /// D-250 fix wave (M14): Settle up's plan rows are keyed by the payment (currency, payer, payee), never by place or
+    /// amount; the Spending rows by their category or currency. Negative: no row list keyed by place in either file.
+    func testThePlanAndTheSpendingRowsKeepTheirIdentity() throws {
+        let t = TransferOut(from: "p1", to: "p2", amountMinor: 500)
+        XCTAssertEqual(SettleAll.transferID(currency: "INR", transfer: t), "INR/p1/p2")
+        XCTAssertEqual(SettleAll.transferID(currency: "INR", transfer: t),
+                       SettleAll.transferID(currency: "INR", transfer: TransferOut(from: "p1", to: "p2", amountMinor: 200)), "a partial keeps its row")
+        XCTAssertNotEqual(SettleAll.transferID(currency: "INR", transfer: t), SettleAll.transferID(currency: "EUR", transfer: t))
+        XCTAssertNotEqual(SettleAll.transferID(currency: "INR", transfer: t),
+                          SettleAll.transferID(currency: "INR", transfer: TransferOut(from: "p2", to: "p1", amountMinor: 500)))
+        XCTAssertFalse(try appSource("SettleAll.swift").contains("id: \\.offset"), "Settle up's plan keyed by place")
+        XCTAssertTrue(try appSource("SettleAll.swift").contains("ForEach(transfers, id: \\.id) { pair in"))
+        let spending = try appSource("Spending.swift")
+        XCTAssertFalse(spending.contains("id: \\.offset"), "a Spending row keyed by place")
+        XCTAssertEqual(spending.components(separatedBy: "id: \\.element.category)").count - 1, 3)
+        XCTAssertTrue(spending.contains("ForEach(Array(others), id: \\.currencyCode) { c in"))
+    }
+
+    /// D-250 fix wave (M6): the theme's crossfade picture is laid over the app's own window, never over the lock curtain's
+    /// (which sits above every presentation): a picture of the ledger is never drawn above the lock.
+    @MainActor
+    func testTheCrossfadeIsNeverOverTheLock() throws {
+        XCTAssertTrue(ThemeCrossfade.hosts(level: .normal))
+        XCTAssertTrue(ThemeCrossfade.hosts(level: .alert), "an alert's level is still under the curtain")
+        XCTAssertFalse(ThemeCrossfade.hosts(level: LockCurtainRules.level), "the curtain's own window")
+        XCTAssertFalse(ThemeCrossfade.hosts(level: UIWindow.Level(rawValue: LockCurtainRules.level.rawValue + 1)))
+        let fade = try motionSection("enum ThemeCrossfade {", to: "\n}\n")
+        XCTAssertTrue(fade.contains("let window = host(UIApplication.shared.connectedScenes"), "the host is chosen by the rule")
+        XCTAssertFalse(fade.contains("first(where: \\.isKeyWindow)"), "never any key window")
     }
 
     /// Settle up's card is keyed by its group, currency and person, never its place or its amount: a partial settle
@@ -1665,7 +1713,7 @@ final class ThemeMotionTests: XCTestCase {
             ("HomeParts.swift", ".fillMotion(SettledMeter.fraction(basisPoints))"), ("Settled.swift", ".fillMotion(SettledMeter.fraction(b.basisPoints))"),
             ("SettleAll.swift", ".rowsMotion(SettleAll.shape(sections))"), ("SettleAll.swift", "ForEach(debts, id: \\.id) { debt in"),
             ("SettleAll.swift", ".moneyChange(entry.minorUnits)"), ("ExpenseListView.swift", ".rowsMotion(shape)"),
-            ("ExpenseListView.swift", ".rowsMotion(expenses.isEmpty)"), ("AddExpenseScreen.swift", ".rowsMotion(formShape)"),
+            ("AddExpenseScreen.swift", ".rowsMotion(formShape)"),
             ("AddExpenseScreen.swift", ".reveals(error)"), ("GroupSheets.swift", ".rowsMotion(people.rows.map(\\.id))"),
             ("Spending.swift", ".rowsMotion(view)"), ("Spending.swift", ".rowsMotion(pageShape)"), ("Spending.swift", ".moneyChange(first.totalMinor)"),
             ("AccountHubScreen.swift", ".rowsMotion(shown.chosen)"), ("AccountHubScreen.swift", "ThemeCrossfade.change {"),
@@ -1680,6 +1728,15 @@ final class ThemeMotionTests: XCTestCase {
         let settle = try appSource("SettleAll.swift")
         XCTAssertFalse(settle.contains("Array(debts.enumerated()), id: \\.offset"), "Settle up's cards keyed by place")
         XCTAssertFalse(try appSource("GroupSheets.swift").contains("withAnimation"))
+        // Fix wave (M13): no page-level motion on the Expenses page's Group (it never moved the swap).
+        XCTAssertFalse(try appSource("ExpenseListView.swift").contains(".rowsMotion(expenses.isEmpty)"))
+        // Fix wave (M12): the ring's sweep sits on the ring alone, inside the ZStack before the picture, so a picture
+        // changed in the same update never crossfades over it.
+        let profile = try appSource("Profile.swift")
+        let ringed = try XCTUnwrap(profile.components(separatedBy: "private var ringed: some View {").last?.components(separatedBy: "\n    }\n").first)
+        let fill = try XCTUnwrap(ringed.range(of: ".fillMotion(progress.map"))
+        let avatar = try XCTUnwrap(ringed.range(of: "AvatarView(avatar: avatar, name: name, size: 104)"))
+        XCTAssertLessThan(fill.lowerBound, avatar.lowerBound, "the sweep is on the ring, not the ZStack holding the picture")
     }
 
 }

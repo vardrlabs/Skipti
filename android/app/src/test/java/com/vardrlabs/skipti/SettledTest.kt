@@ -374,8 +374,9 @@ class SettledTest {
         assertEquals("in order: $anchors at $at", at.sorted(), at)
         for (a in anchors) assertEquals("$a once", 1, page.split(a).size - 1)
         // The Settled card shows only when core returned a block; the milestone only when one shows.
-        assertTrue("the Settled card's condition", "if (progress.isNotEmpty()) SettledCard(" in page)
-        assertTrue("the milestone's condition", "milestone?.let { MilestoneCard(it, dark) }" in page)
+        // D-250 fix wave (M4): each comes and goes in place (MovingRows of one), on the same conditions.
+        assertTrue("the Settled card's condition", "MovingRows(listOfNotNull(progress.takeIf { it.isNotEmpty() }), key = { \"settled\" }) { p, _ -> SettledCard(" in page)
+        assertTrue("the milestone's condition", "MovingRows(listOfNotNull(milestone), key = { \"milestone\" }) { m, _ -> MilestoneCard(m, dark) }" in page)
     }
 
     /** Design 6 (L42): the meter is the theme's: C2's meter shape, the art table's heights (Vardr Labs thinner), Norse's
@@ -451,7 +452,9 @@ class SettledTest {
         assertFalse("never cleared before the reload", "settlingKey" in settle)
         // D-247 (decision 168): the count is the plan's length, from the page's own lines (core's plan).
         val page = body("OverviewTab.kt", "fun GroupPage(")
-        assertTrue("the plan count", "GroupNext.planCount(l)" in page)
+        // D-250 fix wave (M3): the page's read lives in GroupPageKeep.read (the shell reads a first visit with it too).
+        assertTrue("the plan count", "GroupNext.planCount(l)" in body("OverviewTab.kt", "class GroupPageKeep {"))
+        assertTrue("runCatching { GroupPageKeep.read(vaultPath, groupId) }" in page)
         assertFalse("the pairwise count is gone", "GroupNext.remaining(" in page)
     }
 
@@ -523,7 +526,7 @@ class SettledTest {
         assertTrue("after the content", page.indexOf(".verticalScroll(scroll)") < drawn)
         assertTrue("before the bar", drawn < page.indexOf("PushedBar("))
         // The page's content dims (the art behind it does not): the alpha of the content column, from the timeline.
-        assertTrue("the content dims", ".graphicsLayer { alpha = play?.let { CelebrationTimeline.dim(it.elapsed, it.still) } ?: 1f }" in page)
+        assertTrue("the content dims", ".graphicsLayer { alpha = (play?.let { CelebrationTimeline.dim(it.elapsed, it.still) } ?: 1f) * arrival }" in page)
     }
 
     /** The burst is the motion engine's: drawn through `artCanvas` and `ArtDraw.burst`, only when
@@ -666,7 +669,8 @@ class SettledTest {
     @Test
     fun the_play_waits_until_visible() {
         val page = body("OverviewTab.kt", "fun GroupPage(")
-        val load = page.substringAfter("LaunchedEffect(vaultPath, groupId, SyncStatus.revision, requestIds) {").substringBefore("\n    }\n")
+        val load = page.substringAfter("LaunchedEffect(vaultPath, groupId, SyncStatus.revision, requestIds, SettleHold.shared.revision) {").substringBefore("\n    }\n")
+        assertTrue("the load found", load.length < page.length)
         assertTrue("the load decides", "Celebration.plays(celebration.before, after, isCopy = it.people.readOnly != null)" in load)
         assertTrue("and marks it pending", "celebration.pending = true" in load)
         assertTrue("then remembers the state", "celebration.before = after" in load)

@@ -120,7 +120,7 @@ class TwinFixTest {
      *  the effect. */
     @Test
     fun the_expense_rows_match_ios() {
-        assertTrue("Column(Modifier.glassCard(dark, padding = 14)) {" in main("ExpenseListScreen.kt"))
+        assertTrue("Column(Modifier.padding(top = ExpenseListUi.SPACING.dp).glassCard(dark, padding = 14)) {" in main("ExpenseListScreen.kt"))
         val ios = swift("ExpenseListView.swift")
         assertTrue(".glassCard(padding: 14)" in ios)
         assertTrue("return HStack(alignment: .top, spacing: 0) {" in ios)

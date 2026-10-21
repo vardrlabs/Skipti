@@ -72,7 +72,7 @@ class CardPaddingParityTest {
         Pair(
             "the expense list's group card (D-234 L12-d)",
             Site("ExpenseListView.swift", "ForEach(Array(section.expenses.enumerated()), id: \\.element.id) { index, expense in", Side.AFTER),
-            Site("ExpenseListScreen.kt", "MovingRows(section.expenses, key = { it.id }, leave = RowLeave.SLIDE) { expense, index ->", Side.BEFORE),
+            Site("ExpenseListScreen.kt", "MovingRows(carded.expenses, key = { it.id }, leave = RowLeave.SLIDE) { expense, index ->", Side.BEFORE),
         ),
         Pair(
             "a licence's text panel (D-225 Design 6)",

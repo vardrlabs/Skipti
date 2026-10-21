@@ -589,7 +589,7 @@ class AuditFixesTest {
         assertTrue("CloudRecords.hasParked(store, groupId)," in page)
         assertTrue("parkedHere = it.parked" in page)
         assertTrue(
-            "if (parkedHere) Text(OverviewCopy.COULD_NOT_SYNC, style = Type.bodyDim(dark).copy(fontSize = TypeScale.detail.sp))" in page,
+            "MovingRows(listOfNotNull(OverviewCopy.COULD_NOT_SYNC.takeIf { parkedHere }), key = { \"parked\" }) { line, _ ->\n                    Text(line, style = Type.bodyDim(dark).copy(fontSize = TypeScale.detail.sp))" in page,
         )
         assertTrue(
             "if (newlyRefused.isNotEmpty() || (parked intersect uploaded).isNotEmpty()) withContext(Dispatchers.Main) { SyncStatus.changed() }" in

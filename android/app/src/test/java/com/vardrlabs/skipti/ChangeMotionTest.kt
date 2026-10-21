@@ -1,5 +1,6 @@
 package com.vardrlabs.skipti
 
+import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.core.SnapSpec
 import androidx.compose.animation.core.TweenSpec
 import org.junit.Assert.assertEquals
@@ -110,6 +111,9 @@ class ChangeMotionTest {
             assertEquals("at rest $done of $total", RuneRing.lit(done, total), RuneRing.lit(share))
             // The float the sweep draws at rest (a Float made Double) still lights the count's runes.
             assertEquals(RuneRing.lit(done, total), RuneRing.litAt(share.toFloat().toDouble(), done, total))
+            // Fix wave (M10): the Float the sweep rests on IS at rest (the count's integer rule decides it).
+            assertTrue(RuneRing.atRest(share.toFloat().toDouble(), done, total))
+            if (total > 1) assertFalse("a sweep's share between steps is not at rest", RuneRing.atRest(share + 0.5 / total, done, total))
         }
         var last = 0
         for (i in 0..1000) {
@@ -168,8 +172,11 @@ class ChangeMotionTest {
         assertEquals("one read of the door in the shell", 1, shell.split("val reduce = rememberMotionState().reduce").size - 1)
         assertTrue(
             "the route's page",
-            "transitionSpec = { pageTransform(pageMoves.note(PageMotion.move(initialState, targetState)), reduce) }" in shell,
+            "transitionSpec = { pageTransform(PageMotion.move(initialState, targetState), reduce) }" in shell,
         )
+        // Fix wave (I4): no move noted from inside the transition any more; the shell works it out as the route changes.
+        assertFalse("PageMoves" in root)
+        assertTrue("val move = remember(route) { PageMotion.move(routeMemo.route, route).also { routeMemo.route = route } }" in shell)
         assertTrue(
             "a tab's page",
             "transitionSpec = { pageTransform(PageMotion.tabMove(initialState.tab == targetState.tab, initialState.over, targetState.over), reduce) }" in shell,
@@ -180,14 +187,29 @@ class ChangeMotionTest {
         assertFalse("no `when (route)` left", "when (route)" in routes)
         assertFalse("no `val r = route`", "val r = route" in routes)
         assertFalse("no `HomeRoutes.parent(route)`", "HomeRoutes.parent(route)" in routes)
-        assertTrue("a page returns from its own content", "return@AnimatedContent" in routes)
+        // Fix wave (I1, I3): every route's page is a SlidingPage (its own layer, a picture while it leaves, no touch).
+        assertTrue("SlidingPage page@{" in routes)
+        assertTrue("a page returns from its own content", "return@page" in routes)
+        assertEquals(33, routes.split("return@page").size - 1)
+        assertFalse("return@AnimatedContent" in routes)
         assertFalse("never a bare return out of the shell", Regex("""(?m)\breturn$""").containsMatchIn(routes))
         val tabs = shell.substringAfter(") { page ->")
+        assertTrue("SlidingPage {" in tabs.substringBefore("val leavingBackdrop"))
+        // Fix wave (M1): keyed by what the tab shows.
+        assertTrue("contentKey = { it.key }," in shell)
         assertTrue("HomeTab.BALANCE, HomeTab.GROUPS -> page.group?.let { id ->" in tabs)
         assertFalse("the tab's page never reads the live group", "openGroup?.let { id ->" in tabs)
-        // The bar slides away with a push, never under a sheet, never when reduced.
-        assertTrue("enter = if (reduce || barStays) EnterTransition.None else slideInVertically(" in shell)
-        assertTrue("exit = if (reduce || barStays) ExitTransition.None else slideOutVertically(" in shell)
+        // Fix wave (I4): the bar is drawn over the pages, outside them (never inside a sliding page), shown by the pure
+        // rule, dropping down and fading over CHANGE (iOS's 0.2 s), a cut when reduced; under a sheet the shell's own copy.
+        val bar = shell.substringAfter("val barMove = PageMotion.barMove(move)")
+        assertTrue("visible = PageMotion.barShows(route)," in bar)
+        assertTrue("enter = if (reduce) EnterTransition.None else when (barMove) {" in bar)
+        assertTrue("exit = if (reduce) ExitTransition.None else when (barMove) {" in bar)
+        assertTrue("PageMotion.BarMove.DROP -> slideInVertically(ChangeMotion.tween(ChangeMotion.Kind.CHANGE)) { it } + fadeIn(ChangeMotion.tween(ChangeMotion.Kind.CHANGE))" in bar)
+        assertTrue("PageMotion.BarMove.DROP -> slideOutVertically(ChangeMotion.tween(ChangeMotion.Kind.CHANGE)) { it } + fadeOut(ChangeMotion.tween(ChangeMotion.Kind.CHANGE))" in bar)
+        assertFalse("the bar is never inside a page", "SkiptiTabBar(" in routes)
+        assertFalse(".animateEnterExit(" in root)
+        assertTrue("if (PageMotion.barUnderSheet(route, move, entering = routeSlide == PageSlide.ENTERING)) {" in shell)
         // The transform: a cut when reduced, before anything else.
         val transform = src("MotionViews.kt").substringAfter("fun AnimatedContentTransitionScope<*>.pageTransform(").substringBefore("\n}\n")
         assertTrue(transform.lines()[1].trim() == "if (reduce || move == PageMove.CUT) return EnterTransition.None togetherWith ExitTransition.None")
@@ -195,8 +217,11 @@ class ChangeMotionTest {
         // shows its last recording on both pages); sliding pages take the ground themselves (they sit on the shell's);
         // the remaining source redraws when another goes.
         assertTrue("CompositionLocalProvider(LocalShellBackdrop provides if (current) shellBackdrop else leavingBackdrop)" in tabs)
-        assertTrue("val current = page == TabPage(selectedTab, openGroup, spendingOpen)" in tabs)
-        assertTrue("Box(if (sliding) Modifier.fillMaxSize().auroraBackground(dark) else Modifier.fillMaxSize())" in tabs)
+        assertTrue("val current = slide != PageSlide.LEAVING" in tabs)
+        // Fix wave (I1): one opaque ground a tab slide, the page on top's.
+        assertTrue("val ownGround = PageMotion.ownGround(slide, tabTarget.over)" in tabs)
+        assertTrue("Box(if (ownGround) Modifier.fillMaxSize().auroraBackground(dark) else Modifier.fillMaxSize())" in tabs)
+        assertFalse("if (sliding)" in tabs)
         val backdrop = src("Backdrop.kt").substringAfter("fun Modifier.backdropSource(").substringBefore("\n}\n")
         assertTrue("backdrop.sourcesGone++" in backdrop && "val gone = backdrop.sourcesGone" in backdrop)
         // ChoicePage's window leaves as it came.
@@ -204,6 +229,168 @@ class ChangeMotionTest {
         assertTrue("exit = if (motion.reduce) ExitTransition.None else slideOutHorizontally(" in window)
         assertTrue("Dialog(onDismissRequest = close," in window)
         assertTrue("if (motion.reduce) {\n            onClose()" in window)
+    }
+
+    // ---- Fix wave: pages on their own layers, the bar, the tab's key ----
+
+    @Test
+    fun a_page_knows_where_it_is_in_its_slide() {
+        assertEquals(PageSlide.ENTERING, PageSlide.of(EnterExitState.PreEnter, EnterExitState.Visible))
+        assertEquals(PageSlide.STILL, PageSlide.of(EnterExitState.Visible, EnterExitState.Visible))
+        assertEquals(PageSlide.LEAVING, PageSlide.of(EnterExitState.Visible, EnterExitState.PostExit))
+        assertEquals("a leave turned back is still leaving until it is told otherwise", PageSlide.LEAVING, PageSlide.of(EnterExitState.PreEnter, EnterExitState.PostExit))
+        // Only the page leaving is frozen, holds its art and swallows touches; only a page at rest takes the art holder.
+        assertEquals(listOf(true, true, false), PageSlide.entries.map { it.takesTouches })
+        assertEquals(listOf(false, false, true), PageSlide.entries.map { it.frozen })
+        assertEquals(listOf(false, false, true), PageSlide.entries.map { it.artHeld })
+        assertEquals(listOf(true, false, false), PageSlide.entries.map { it.artClaims })
+        // Negatives: the page coming in takes touches and keeps its art running; the page at rest is never frozen.
+        assertTrue(PageSlide.ENTERING.takesTouches)
+        assertFalse(PageSlide.ENTERING.artHeld)
+        assertFalse(PageSlide.STILL.frozen)
+    }
+
+    @Test
+    fun a_sliding_page_is_a_layer_and_its_leaving_picture_is_taken_once() {
+        val views = src("MotionViews.kt")
+        val page = views.substringAfter("fun AnimatedVisibilityScope.SlidingPage(").substringBefore("\n}\n")
+        assertTrue("val slide = PageSlide.of(transition.currentState, transition.targetState)" in page)
+        assertTrue("CompositionLocalProvider(LocalPageSlide provides slide)" in page)
+        val layer = views.substringAfter("private fun Modifier.pageLayer(slide: PageSlide): Modifier {").substringBefore("\n}\n")
+        // Its own layer first, so the slide moves a RenderNode.
+        assertTrue(layer.substringAfter("return this").trim().startsWith(".graphicsLayer()"))
+        assertTrue("if (slide.takesTouches) Modifier else Modifier.pointerInput(Unit) { swallowTouches() }" in layer)
+        // The picture: recorded once (offscreen: one textured quad a frame), then drawn without the page drawing itself.
+        assertTrue("if (!kept[0]) {\n                copy.compositingStrategy = CompositingStrategy.Offscreen\n                copy.record { this@drawWithContent.drawContent() }\n                kept[0] = true" in layer)
+        assertEquals("drawContent() runs only when not frozen, or into the picture", 2, layer.split("drawContent()").size - 1)
+        assertTrue("awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }" in views)
+        // The art holds while its page leaves, never jumping to its still frame; a sliding page never takes the holder.
+        val motion = src("ThemeMotion.kt")
+        val canvas = motion.substringAfter("fun Modifier.artCanvas(").substringBefore("\n}\n")
+        assertTrue("val held = LocalPageSlide.current.artHeld" in canvas)
+        assertTrue("LaunchedEffect(tick, held) {\n        if (!tick || held) return@LaunchedEffect" in canvas)
+        assertTrue("drawBehind { draw(ArtCanvas.seconds(tick, t, still)) }" in canvas)
+        val turn = motion.substringAfter("fun Modifier.artTurn(").substringBefore("\n}\n")
+        assertTrue("if (held) return@LaunchedEffect\n        turning = RingTurn.STILL" in turn)
+        val curtains = motion.substringAfter("private fun Modifier.curtainsGround(").substringBefore("\n}\n")
+        assertTrue("val claims = LocalPageSlide.current.artClaims" in curtains)
+        assertTrue("if (art != null && content != null && claims && owns()) {" in curtains)
+        val art = motion.substringAfter("fun Modifier.pageArt(dark: Boolean)").substringBefore("\n}")
+        assertTrue("if (slide != PageSlide.STILL && measured[0]) return@onGloballyPositioned" in art)
+    }
+
+    @Test
+    fun the_bar_shows_on_the_tabs_alone() {
+        assertTrue(PageMotion.barShows(null))
+        assertFalse("a pushed page hides it", PageMotion.barShows("account"))
+        assertFalse("a sheet covers it", PageMotion.barShows("add"))
+        // The bar's way: a push drops it, Back brings it up, a sheet swaps it for the shell's copy under the sheet.
+        assertEquals(PageMotion.BarMove.DROP, PageMotion.barMove(PageMotion.move(null, "account")))
+        assertEquals(PageMotion.BarMove.DROP, PageMotion.barMove(PageMotion.move("account", null)))
+        assertEquals(PageMotion.BarMove.SWAP, PageMotion.barMove(PageMotion.move(null, "add")))
+        assertEquals(PageMotion.BarMove.AFTER_SHEET, PageMotion.barMove(PageMotion.move("add", null)))
+        assertEquals(PageMotion.BarMove.CUT, PageMotion.barMove(PageMove.CUT))
+        // The shell's copy: under a sheet (rising or up), and while one falls back to the tabs; never on a push.
+        assertTrue(PageMotion.barUnderSheet("add", PageMove.RISE, entering = false))
+        assertTrue(PageMotion.barUnderSheet(null, PageMove.FALL, entering = true))
+        assertFalse("landed: the shell's own bar again", PageMotion.barUnderSheet(null, PageMove.FALL, entering = false))
+        assertFalse("a push's page: no bar under it", PageMotion.barUnderSheet("account", PageMove.PUSH, entering = false))
+        assertFalse("Back to the tabs: the bar comes up itself", PageMotion.barUnderSheet(null, PageMove.BACK, entering = true))
+        assertFalse(PageMotion.barUnderSheet(null, PageMove.CUT, entering = false))
+        // iOS's: the bar drops over 0.2 s (ChangeMotion.CHANGE), not the page's 0.25.
+        assertEquals(200, ChangeMotion.millis(ChangeMotion.Kind.CHANGE))
+    }
+
+    @Test
+    fun one_ground_a_tab_slide() {
+        // A group's page pushed over the root: the page coming in has the ground, the root under it none.
+        assertTrue(PageMotion.ownGround(PageSlide.ENTERING, targetOver = "group/g1"))
+        assertFalse(PageMotion.ownGround(PageSlide.LEAVING, targetOver = "group/g1"))
+        // Back: the page going out has it, the root coming back under it none.
+        assertTrue(PageMotion.ownGround(PageSlide.LEAVING, targetOver = null))
+        assertFalse(PageMotion.ownGround(PageSlide.ENTERING, targetOver = null))
+        // At rest, none (the shell's ground is the page's).
+        assertFalse(PageMotion.ownGround(PageSlide.STILL, targetOver = "group/g1"))
+        assertFalse(PageMotion.ownGround(PageSlide.STILL, targetOver = null))
+        // Never two at once.
+        for (over in listOf(null, "group/g1")) {
+            assertEquals(1, listOf(PageSlide.ENTERING, PageSlide.LEAVING).count { PageMotion.ownGround(it, over) })
+        }
+    }
+
+    @Test
+    fun a_tab_is_keyed_by_what_it_shows() {
+        // A group left open on Balance, cleared while Expenses shows: Expenses' key does not change (no reload).
+        assertEquals(TabPage(HomeTab.EXPENSES, "g1", null).key, TabPage(HomeTab.EXPENSES, null, null).key)
+        assertEquals(TabPage(HomeTab.SETTLE, "g1", SpendingOpen.CARD).key, TabPage(HomeTab.SETTLE, null, null).key)
+        assertEquals(TabPage(HomeTab.EXPENSES, null, SpendingOpen.CARD).key, TabPage(HomeTab.EXPENSES, null, null).key)
+        // Negatives: what the tab shows changes the key.
+        assertNotEquals(TabPage(HomeTab.BALANCE, "g1", null).key, TabPage(HomeTab.BALANCE, null, null).key)
+        assertNotEquals(TabPage(HomeTab.BALANCE, "g1", null).key, TabPage(HomeTab.BALANCE, "g2", null).key)
+        assertNotEquals(TabPage(HomeTab.EXPENSES, null, SpendingOpen.HEADER).key, TabPage(HomeTab.EXPENSES, null, null).key)
+        assertNotEquals(TabPage(HomeTab.BALANCE, null, null).key, TabPage(HomeTab.GROUPS, null, null).key)
+    }
+
+    @Test
+    fun a_group_page_slides_in_drawn() {
+        assertEquals(100L, GroupPageKeep.HOLD_MS)
+        assertTrue("a first visit waits for its read", GroupPageKeep.holds(kept = false))
+        assertFalse("a page read before opens at once", GroupPageKeep.holds(kept = true))
+        assertTrue(GroupPageKeep.drawn(keptAtOpen = true, read = false, failed = false))
+        assertTrue(GroupPageKeep.drawn(keptAtOpen = false, read = true, failed = false))
+        assertTrue("an error must show", GroupPageKeep.drawn(keptAtOpen = false, read = false, failed = true))
+        assertFalse("nothing to draw yet: the cards wait to fade in", GroupPageKeep.drawn(keptAtOpen = false, read = false, failed = false))
+        val root = src("AppRoot.kt")
+        assertTrue("withTimeoutOrNull(GroupPageKeep.HOLD_MS) { read.await() }" in root)
+        assertEquals(2, root.split("onOpenGroup = ::openGroupPage,").size - 1)
+        assertTrue("keep = groupPages.getOrPut(id) { GroupPageKeep() }," in root)
+        val page = src("OverviewTab.kt")
+        assertTrue("val keptAtOpen = remember(groupId) { keep.last?.also { show(it) } != null }" in page)
+        assertTrue("runCatching { GroupPageKeep.read(vaultPath, groupId) }" in page)
+        assertTrue("if (GroupPageKeep.drawn(keptAtOpen, named != null, error != null || loadFailed)) 1f else 0f," in page)
+    }
+
+    @Test
+    fun the_roll_reads_left_to_right_on_one_line() {
+        assertTrue(MoneyChange.rolls("₹900.00", "₹1,350.00", rtlLayout = false, lines = 1))
+        assertTrue("words lead: LTR under an RTL locale too", MoneyChange.rolls("You owe ₹900.00", "You owe ₹1,350.00", rtlLayout = true, lines = 1))
+        // Negatives: two lines (the ledger line keeps its wrap), right-to-left words, an RTL paragraph with no letters
+        // (a sign moves to the other end there), Arabic-Indic digits.
+        assertFalse(MoneyChange.rolls("₹900.00", "₹1,350.00", rtlLayout = false, lines = 2))
+        assertFalse(MoneyChange.rolls("₹900.00", "₹1,350.00", rtlLayout = false, lines = 0))
+        assertFalse(MoneyChange.rolls("₪900", "₪1,350", rtlLayout = true, lines = 1))
+        assertFalse(MoneyChange.rolls("-₹900.00", "-₹1,350.00", rtlLayout = true, lines = 1))
+        assertFalse(MoneyChange.rolls("אתה חייב 900", "אתה חייב 1,350", rtlLayout = false, lines = 1))
+        assertFalse(MoneyChange.rolls("ر.س 900", "ر.س 1,350", rtlLayout = false, lines = 1))
+        assertFalse(MoneyChange.rolls("٩٠٠", "١٬٣٥٠", rtlLayout = false, lines = 1))
+        assertFalse("the old string decides too", MoneyChange.rolls("אתה 900", "You 1,350", rtlLayout = false, lines = 1))
+        val money = src("MotionViews.kt").substringAfter("fun MoneyText(\n    text: AnnotatedString,").substringBefore("\n}\n")
+        assertTrue("MoneyChange.rolls(roll.from.text, roll.to.text, rtl, layout[0]?.lineCount ?: 0)" in money)
+        assertTrue("CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr)" in money)
+        // The text is always laid out (its wrap, alignment and semantics); the roll is drawn over its first line.
+        assertTrue("maxLines = maxLines," in money && "textAlign = textAlign," in money)
+        assertTrue("getLineLeft(0)" in money)
+    }
+
+    @Test
+    fun the_crossfade_is_never_over_the_lock_and_the_pill_starts_where_it_was() {
+        assertTrue(ThemeCrossfade.draws(locked = false))
+        assertFalse(ThemeCrossfade.draws(locked = true))
+        val views = src("MotionViews.kt")
+        val overlay = views.substringAfter("fun ThemeCrossfadeOverlay() {").substringBefore("\n}\n")
+        assertTrue(overlay.indexOf("if (!ThemeCrossfade.draws(locked = AppLock.locked)) {") < overlay.indexOf("Image("))
+        assertTrue("LaunchedEffect(shot) { ThemeCrossfade.drop() }" in overlay)
+        // The pill: from the segment the person left (the control made again by a mode change), else the chosen one,
+        // once measured; nothing before.
+        assertEquals(0, SlidingPills.drawnAt(start = 0, chosen = 2, known = setOf(0, 1, 2)))
+        assertEquals(2, SlidingPills.drawnAt(start = null, chosen = 2, known = setOf(0, 1, 2)))
+        assertEquals("the start not measured yet", 2, SlidingPills.drawnAt(start = 0, chosen = 2, known = setOf(2)))
+        assertEquals(null, SlidingPills.drawnAt(start = null, chosen = 2, known = emptySet()))
+        val pill = views.substringAfter("fun SlidingPill(").substringBefore("\n}\n")
+        assertTrue("before the segments are measured, drawn in the draw", "places.at[start ?: chosen]?.let { r -> translate(r.left, r.top)" in pill)
+        val hub = src("AccountHubScreen.kt")
+        assertTrue("val fromMode = remember { ThemeCrossfade.fromMode?.takeIf { ThemeCrossfade.pending != null } }" in hub)
+        assertTrue("ThemeCrossfade.change(view, reduce, fromMode = AppearanceMode.entries.indexOf(choice.chosen)) {" in hub)
     }
 
     // ---- Numbers, rows, keys ----
@@ -240,7 +427,10 @@ class ChangeMotionTest {
 
     @Test
     fun rows_without_ids_get_unique_keys() {
-        assertEquals(listOf("Sam|INR", "Sam|INR#1", "Meera|INR", "Sam|INR#2"), MotionKeys.unique(listOf("Sam|INR", "Sam|INR", "Meera|INR", "Sam|INR")))
+        assertEquals(listOf("Sam|INR", "Sam|INR\u001F1", "Meera|INR", "Sam|INR\u001F2"), MotionKeys.unique(listOf("Sam|INR", "Sam|INR", "Meera|INR", "Sam|INR")))
+        // Fix wave (M15): a person named "Sam#1" beside two "Sam"s keeps a key of their own.
+        val named = MotionKeys.unique(listOf("Sam", "Sam", "Sam#1"))
+        assertEquals(named.toString(), 3, named.toSet().size)
         val keys = MotionKeys.unique(listOf("a", "a", "b"))
         assertEquals(keys.toSet().size, keys.size)
         // A row keeps its key when one before it of another name goes.
@@ -271,11 +461,36 @@ class ChangeMotionTest {
         assertFalse("recent.forEachIndexed" in overview)
         assertTrue("the next card is one place", "key = { \"next\" }, leave = RowLeave.SLIDE" in overview)
         assertTrue("request cards", "MovingRows(cards, key = { it.id }" in overview)
-        assertTrue("balance lines", "MovingRows(lines, key = { it.currencyCode }" in overview)
+        assertTrue("balance lines", "MovingRows(shownLines, key = { it.currencyCode }" in overview)
         val expenses = src("ExpenseListScreen.kt")
-        assertTrue("MovingRows(section.expenses, key = { it.id }, leave = RowLeave.SLIDE)" in expenses)
+        assertTrue("MovingRows(carded.expenses, key = { it.id }, leave = RowLeave.SLIDE)" in expenses)
         assertFalse("section.expenses.forEachIndexed" in expenses)
-        assertTrue("MovingRows(people.rows, key = { it.id })" in src("GroupScreens.kt"))
+        assertTrue("MovingRows(shownRows, key = { it.id })" in src("GroupScreens.kt"))
+        // Fix wave (M4): a card or section moves as one, so its last row leaves with it.
+        assertTrue("MovingRows(listOfNotNull(people.rows.takeIf { it.isNotEmpty() }), key = { \"people\" })" in src("GroupScreens.kt"))
+        assertTrue("MovingRows(ExpenseSections.build(expenses, filter), key = { it.groupId ?: ExpenseListUi.JUST_ME_KEY }" in expenses)
+        assertTrue("MovingRows(listOfNotNull(section.takeIf { it.expenses.isNotEmpty() }), key = { \"card\" }, leave = RowLeave.SLIDE)" in expenses)
+        assertFalse(".forEach { section -> key(section.groupId" in expenses)
+        assertTrue("MovingRows(listOfNotNull(lines.takeIf { it.isNotEmpty() }), key = { \"who-owes\" })" in overview)
+        assertTrue("MovingRows(listOfNotNull(milestone), key = { \"milestone\" })" in overview)
+        assertTrue("MovingRows(listOfNotNull(progress.takeIf { it.isNotEmpty() }), key = { \"settled\" })" in overview)
+        assertFalse("if (progress.isNotEmpty()) SettledCard(progress, dark)" in overview)
+        // Fix wave (M5): the group page's next card keeps "Settling" as it slides out.
+        assertTrue("val settling = latch.settling(pick) || LocalRowLeaving.current" in src("Settled.kt"))
+        // Fix wave (M14): Settle up's plan and the spending categories, keyed by what they are (iOS's twins).
+        val t = uniffi.skipti_core.TransferOut("p1", "p2", 500)
+        assertEquals("INR/p1/p2", SettleAll.transferId("INR", t))
+        assertEquals("a partial keeps its row", SettleAll.transferId("INR", t), SettleAll.transferId("INR", uniffi.skipti_core.TransferOut("p1", "p2", 200)))
+        assertNotEquals(SettleAll.transferId("INR", t), SettleAll.transferId("EUR", t))
+        assertNotEquals(SettleAll.transferId("INR", t), SettleAll.transferId("INR", uniffi.skipti_core.TransferOut("p2", "p1", 500)))
+        assertTrue("MovingRows(transfers, key = { (currency, t) -> SettleAll.transferId(currency, t) }, spacing = 6.dp)" in settle)
+        assertFalse("transfers.forEach { (currency, t) ->" in settle)
+        val spending = src("Spending.kt")
+        assertEquals(2, spending.split("MovingRows(c.categories, key = { it.category ?: SpendingKeys.NONE }, spacing = 12.dp)").size - 1)
+        assertFalse("c.categories.forEachIndexed" in spending)
+        // The twins in iOS's source.
+        assertTrue("ForEach(transfers, id: \\.id) { pair in" in ios("SettleAll.swift"))
+        assertFalse("id: \\.offset" in ios("Spending.swift"))
     }
 
     // ---- Every helper reads the door, never power saving ----
@@ -318,7 +533,7 @@ class ChangeMotionTest {
         assertTrue("CompositionLocalProvider(LocalRowLeaving provides !state.targetState)" in rows)
         assertTrue("if (latch.settling(key) || LocalRowLeaving.current) {" in src("SettleAll.kt"))
         // The crossfade: the door first; with no picture the change is made at once, never held back.
-        val fade = views.substringAfter("fun change(view: View, reduce: Boolean, change: () -> Unit) {").substringBefore("\n    }\n")
+        val fade = views.substringAfter("fun change(view: View, reduce: Boolean, fromMode: Int? = null, change: () -> Unit) {").substringBefore("\n    }\n")
         assertTrue(fade.trim().lines()[2].trim().startsWith("if (reduce ||"))
         assertTrue("change()\n            return" in fade)
         assertFalse("lowPower" in fade)

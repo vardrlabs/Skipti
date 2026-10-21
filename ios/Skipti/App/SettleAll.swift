@@ -115,6 +115,12 @@ enum SettleAll {
         "\(group)/\(currency)/\(entry.id)"
     }
 
+    /// D-250 fix wave (M14): a payment of the plan's identity, for its row: the currency, who pays and who is paid (never
+    /// its place, never its amount: a partial keeps the row and its words change). Android's twin is `SettleAll.transferId`.
+    static func transferID(currency: String, transfer: TransferOut) -> String {
+        "\(currency)/\(transfer.from)/\(transfer.to)"
+    }
+
     /// D-250: what Settle up shows, for RowsMotion: each group's state and its cards' identities.
     static func shape(_ sections: [SettleSection]) -> [String] {
         sections.flatMap { s in
@@ -539,12 +545,16 @@ struct SettleAllScreen: View {
 
     @ViewBuilder
     private func plan(_ lines: [BalanceLineOut], named: NamedGroupWire) -> some View {
-        let transfers = lines.flatMap { line in line.transfers.map { (line.currencyCode, $0) } }
+        let transfers = lines.flatMap { line in
+            line.transfers.map { PlanRow(id: SettleAll.transferID(currency: line.currencyCode, transfer: $0), currency: line.currencyCode, transfer: $0) }
+        }
         if !transfers.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
                 Text(verbatim: SettleAllCopy.fastest).sectionLabel().foregroundStyle(Tokens.textDim)
-                ForEach(Array(transfers.enumerated()), id: \.offset) { _, pair in
-                    let (currency, t) = pair
+                // D-250 fix wave (M14): keyed by the payment, so a payment that goes or comes moves (Settle up's
+                // rowsMotion), never morphs into the next row's words.
+                ForEach(transfers, id: \.id) { pair in
+                    let (currency, t) = (pair.currency, pair.transfer)
                     let from = t.from == named.selfId ? "you" : LedgerStore.label(for: t.from, in: named)
                     let to = t.to == named.selfId ? "you" : LedgerStore.label(for: t.to, in: named)
                     let verb = t.from == named.selfId ? "pay" : "pays"
@@ -714,4 +724,11 @@ struct OtherAmountSheet: View {
         if case .settles = verdict { return true }
         return false
     }
+}
+
+/// D-250 fix wave (M14): one payment of a group's plan on Settle up, keyed by `SettleAll.transferID`.
+struct PlanRow {
+    let id: String
+    let currency: String
+    let transfer: TransferOut
 }

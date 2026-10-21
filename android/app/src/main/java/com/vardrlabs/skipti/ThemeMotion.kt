@@ -7,6 +7,7 @@ import android.content.IntentFilter
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
+import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.EaseInOut
 import androidx.compose.animation.core.Easing
@@ -16,6 +17,7 @@ import androidx.compose.animation.core.snap
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
@@ -1032,9 +1034,12 @@ object ArtCanvas {
  *  needs the inputs itself (the runes) share one read. */
 fun Modifier.artCanvas(still: Double, state: MotionState? = null, draw: DrawScope.(t: Double) -> Unit): Modifier = composed {
     val tick = (state ?: rememberMotionState()).tick
+    // D-250 fix wave (I1, decision 209): a page sliding out holds its art where it is (never the still frame: no jump),
+    // so the picture of it the slide draws ([PageSlide.frozen]) stays valid and costs nothing per frame.
+    val held = LocalPageSlide.current.artHeld
     var t by remember { mutableDoubleStateOf(still) }
-    LaunchedEffect(tick) {
-        if (!tick) return@LaunchedEffect
+    LaunchedEffect(tick, held) {
+        if (!tick || held) return@LaunchedEffect
         val gate = FrameGate()
         while (true) {
             withFrameNanos { now ->
@@ -1052,7 +1057,10 @@ fun Modifier.artCanvas(still: Double, state: MotionState? = null, draw: DrawScop
 fun Modifier.artTurn(state: MotionState? = null, degrees: (Double) -> Double): Modifier = composed {
     val tick = (state ?: rememberMotionState()).tick
     var turning by remember { mutableDoubleStateOf(RingTurn.STILL) }
-    LaunchedEffect(tick) {
+    // D-250 fix wave (I1): held where it is while its page slides out (as [artCanvas]).
+    val held = LocalPageSlide.current.artHeld
+    LaunchedEffect(tick, held) {
+        if (held) return@LaunchedEffect
         turning = RingTurn.STILL
         if (!tick) return@LaunchedEffect
         val gate = FrameGate()
@@ -1387,7 +1395,12 @@ fun Modifier.pageArt(dark: Boolean): Modifier = composed {
     val insets = WindowInsets.safeDrawing
     val density = LocalDensity.current
     val direction = LocalLayoutDirection.current
+    // D-250 fix wave (I1): a page sliding keeps the bleed it had (or its first), not one per frame of the slide.
+    val slide = LocalPageSlide.current
+    val measured = remember { booleanArrayOf(false) }
     onGloballyPositioned { c ->
+        if (slide != PageSlide.STILL && measured[0]) return@onGloballyPositioned
+        measured[0] = true
         var root = c
         while (root.parentLayoutCoordinates != null) root = root.parentLayoutCoordinates!!
         val b = Bleed.of(
@@ -1420,12 +1433,15 @@ private fun Modifier.curtainsGround(dark: Boolean, bleed: State<Bleed>): Modifie
     // (a list item scrolling) no longer re-records the art and its blur.
     val cards = remember(art) { derivedStateOf { art != null && art.panes.isNotEmpty() } }
     val window = remember { floatArrayOf(0f, 0f) }
-    onGloballyPositioned { c -> c.positionInWindow().let { window[0] = it.x; window[1] = it.y } }
+    // D-250 fix wave (I1, decision 209): a sliding page's art never takes the window's holder (the moving origin made the
+    // holder and its blur re-record every frame of a push); the page that lands takes it on its next art frame.
+    val claims = LocalPageSlide.current.artClaims
+    onGloballyPositioned { c -> if (claims) c.positionInWindow().let { window[0] = it.x; window[1] = it.y } }
         .artCanvas(Curtains.STILL) { t ->
             val b = bleed.value
             bled(b) {
                 val content = art?.content
-                if (art != null && content != null && owns()) {
+                if (art != null && content != null && claims && owns()) {
                     // The bled area's origin in the window: the node's, less the bleed.
                     art.sourceOffset = Offset(window[0] - b.left, window[1] - b.top)
                     content.record(this, layoutDirection, IntSize(size.width.roundToInt(), size.height.roundToInt())) {
@@ -1747,7 +1763,70 @@ object PageMotion {
         to == null -> PageMove.BACK
         else -> PageMove.PUSH
     }
+
+    /** D-250 fix wave (I4): whether the shell's tab bar shows over the pages: on the tabs alone. A pushed page drops it
+     *  away with a fade and Back brings it up ([barMove]), as iOS's bar under its stack; a sheet covers it, the shell
+     *  drawing its own copy under the sheet ([barUnderSheet]). */
+    fun barShows(route: String?): Boolean = route == null
+
+    /** D-250 fix wave (I4): whether the shell draws the bar itself, under the page: while a sheet is up or rising over
+     *  the tabs ([route] a sheet), and while one falls back to them ([entering]: the tabs have not landed). Never on a
+     *  push, whose bar is the one that drops away. */
+    fun barUnderSheet(route: String?, move: PageMove, entering: Boolean): Boolean =
+        ToastCover.covers(route) || (route == null && move == PageMove.FALL && entering)
+
+    /** D-250 fix wave (I4): how the bar comes and goes with [move]. */
+    enum class BarMove {
+        /** A push or a back: it drops down out of sight, or comes up, fading, over CHANGE (iOS's 0.2 s). */
+        DROP,
+        /** A sheet rising: at once, the shell's copy under the sheet takes its place in the same frame. */
+        SWAP,
+        /** A sheet falling: once the sheet has gone, the shell's copy drawn until then. */
+        AFTER_SHEET,
+        CUT,
+    }
+
+    fun barMove(move: PageMove): BarMove = when (move) {
+        PageMove.PUSH, PageMove.BACK -> BarMove.DROP
+        PageMove.RISE -> BarMove.SWAP
+        PageMove.FALL -> BarMove.AFTER_SHEET
+        PageMove.CUT -> BarMove.CUT
+    }
+
+    /** D-250 fix wave (I1): in a tab's slide only the page on top draws a ground of its own (the page pushed in, or the
+     *  page going back out); the page under it stays clear over the shell's ground. [targetOver] is what the tab goes to
+     *  ([TabPage.over]). At rest no page draws one. */
+    fun ownGround(slide: PageSlide, targetOver: String?): Boolean = when (slide) {
+        PageSlide.STILL -> false
+        PageSlide.ENTERING -> targetOver != null
+        PageSlide.LEAVING -> targetOver == null
+    }
 }
+
+/** D-250 fix wave (I1, I3; decision 209): where a page is in its slide, from its own enter or exit. The page leaving is
+ *  drawn from one picture of it taken as it starts to leave ([frozen]), its art held where it is ([artHeld]) so the
+ *  picture stays good, and it takes no touch ([takesTouches]: a quick second tap never lands on the page just left, as
+ *  iOS blocks touches through a push, a pop and a sheet's dismissal). Only a page at rest takes the window's art holder
+ *  ([artClaims]). */
+enum class PageSlide {
+    STILL, ENTERING, LEAVING;
+
+    val takesTouches: Boolean get() = this != LEAVING
+    val frozen: Boolean get() = this == LEAVING
+    val artHeld: Boolean get() = this == LEAVING
+    val artClaims: Boolean get() = this == STILL
+
+    companion object {
+        fun of(current: EnterExitState, target: EnterExitState): PageSlide = when {
+            target == EnterExitState.PostExit -> LEAVING
+            current != target -> ENTERING
+            else -> STILL
+        }
+    }
+}
+
+/** D-250 fix wave (I1): the slide of the page this is drawn in ([SlidingPage]); still outside a sliding page. */
+val LocalPageSlide = compositionLocalOf { PageSlide.STILL }
 
 /** D-250: rows that come and go ([MovingRows]): the rows to draw, the new ones in order, each one that left kept where
  *  it was (after the row it followed) until its slide out ends. Pure, so the keys' order is pinned by a JVM test. */
@@ -1778,6 +1857,28 @@ object MoneyChange {
     /** The character slots of [text], keyed from the right (0 is the last character), so the digits that did not change
      *  keep their slot and do not move. */
     fun slots(text: String): List<Pair<Int, Char>> = text.mapIndexed { i, c -> (text.length - 1 - i) to c }
+
+    /** D-250 fix wave (I2): the roll draws its characters left to right on one line, so it runs only when both strings
+     *  read that way at rest: the text laid out on ONE line ([lines], the new text's), no right-to-left character in
+     *  either, and a paragraph that resolves left to right (its first strong character is, or it has none and the layout
+     *  is not [rtlLayout]: under an RTL locale an amount with no letters takes the RTL paragraph, where a sign moves to
+     *  the other end). Otherwise the amount changes at once (a cut), and a two-line line keeps its wrap. */
+    fun rolls(from: String, to: String, rtlLayout: Boolean, lines: Int): Boolean =
+        lines == 1 && readsLtr(from, rtlLayout) && readsLtr(to, rtlLayout)
+
+    private fun readsLtr(text: String, rtlLayout: Boolean): Boolean {
+        var firstStrong: Boolean? = null
+        for (c in text) {
+            when (Character.getDirectionality(c)) {
+                Character.DIRECTIONALITY_RIGHT_TO_LEFT, Character.DIRECTIONALITY_RIGHT_TO_LEFT_ARABIC,
+                Character.DIRECTIONALITY_RIGHT_TO_LEFT_EMBEDDING, Character.DIRECTIONALITY_RIGHT_TO_LEFT_OVERRIDE,
+                Character.DIRECTIONALITY_RIGHT_TO_LEFT_ISOLATE, Character.DIRECTIONALITY_ARABIC_NUMBER -> return false
+                Character.DIRECTIONALITY_LEFT_TO_RIGHT -> if (firstStrong == null) firstStrong = true
+                else -> {}
+            }
+        }
+        return firstStrong ?: !rtlLayout
+    }
 }
 
 /** D-250: a meter or You's ring filling, from what was shown to what is now ([rememberFill]). */
@@ -1791,16 +1892,30 @@ object FillMotion {
     internal val shown = HashMap<String, Double>()
 }
 
+/** D-250 fix wave (M2, M9): where a sliding pill is drawn: at the segment it starts from ([start], the mode the person
+ *  left) until it slides, else at the chosen one, once that segment is measured ([known]); null before. */
+object SlidingPills {
+    fun drawnAt(start: Int?, chosen: Int, known: Set<Int>): Int? = when {
+        start != null && start in known -> start
+        chosen in known -> chosen
+        else -> null
+    }
+}
+
 /** D-250: rows that have no id of their own (Home's people: one per name and currency) keyed by what they show, each
- *  repeat numbered, so every key is unique and a row keeps its key while the rows around it come and go. The twin of
- *  iOS's `MotionKeys`. */
+ *  repeat numbered ([SEPARATOR]), so every key is unique and a row keeps its key while the rows around it come and go.
+ *  The twin of iOS's `MotionKeys`. */
 object MotionKeys {
     fun unique(base: List<String>): List<String> {
         val seen = HashMap<String, Int>()
         return base.map { key ->
             val n = seen[key] ?: 0
             seen[key] = n + 1
-            if (n == 0) key else "$key#$n"
+            if (n == 0) key else "$key$SEPARATOR$n"
         }
     }
+
+    /** D-250 fix wave (M15): between a key and its repeat's number, a character no name holds (a person named "Sam#1"
+     *  beside two "Sam"s made "Sam#1" twice). */
+    const val SEPARATOR = '\u001F'
 }

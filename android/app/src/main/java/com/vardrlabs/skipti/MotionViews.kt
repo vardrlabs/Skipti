@@ -11,6 +11,7 @@ import android.view.PixelCopy
 import android.view.View
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.EnterTransition
@@ -48,6 +49,8 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
@@ -55,6 +58,14 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.drawOutline
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.layer.CompositingStrategy
+import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.graphics.rememberGraphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerInputScope
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.background
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.FirstBaseline
@@ -68,6 +79,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.text
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -104,6 +116,50 @@ fun AnimatedContentTransitionScope<*>.pageTransform(move: PageMove, reduce: Bool
         PageMove.FALL -> (EnterTransition.None togetherWith slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Down, spec))
             .apply { targetContentZIndex = -1f }
         PageMove.CUT -> EnterTransition.None togetherWith ExitTransition.None
+    }
+}
+
+/** D-250 fix wave (I1, I3; decision 209): one page of an AnimatedContent that slides ([pageTransform]), in the slide's
+ *  place ([PageSlide.of], from this page's own enter or exit), read by the art through [LocalPageSlide]. The page is a
+ *  layer of its own, so the slide moves a RenderNode and nothing inside it records again; the page leaving is drawn
+ *  from ONE picture of it taken as it starts to leave (an offscreen layer: one textured quad a frame, its art held so the
+ *  picture stays good), and it takes no touch until it has gone. */
+@Composable
+fun AnimatedVisibilityScope.SlidingPage(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    val slide = PageSlide.of(transition.currentState, transition.targetState)
+    CompositionLocalProvider(LocalPageSlide provides slide) {
+        Box(modifier.fillMaxSize().pageLayer(slide)) { content() }
+    }
+}
+
+/** The page's own layer, its picture while it leaves, and the touches it swallows meanwhile ([SlidingPage]). */
+@Composable
+private fun Modifier.pageLayer(slide: PageSlide): Modifier {
+    val copy = rememberGraphicsLayer()
+    val kept = remember { booleanArrayOf(false) }
+    val frozen = slide.frozen
+    if (!frozen) kept[0] = false
+    return this
+        .graphicsLayer()
+        .then(if (slide.takesTouches) Modifier else Modifier.pointerInput(Unit) { swallowTouches() })
+        .drawWithContent {
+            if (!frozen) {
+                drawContent()
+                return@drawWithContent
+            }
+            if (!kept[0]) {
+                copy.compositingStrategy = CompositingStrategy.Offscreen
+                copy.record { this@drawWithContent.drawContent() }
+                kept[0] = true
+            }
+            drawLayer(copy)
+        }
+}
+
+/** Takes every touch before the page's own controls see it (the first pass), so none of them acts. */
+private suspend fun PointerInputScope.swallowTouches() {
+    awaitPointerEventScope {
+        while (true) awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
     }
 }
 
@@ -179,7 +235,9 @@ fun <T> MovingRows(
                 },
             ) {
                 CompositionLocalProvider(LocalRowLeaving provides !state.targetState) {
-                    if (i > 0 && spacing > 0.dp) Column(Modifier.padding(top = spacing)) { row(item, i) } else row(item, i)
+                    // Fix wave: always a column, so a row of several pieces (a divider, then the row) stacks them, as
+                    // the list did before (AnimatedVisibility lays its children over each other).
+                    Column(if (i > 0 && spacing > 0.dp) Modifier.padding(top = spacing) else Modifier) { row(item, i) }
                 }
             }
             if (!state.targetState) {
@@ -283,36 +341,70 @@ fun MoneyText(
     }
     memo.rest = text
     memo.value = value
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+    // D-250 fix wave (I2): the text itself is always laid out (its wrap, alignment, auto size and semantics); the roll is
+    // drawn over its first line in its place only while the amount reads left to right on one line
+    // ([MoneyChange.rolls], from the new text's own layout, in the frame it is drawn), else the change is a cut.
+    val layout = remember { arrayOfNulls<TextLayoutResult>(1) }
     key(text) {
         var going by remember { mutableStateOf(false) }
         LaunchedEffect(Unit) { going = true }
         val p by animateFloatAsState(if (going) 1f else 0f, if (reduce) snap() else ChangeMotion.tween(ChangeMotion.Kind.NUMBER), label = "roll")
-        if (roll != null && p < 1f) {
-            MoneyRollRow(roll, p, if (laidOut.isSpecified) style.copy(fontSize = laidOut) else style, modifier)
-        } else {
-            Text(
-                text,
-                style = style,
-                modifier = modifier,
-                maxLines = maxLines,
-                softWrap = softWrap,
-                overflow = overflow,
-                autoSize = autoSize,
-                textAlign = textAlign,
-                onTextLayout = { laidOut = it.layoutInput.style.fontSize },
-            )
+        val active = roll != null && p < 1f
+        val rolling = { roll != null && active && MoneyChange.rolls(roll.from.text, roll.to.text, rtl, layout[0]?.lineCount ?: 0) }
+        Layout(
+            modifier = modifier,
+            content = {
+                Text(
+                    text,
+                    style = style,
+                    modifier = Modifier.graphicsLayer { alpha = if (rolling()) 0f else 1f },
+                    maxLines = maxLines,
+                    softWrap = softWrap,
+                    overflow = overflow,
+                    autoSize = autoSize,
+                    textAlign = textAlign,
+                    onTextLayout = {
+                        layout[0] = it
+                        laidOut = it.layoutInput.style.fontSize
+                    },
+                )
+                if (roll != null && active) {
+                    // The roll's characters always run left to right (it is drawn only where the text reads so).
+                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                        MoneyRollRow(
+                            roll, p, if (laidOut.isSpecified) style.copy(fontSize = laidOut) else style,
+                            Modifier.graphicsLayer { alpha = if (rolling()) 1f else 0f },
+                        )
+                    }
+                }
+            },
+        ) { measurables, constraints ->
+            val t = measurables[0].measure(constraints)
+            val r = measurables.getOrNull(1)?.measure(Constraints(maxHeight = constraints.maxHeight))
+            layout(t.width, t.height) {
+                t.place(0, 0)
+                if (r != null) {
+                    // Over the text's first line: at its left edge (its alignment) and on its baseline.
+                    val x = layout[0]?.takeIf { it.lineCount > 0 }?.getLineLeft(0)?.roundToInt() ?: 0
+                    val tb = t[FirstBaseline].takeIf { it != androidx.compose.ui.layout.AlignmentLine.Unspecified } ?: 0
+                    val rb = r[FirstBaseline].takeIf { it != androidx.compose.ui.layout.AlignmentLine.Unspecified } ?: 0
+                    r.place(x, tb - rb)
+                }
+            }
         }
     }
 }
 
 /** The roll itself: one slot per character of the longer string, keyed from the right; a slot whose character changed
- *  draws the old one leaving and the new one arriving, its width easing between theirs. */
+ *  draws the old one leaving and the new one arriving, its width easing between theirs. Drawn over the text, which keeps
+ *  the words for TalkBack. */
 @Composable
 private fun MoneyRollRow(roll: MoneyRoll, p: Float, style: TextStyle, modifier: Modifier) {
     val n = max(roll.from.length, roll.to.length)
     val sign = if (roll.down) -1f else 1f
     fun at(s: AnnotatedString, j: Int): AnnotatedString? = (s.length - 1 - j).takeIf { it >= 0 }?.let { s.subSequence(it, it + 1) }
-    Row(modifier.clearAndSetSemantics { text = roll.to }) {
+    Row(modifier.clearAndSetSemantics {}) {
         for (j in n - 1 downTo 0) {
             val old = at(roll.from, j)
             val new = at(roll.to, j)
@@ -397,9 +489,26 @@ fun Modifier.pillPlace(places: PillPlaces, index: Int): Modifier = onGloballyPos
  *  (the switch thumb's travel), the twin of iOS's `matchedGeometryEffect` pill (Just me / All, Chart / Table, Light or
  *  dark). Drawn first in the box marked [pillTrack], under the segments. Reduced: it jumps. */
 @Composable
-fun SlidingPill(places: PillPlaces, chosen: Int, shape: Shape, colour: Color, shadow: Dp = 0.dp, modifier: Modifier = Modifier) {
+fun SlidingPill(
+    places: PillPlaces, chosen: Int, shape: Shape, colour: Color, shadow: Dp = 0.dp, modifier: Modifier = Modifier, from: Int? = null,
+) {
     val reduce = rememberMotionState().reduce
-    val target = places.at[chosen] ?: return
+    // D-250 fix wave (M2): the control made again by a mode change starts at the segment the person left ([from]) and
+    // slides to the one chosen, under the fading picture.
+    var start by remember { mutableStateOf(from?.takeIf { it != chosen }) }
+    val target = SlidingPills.drawnAt(start, chosen, places.at.keys)?.let { places.at[it] }
+    if (target == null) {
+        // D-250 fix wave (M9): before the segments are measured (the first frame) the pill is drawn where the chosen
+        // one is, read in the draw (after this frame's layout), so it never pops in a frame late.
+        Box(modifier.drawBehind {
+            places.at[start ?: chosen]?.let { r -> translate(r.left, r.top) { drawOutline(shape.createOutline(r.size, layoutDirection, this), colour) } }
+        })
+        return
+    }
+    if (start != null) LaunchedEffect(Unit) {
+        withFrameNanos { }
+        start = null
+    }
     val left by animateFloatAsState(target.left, if (reduce) snap() else ChangeMotion.tween(ChangeMotion.Kind.CHANGE), label = "pillLeft")
     val top by animateFloatAsState(target.top, if (reduce) snap() else ChangeMotion.tween(ChangeMotion.Kind.CHANGE), label = "pillTop")
     val width by animateFloatAsState(target.width, if (reduce) snap() else ChangeMotion.tween(ChangeMotion.Kind.CHANGE), label = "pillWidth")
@@ -425,9 +534,23 @@ object ThemeCrossfade {
     /** The old look, while it fades. Memory only. */
     internal var pending by mutableStateOf<ImageBitmap?>(null)
 
+    /** D-250 fix wave (M2): the mode control's segment before the person's change, while the picture fades: the control
+     *  made again with the activity (a mode change re-creates it on Android 12+, D-232) slides its pill from it. Memory
+     *  only; gone with the picture. */
+    internal var fromMode: Int? = null
+
+    /** D-250 fix wave (M6): the picture is drawn only while SKIPTI is unlocked. */
+    fun draws(locked: Boolean): Boolean = !locked
+
+    /** The fade is over (or must not be drawn): the picture and the mode it came from go. */
+    internal fun drop() {
+        pending = null
+        fromMode = null
+    }
+
     /** Applies [change], crossfading from the window as it looked before (a cut when [reduce], or when no picture can
      *  be taken: the change is never held back by it). */
-    fun change(view: View, reduce: Boolean, change: () -> Unit) {
+    fun change(view: View, reduce: Boolean, fromMode: Int? = null, change: () -> Unit) {
         val window = view.context.activity()?.window
         val root = window?.decorView
         if (reduce || window == null || root == null || root.width <= 0 || root.height <= 0 || Build.VERSION.SDK_INT < 26) {
@@ -436,7 +559,10 @@ object ThemeCrossfade {
         }
         val bitmap = Bitmap.createBitmap(root.width, root.height, Bitmap.Config.ARGB_8888)
         PixelCopy.request(window, bitmap, { result ->
-            if (result == PixelCopy.SUCCESS) pending = bitmap.asImageBitmap()
+            if (result == PixelCopy.SUCCESS) {
+                pending = bitmap.asImageBitmap()
+                this.fromMode = fromMode
+            }
             change()
         }, Handler(Looper.getMainLooper()))
     }
@@ -452,6 +578,12 @@ object ThemeCrossfade {
 @Composable
 fun ThemeCrossfadeOverlay() {
     val shot = ThemeCrossfade.pending ?: return
+    // D-250 fix wave (M6): never over the lock screen (a picture of the ledger, if SKIPTI stopped mid-fade and came back
+    // locked): dropped at once.
+    if (!ThemeCrossfade.draws(locked = AppLock.locked)) {
+        LaunchedEffect(shot) { ThemeCrossfade.drop() }
+        return
+    }
     val reduce = rememberMotionState().reduce
     var gone by remember(shot) { mutableStateOf(false) }
     LaunchedEffect(shot) {
@@ -462,7 +594,7 @@ fun ThemeCrossfadeOverlay() {
         if (gone) 0f else 1f,
         if (reduce) snap() else ChangeMotion.tween(ChangeMotion.Kind.FADE),
         label = "themeFade",
-        finishedListener = { if (it == 0f && ThemeCrossfade.pending === shot) ThemeCrossfade.pending = null },
+        finishedListener = { if (it == 0f && ThemeCrossfade.pending === shot) ThemeCrossfade.drop() },
     )
     Image(
         shot, contentDescription = null, contentScale = ContentScale.FillBounds,

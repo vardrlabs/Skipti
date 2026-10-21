@@ -500,8 +500,9 @@ fun SpendingCard(
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(Type.kicker(SpendingCopy.THIS_MONTH), style = Type.microLabel(dark).copy(color = Tok.textDim(dark)))
                     // D-250: Just me to All crosses the card over (iOS's card-level RowsMotion): the amount or the empty
-                    // line rises in as the other leaves; between two amounts it rolls.
-                    Reveal(first != null) { if (first != null) {
+                    // line fades in as the other fades out (fix wave, twin 6: as iOS's crossfade; it rose before); between
+                    // two amounts it rolls.
+                    MovingRows(listOfNotNull(first), key = { "amount" }) { first, _ ->
                         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             // D-250: Just me to All (or a new expense) rolls the month's amount.
                             MoneyText(
@@ -525,9 +526,9 @@ fun SpendingCard(
                                 )
                             }
                         }
-                    } }
-                    Reveal(first == null) {
-                        Text(SpendingCopy.cardEmpty(failed), style = Type.bodyDim(dark).copy(fontSize = TypeScale.prose.sp))
+                    }
+                    MovingRows(listOfNotNull(SpendingCopy.cardEmpty(failed).takeIf { first == null }), key = { "empty" }) { line, _ ->
+                        Text(line, style = Type.bodyDim(dark).copy(fontSize = TypeScale.prose.sp))
                     }
                 }
                 RowChevron(Tok.textDim(dark))
@@ -805,7 +806,8 @@ private fun WhereCard(c: CurrencySpendingOut, table: Boolean, tree: CategoryTree
                     modifier = Modifier.width(52.dp),
                 )
             }
-            c.categories.forEachIndexed { i, s ->
+            // D-250 fix wave (M14): keyed by the category, in and out (iOS's rows under the page's rowsMotion).
+            MovingRows(c.categories, key = { it.category ?: SpendingKeys.NONE }, spacing = 12.dp) { s, i ->
                 Row(
                     Modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
                     verticalAlignment = Alignment.CenterVertically,
@@ -826,7 +828,7 @@ private fun WhereCard(c: CurrencySpendingOut, table: Boolean, tree: CategoryTree
                 }
             }
         } else {
-            c.categories.forEachIndexed { i, s ->
+            MovingRows(c.categories, key = { it.category ?: SpendingKeys.NONE }, spacing = 12.dp) { s, i ->
                 Column(Modifier.fillMaxWidth().semantics(mergeDescendants = true) {}, verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Row {
                         Text(CategoryLevels.name(s.category, tree), style = Type.name(dark, TypeScale.detail.toInt()), modifier = Modifier.weight(1f))
@@ -940,4 +942,9 @@ fun LedgerChoicePage(
         }
       }
     }
+}
+
+/** D-250 fix wave (M14): the key of the slice for expenses with no category (core's None), a word no category id is. */
+internal object SpendingKeys {
+    const val NONE = "uncategorised"
 }

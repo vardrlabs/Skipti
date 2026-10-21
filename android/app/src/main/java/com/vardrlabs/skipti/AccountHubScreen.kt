@@ -1241,6 +1241,8 @@ private fun ModeControl(dark: Boolean) {
     val view = LocalView.current
     val reduce = rememberMotionState().reduce
     val places = remember { PillPlaces() }
+    // D-250 fix wave (M2): made again by the person's mode change (Android 12+), the pill starts where they left it.
+    val fromMode = remember { ThemeCrossfade.fromMode?.takeIf { ThemeCrossfade.pending != null } }
     val choice = ModeChoice.shown(Appearance.theme, Appearance.mode)
     val shape = ThemeArt.pillShape(Appearance.theme)
     val track = ThemeArt.m("modeTrack")
@@ -1259,7 +1261,7 @@ private fun ModeControl(dark: Boolean) {
         Box(Modifier.matchParentSize().padding(vertical = margin.dp).background(Tok.accentSoft(dark), shape))
         SlidingPill(
             places, AppearanceMode.entries.indexOf(choice.chosen), shape, Tok.surface(dark),
-            shadow = ThemeArt.m("segmentShadowRadius").dp, modifier = Modifier.align(Alignment.TopStart),
+            shadow = ThemeArt.m("segmentShadowRadius").dp, modifier = Modifier.align(Alignment.TopStart), from = fromMode,
         )
         Row(Modifier.fillMaxWidth().padding(horizontal = inset.dp).selectableGroup(), verticalAlignment = Alignment.CenterVertically) {
             AppearanceMode.entries.forEachIndexed { index, mode ->
@@ -1281,7 +1283,11 @@ private fun ModeControl(dark: Boolean) {
                             selected = mode == choice.chosen,
                             enabled = choice.enabled,
                             role = Role.RadioButton,
-                            onClick = { ThemeCrossfade.change(view, reduce) { Appearance.setMode(context, mode) } },
+                            onClick = {
+                                ThemeCrossfade.change(view, reduce, fromMode = AppearanceMode.entries.indexOf(choice.chosen)) {
+                                    Appearance.setMode(context, mode)
+                                }
+                            },
                         )
                         .padding(vertical = (margin + inset).dp)
                         // D-250: the chosen pill is drawn once, under the words, and slides ([SlidingPill]).

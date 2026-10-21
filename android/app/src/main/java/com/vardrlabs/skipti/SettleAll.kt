@@ -58,6 +58,7 @@ import uniffi.skipti_core.BalanceLineOut
 import uniffi.skipti_core.NamedGroupWire
 import uniffi.skipti_core.SettledProgressOut
 import uniffi.skipti_core.ShareOut
+import uniffi.skipti_core.TransferOut
 import uniffi.skipti_core.ffiBalanceLine
 import uniffi.skipti_core.ffiCheckSettlement
 import uniffi.skipti_core.ffiSettledProgress
@@ -146,6 +147,10 @@ object SettleAll {
      *  list, never its amount: a partial settle keeps the card and rolls the amount). The twin of iOS's
      *  `SettleAll.cardID`. */
     fun cardId(group: String, currency: String, entry: ShareOut): String = "$group/$currency/${entry.id}"
+
+    /** D-250 fix wave (M14): a payment of the plan's identity, for its row: the currency, who pays and who is paid (never
+     *  its place, never its amount). The twin of iOS's `SettleAll.transferID`. */
+    fun transferId(currency: String, transfer: TransferOut): String = "$currency/${transfer.from}/${transfer.to}"
 
     /** Every group, each with core's lines for this device's self in it.
      *  The same read the screen makes; iOS's twin is `SettleAll.sections`. D-247: [held], a settle waiting out its Undo
@@ -542,10 +547,11 @@ fun SettleAllScreen(
                 Spacer(Modifier.width(10.dp))
                 Text(named.group.name, style = Type.name(dark, 17))
             }
-            // D-250: the group turning settled brings its panel in (rising, as iOS's crossfade) as the last card leaves.
-            Reveal(section.state != SettleState.OPEN) {
+            // D-250: the group turning settled brings its panel in as the last card leaves. Fix wave (twin 5): it fades in
+            // and out in place, as iOS's crossfade does (it rose before), an Undo taking it away the same way.
+            MovingRows(listOfNotNull(section.state.takeIf { it != SettleState.OPEN }), key = { "settled" }) { state, _ ->
                 // D-247 (decision 168): "all settled" only when core says the whole group is.
-                val all = section.state == SettleState.ALL_SETTLED
+                val all = state == SettleState.ALL_SETTLED
                 Row(
                     Modifier
                         .fillMaxWidth()
@@ -614,7 +620,8 @@ fun SettleAllScreen(
                     Column(Modifier.padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         SectionLabel(SettleAllCopy.FASTEST, dark)
                         val names = named.members.associate { it.id to LedgerStore.label(it.id, named) }
-                        transfers.forEach { (currency, t) ->
+                        // D-250 fix wave (M14): keyed by the payment, in and out as Settle up's cards are (iOS's rows).
+                        MovingRows(transfers, key = { (currency, t) -> SettleAll.transferId(currency, t) }, spacing = 6.dp) { (currency, t), _ ->
                             val row = SettleUi.planRow(t.from, t.to, named.selfId, names).replaceFirstChar { it.uppercase() }
                             Text(
                                 "$row ${BalanceUi.moneyFormat(t.amountMinor, currency, AppLocale.current)}",

@@ -170,13 +170,20 @@ object RuneRing {
     fun share(done: Int, total: Int): Double = if (total <= 0) 0.0 else done.coerceIn(0, total).toDouble() / total
 
     /** D-250: the runes lit at a share between two counts while the ring sweeps ([rememberFill]): the Look Book's half-up
-     *  rounding of 24 times the share. At rest the integer form ([lit]) decides, so no float ever picks a resting ring.
-     *  The twin of iOS's `RuneRing.lit(share:)`. */
+     *  rounding of 24 times the share. At rest the integer form ([lit]) decides ([atRest]), so no float ever picks a
+     *  resting ring. The twin of iOS's `RuneRing.lit(share:)`. */
     fun lit(share: Double): Int = kotlin.math.floor(Runes.FUTHARK.size * share.coerceIn(0.0, 1.0) + 0.5 + 1e-9).toInt()
 
     /** D-250: what the ring lights at [fill]: at rest (the share of [done] of [total]) the count's own rounding, mid-sweep
      *  the share's. */
-    fun litAt(fill: Double, done: Int, total: Int): Int = if (fill == share(done, total)) lit(done, total) else lit(fill)
+    fun litAt(fill: Double, done: Int, total: Int): Int = if (atRest(fill, done, total)) lit(done, total) else lit(fill)
+
+    /** D-250 fix wave (M10): the sweep's share has landed on [done] of [total]. The sweep draws a Float, so the share it
+     *  rests on (2/3 is 0.6666666865) is within a Float's rounding of the exact one, never equal to it. */
+    fun atRest(fill: Double, done: Int, total: Int): Boolean = kotlin.math.abs(fill - share(done, total)) < REST
+
+    /** A Float's rounding at 1 is 6e-8; a step of the ring is at least 1/24 apart. */
+    const val REST = 1e-6
 }
 
 /** D-221 (Design 4, L38): Aurora's and Vardr Labs' ring round You's picture: the `ringTrack` circle and the `ring` arc

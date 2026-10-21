@@ -314,7 +314,7 @@ struct SpendingBar: View {
                 // The track, drawn with no slices too (the empty card's bar).
                 Tokens.ringTrack
                 HStack(spacing: 2) {
-                    ForEach(Array(slices.enumerated()), id: \.offset) { i, c in
+                    ForEach(Array(slices.enumerated()), id: \.element.category) { i, c in
                         sliceColour(i).frame(width: max(2, (geo.size.width - gaps) * CGFloat(c.basisPoints) / 10_000))
                     }
                 }
@@ -520,7 +520,7 @@ struct SpendingScreen: View {
             let others = l.out.currencies.dropFirst()
             if !others.isEmpty {
                 FlowLayout(spacing: 8) {
-                    ForEach(Array(others.enumerated()), id: \.offset) { _, c in
+                    ForEach(Array(others), id: \.currencyCode) { c in
                         Text(verbatim: RolesMoney.format(c.totalMinor, c.currencyCode) ?? Placeholder.none)
                             .font(TypeRole.numeric(TypeScale.pill, weight: 600))
                             .foregroundStyle(Tokens.text)
@@ -551,7 +551,7 @@ struct SpendingScreen: View {
                     Text(verbatim: SpendingCopy.columns[2]).frame(width: 52, alignment: .trailing)
                 }
                 .microLabelFont(12).foregroundStyle(Tokens.textDim)
-                ForEach(Array(c.categories.enumerated()), id: \.offset) { i, s in
+                ForEach(Array(c.categories.enumerated()), id: \.element.category) { i, s in
                     HStack(spacing: 8) {
                         ThemeArt.swatchShape(AppearanceState.shared.theme).fill(sliceColour(i)).frame(width: 8, height: 8)
                         Text(verbatim: CategoryLevels.name(s.category, in: tree)).font(TypeRole.body(TypeScale.detail))
@@ -564,7 +564,7 @@ struct SpendingScreen: View {
                     .accessibilityElement(children: .combine)
                 }
             } else {
-                ForEach(Array(c.categories.enumerated()), id: \.offset) { i, s in
+                ForEach(Array(c.categories.enumerated()), id: \.element.category) { i, s in
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
                             Text(verbatim: CategoryLevels.name(s.category, in: tree)).font(TypeRole.name(TypeScale.detail))

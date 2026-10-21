@@ -611,8 +611,11 @@ class DoneMomentsTest {
         assertEquals("one dim of the tab content", 1, Regex("""\.doneDim\(donePlay, dark\)""").findAll(shell).count())
         assertEquals("and You's", 2, Regex("""\.doneDim\(""").findAll(shell).count())
         val overlay = shell.indexOf("DoneOverlay(donePlay, dark)")
-        val bar = shell.indexOf("SkiptiTabBar(")
+        // D-250 fix wave (I4): the bar is drawn over the pages, outside them (the shell's own copy under a sheet too).
+        val bar = shell.indexOf("CompositionLocalProvider(LocalShellBackdrop provides shellBackdrop) { tabBar() }")
         assertTrue("content, then the overlay, then the bar: $refresh $overlay $bar", refresh in 0 until overlay && overlay < bar)
+        val underSheet = shell.indexOf("Box(Modifier.align(Alignment.BottomCenter)) { tabBar() }")
+        assertTrue("the copy under a sheet is after the overlay, outside the dimmed content", overlay in 0 until underSheet)
         val barBox = shell.substring(shell.lastIndexOf("Box(", bar), bar)
         assertFalse("the bar is never dimmed", "doneDim" in barBox || "graphicsLayer" in barBox)
         assertTrue("the shell says while its bar is shown", "ShellBarShown.value = true" in barBox)
@@ -620,7 +623,7 @@ class DoneMomentsTest {
         val afterRoot = activity.substringAfter("AppRoot(")
         assertTrue("the toast's host over the root", "DoneToastHost(barShown = ShellBarShown.value)" in afterRoot)
         val switch = shell.substringAfter("is TabTap.SwitchTo -> {").substringBefore("is TabTap.PopToRoot")
-        assertTrue("a tab switch plays the light haptic", "Haptics.play(view, HapticKind.LIGHT)" in switch)
+        assertTrue("a tab switch plays the light haptic", "Haptics.play(shellView, HapticKind.LIGHT)" in switch)
         val pop = shell.substringAfter("is TabTap.PopToRoot ->").substringBefore("\n")
         val top = shell.substringAfter("is TabTap.ScrollToTop ->").substringBefore("\n")
         for ((name, line) in listOf("PopToRoot" to pop, "ScrollToTop" to top)) {

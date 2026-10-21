@@ -1525,16 +1525,28 @@ struct MoneyChange: ViewModifier {
     @Environment(\.motionReduced) private var reduceMotion
     /// The value shown before this change: read in the change's own update, so the roll knows its direction.
     @State private var last: Int64?
+    /// D-250 fix wave (M11): the direction of the last change, kept for the passes after it (once `last` has caught up),
+    /// so a fall keeps counting down until it lands.
+    @State private var down = false
 
     /// Down when the new value is below the one shown (the first value counts up).
     static func countsDown(from last: Int64?, to value: Int64) -> Bool { value < (last ?? value) }
 
+    /// D-250 fix wave (M11): the direction a body pass draws: from the value shown while the change is new, else the
+    /// direction that change took (`down`), never "up" just because `last` already holds the new value.
+    static func direction(last: Int64?, value: Int64, down: Bool) -> Bool {
+        value != last ? countsDown(from: last, to: value) : down
+    }
+
     func body(content: Content) -> some View {
         content
-            .contentTransition(reduceMotion ? .identity : .numericText(countsDown: Self.countsDown(from: last, to: value)))
+            .contentTransition(reduceMotion ? .identity : .numericText(countsDown: Self.direction(last: last, value: value, down: down)))
             .animation(ChangeMotion.animation(.number, reduced: reduceMotion), value: value)
             .onAppear { last = value }
-            .onChange(of: value) { _, new in last = new }
+            .onChange(of: value) { old, new in
+                down = Self.countsDown(from: old, to: new)
+                last = new
+            }
     }
 }
 
@@ -1580,8 +1592,7 @@ enum ThemeCrossfade {
     /// Applies `change`, crossfading from the window as it looked before.
     static func change(_ change: () -> Void) {
         guard !MotionSetting.reducedNow(),
-              let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
-                .flatMap(\.windows).first(where: \.isKeyWindow),
+              let window = host(UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).flatMap(\.windows)),
               let snapshot = window.snapshotView(afterScreenUpdates: false)
         else {
             change()
@@ -1597,17 +1608,30 @@ enum ThemeCrossfade {
             snapshot.removeFromSuperview()
         }
     }
+
+    /// D-250 fix wave (M6): the window the picture is laid over: the app's own (the key one at the normal level), never
+    /// the lock curtain's window, which sits above every presentation (`LockCurtainRules.level`) and may be key.
+    static func host(_ windows: [UIWindow]) -> UIWindow? {
+        windows.first { $0.isKeyWindow && hosts(level: $0.windowLevel) } ?? windows.first { !$0.isHidden && hosts(level: $0.windowLevel) }
+    }
+
+    /// Below the lock curtain's level: a picture of the ledger is never drawn over the lock.
+    static func hosts(level: UIWindow.Level) -> Bool { level.rawValue < LockCurtainRules.level.rawValue }
 }
 
 /// D-250: rows that have no id of their own (Home's people: one per name and currency) keyed by what they show, each
 /// repeat numbered, so every key is unique and a row keeps its key while the rows around it come and go.
 enum MotionKeys {
+    /// D-250 fix wave (M15): between a key and its repeat's number, a character no name holds (a person named "Sam#1"
+    /// beside two "Sam"s made "Sam#1" twice). Android's `MotionKeys.SEPARATOR`.
+    static let separator = "\u{1F}"
+
     static func unique(_ base: [String]) -> [String] {
         var seen: [String: Int] = [:]
         return base.map { key in
             let n = seen[key, default: 0]
             seen[key] = n + 1
-            return n == 0 ? key : "\(key)#\(n)"
+            return n == 0 ? key : "\(key)\(separator)\(n)"
         }
     }
 }

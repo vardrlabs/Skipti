@@ -407,7 +407,9 @@ fun GroupNextCard(
     val scope = rememberCoroutineScope()
     // S1: held from the tap until the page moves on; a card for another payment starts with a fresh latch (M3).
     val latch = remember(pick) { SettleLatch<GroupNext.Pick>() }
-    val settling = latch.settling(pick)
+    // D-250 fix wave (M5): a card sliding out after its settle keeps "Settling" (the latch lets go as it leaves), as
+    // Settle up's cards keep "Recording…".
+    val settling = latch.settling(pick) || LocalRowLeaving.current
     val other = LedgerStore.label(pick.entry.id, named, history)
     val amount = BalanceUi.moneyFormat(pick.amountMinor, pick.currencyCode, AppLocale.current)
     val spoken = BalanceUi.moneySpoken(pick.amountMinor, pick.currencyCode, AppLocale.current)

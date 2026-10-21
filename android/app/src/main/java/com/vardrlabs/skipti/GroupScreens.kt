@@ -256,11 +256,12 @@ fun CreateGroupScreen(vaultPath: String, onCreated: (String) -> Unit, onBack: ()
         }
         SectionLabel("People", dark)
         // Every row gone leaves no empty card: the label, then "Add a person".
-        if (people.rows.isNotEmpty()) {
+        // D-250 fix wave (M4): the card itself moves too, so the last person removed leaves with it, as the others do.
+        MovingRows(listOfNotNull(people.rows.takeIf { it.isNotEmpty() }), key = { "people" }) { shownRows, _ ->
             // D-250: ListCard's look, its rows moving: a person added comes in and one removed leaves, the rows below
             // closing up (keyed by the row's id, as before); a cut when motion is reduced.
             ListCardColumn(dark) {
-                MovingRows(people.rows, key = { it.id }) { r, at ->
+                MovingRows(shownRows, key = { it.id }) { r, at ->
                     if (at > 0) ListCardHairline(dark)
                     val index = people.rows.indexOfFirst { it.id == r.id }.coerceAtLeast(0)
                     NameField(
