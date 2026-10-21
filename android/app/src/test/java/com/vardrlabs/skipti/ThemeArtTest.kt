@@ -306,7 +306,10 @@ class ThemeArtTest {
         // And no edge reaches a draw by another name: every use of the colour in the app is one of these (a new one
         // draws through notchEdge, or extends this list after a look).
         val uses = mainSources().associate { it.name to it.readText().split("\"norseEdge\"").size - 1 }.filterValues { it > 0 }
-        assertEquals(mapOf("Aurora.kt" to 1, "ThemeArt.kt" to 4, "ThemeMotion.kt" to 1), uses)
+        // D-245 (decision 197): the welcome's Norse road takes the deep gold for its TRACK (a road, not a card edge; the
+        // whole-outline check above still holds), as iOS's `WelcomeProgress.trackColor` does.
+        assertEquals(mapOf("Aurora.kt" to 1, "ThemeArt.kt" to 4, "ThemeMotion.kt" to 1, "Welcome.kt" to 1), uses)
+        assertTrue("val track = ThemeArt.color(\"norseEdge\").copy(alpha = WelcomeProgress.TRACK_ALPHA)" in src("Welcome.kt"))
         // The edge itself: the straight sides, inset half the 1 dp line, clipped to the notched outline.
         val edge = art.substringAfter("fun Modifier.notchEdge(").substringBefore("\n}\n")
         assertTrue("the four sides", "ArtGeometry.notchEdges(size.width, size.height, chamferDp.dp.toPx(), line / 2)" in edge)
@@ -1193,7 +1196,9 @@ class ThemeArtTest {
             .filter { "TitleOrnament(" in it.readText() }.map { it.name }.sorted()
         // D-217 Task 6: the ornament is drawn by TabRootScaffold (SkiptiBar.kt) alone, under the large title, for
         // `ornament = true`; no screen draws one of its own (they all did before the scaffold).
-        assertEquals("no screen draws an ornament", emptyList<String>(), users)
+        // D-245 (U9, the approved mock-up v2): the welcome's centred titles carry it in Norse too (a full-screen layer
+        // with its own titles, not a pushed page); iOS's twin amended alike.
+        assertEquals("no screen but the welcome draws an ornament", listOf("Welcome.kt"), users)
         assertTrue(
             "TabRootScaffold draws the ornament",
             "if (ornament) TitleOrnament(dark, above = BarDecisions.CONTENT_SPACING, belowBaseline = " in src("SkiptiBar.kt"),
@@ -1488,7 +1493,8 @@ class ThemeArtTest {
                 at = text.indexOf(".tileEdge(", at + 1)
             }
         }
-        assertEquals("the four tiles (group header, milestone seal, removal person, D-222 You's settings tile)", 4, callers)
+        // D-245: + the welcome's five places (W1), each in the theme's person tile.
+        assertEquals("the five tiles (group header, milestone seal, removal person, D-222 You's settings tile, D-245 W1's places)", 5, callers)
     }
 
     /** iOS's `static let disabledAlpha: Double = 0.45` (read from ThemeArt.swift) is Android's constant. */
@@ -1927,7 +1933,12 @@ class ThemeArtTest {
         val users = mainSources().filter { it.name != "Tokens.kt" }.associate { it.name to Regex("""Type\s*\.\s*rune\s*\(""").findAll(it.readText()).count() }.filterValues { it > 0 }
         // D-222 (L61): the Norse swatch's four runes on Appearance.
         assertEquals(1, src("AccountHubScreen.kt").split("style = Type.rune(runeSize(\"swatchRune\", density))").size - 1)
-        assertEquals(mapOf("TabBar.kt" to 1, "ThemeArt.kt" to 1, "ThemeMotion.kt" to 3, "YouProgress.kt" to 1, "AccountHubScreen.kt" to 1), users)
+        // D-245 (decision 192, 197): the welcome's progress runes (measured, drawn as art) and W1's places in Norse (the
+        // bar's own runes, alone in their tile).
+        val welcome = src("Welcome.kt")
+        assertEquals(1, welcome.split("val style = Type.rune(with(density) { WelcomeProgress.RUNE_SIZE.dp.toSp() })").size - 1)
+        assertEquals(1, welcome.split("style = Type.rune(with(LocalDensity.current) { runeDp.dp.toSp() }).copy(color = tint),").size - 1)
+        assertEquals(mapOf("TabBar.kt" to 1, "ThemeArt.kt" to 1, "ThemeMotion.kt" to 3, "YouProgress.kt" to 1, "AccountHubScreen.kt" to 1, "Welcome.kt" to 2), users)
     }
 
     // ---- D-220 Task 3: the Android call sites take the decisions (twins of iOS's ThemeArtTests guards) ----
@@ -2094,11 +2105,14 @@ class ThemeArtTest {
     fun save_name_is_full_width() {
         val p = src("Profile.kt")
         // D-224 (Design 8): the label no longer turns "Saved" (the toast says it), so the call starts with its one label.
-        val at = p.indexOf("SecondaryAction(\"Save name\"")
+        // D-245 (U17): "Save name" is the PRIMARY style while there is a name to save, the secondary dimmed when not
+        // (iOS's twin); both take the full width.
+        val at = p.indexOf("SecondaryAction(WelcomeCopy.SAVE_NAME")
         assertTrue("the call is found", at >= 0)
         val call = p.substring(at).substringBefore("\n")
-        assertTrue("it dims when there is nothing to save", "enabled = canSave" in call)
+        assertTrue("it dims when there is nothing to save", "enabled = false" in call)
         assertFalse("no wrapped width", "modifier = Modifier)" in call)
+        assertTrue("the primary when savable", "if (savable) {\n                PrimaryAction(WelcomeCopy.SAVE_NAME, dark) { saveName() }" in p)
     }
 
     // ---- D-225 Task 3: the shared list components (the twins of iOS's Task 2 guards) ----

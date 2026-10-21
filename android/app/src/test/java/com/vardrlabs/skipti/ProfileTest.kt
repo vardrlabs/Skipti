@@ -136,8 +136,9 @@ class ProfileTest {
         assertEquals(iosField, ProfileLayout.NAME_FIELD_SIZE, 0f)
         val screen = body225("Profile.kt", "fun ProfileScreen(")
         assertEquals("both cards", 2, screen.split("verticalArrangement = Arrangement.spacedBy(ProfileLayout.CARD_SPACING.dp),").size - 1)
+        // D-245 (U17): the field's change also clears the error, and Done on the keyboard saves (WelcomeTest).
         assertTrue("the field at iOS's size",
-            "HairlineField(name, { name = it }, \"Your name\", dark, style = Type.body(dark).copy(fontSize = ProfileLayout.NAME_FIELD_SIZE.sp))" in screen)
+            "HairlineField(\n                name, { name = it; error = null }, \"Your name\", dark,\n                style = Type.body(dark).copy(fontSize = ProfileLayout.NAME_FIELD_SIZE.sp)," in screen)
     }
 
     /** D-225 follow-up (R6, the re-look's dump): each emoji cell is ONE node to TalkBack, its emoji with its chosen
@@ -148,7 +149,8 @@ class ProfileTest {
         val screen = body225("Profile.kt", "fun ProfileScreen(")
         val cell = screen.substringAfter("val paint = EmojiCell.paint(chosen)").substringBefore("contentAlignment = Alignment.Center,")
         assertTrue("the tap, then the cell's own words and state, its children cleared",
-            ".clickable { setAvatar(Avatar.Emoji(e)) }\n                                    .clearAndSetSemantics { contentDescription = e; selected = chosen }," in cell)
+            // D-245 (decision 161): the tap stages the picture (the confirm sheet writes it).
+            ".clickable { stagePicture(Avatar.Emoji(e)) }\n                                    .clearAndSetSemantics { contentDescription = e; selected = chosen }," in cell)
         assertFalse("no merging semantics left beside it", ".semantics {" in cell)
         val swift = java.io.File("../../ios/Skipti/App/Profile.swift").readText()
         assertTrue("iOS: the emoji and its selection", ".accessibilityLabel(e)" in swift && ".accessibilityAddTraits(avatar == .emoji(e) ? .isSelected : [])" in swift)

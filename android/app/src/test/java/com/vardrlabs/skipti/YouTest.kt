@@ -253,7 +253,7 @@ class YouTest {
         assertEquals("every tab root opens You afresh", 4, root.split("onOpenAccount = ::openYou").size - 1)
         assertFalse("no tab root reuses the old offset", "onOpenAccount = { route = \"account\" }" in root)
         assertEquals("the bumps are openYou's alone", 1, root.split("youEntry++").size - 1)
-        assertTrue("You's pages come back to it as it was", "AboutScreen(onBack = { route = \"account\" }" in root && "ProfileScreen(vaultPath = vaultPath, onBack = { route = \"account\" })" in root)
+        assertTrue("You's pages come back to it as it was", "AboutScreen(vaultPath, onBack = { route = \"account\" }" in root /* D-245: About takes the vault for the replay */ && "ProfileScreen(vaultPath = vaultPath, onBack = { route = \"account\" })" in root)
         val hub = s225("AccountHubScreen.kt")
         assertTrue("the hub hands it to its page", "side = BarDecisions.PAGE_SIDE_WIDE.dp, scroll = scroll) {" in hub)
         val bar = s225("SkiptiBar.kt")

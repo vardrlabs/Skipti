@@ -737,7 +737,6 @@ class DoneMomentsTest {
             "RemovalFlow.kt" to (1 to listOf("DoneCopy.personRemoved(")),
             "GroupSettings.kt" to (4 to listOf("DoneCopy.GROUP_NAME_SAVED", "DoneCopy.GROUP_PICTURE_REMOVED", "DoneCopy.GROUP_PICTURE_SAVED", "DoneCopy.GROUP_DELETED")),
             "OverviewTab.kt" to (1 to listOf("DoneCopy.GROUP_PICTURE_REMOVED", "DoneCopy.GROUP_PICTURE_SAVED")),
-            "Profile.kt" to (2 to listOf("DoneCopy.NAME_SAVED", "DoneCopy.PICTURE_REMOVED", "DoneCopy.PICTURE_SAVED")),
             "UsernameStep.kt" to (2 to listOf("DoneCopy.USERNAME_SAVED, PeopleCopy.handle(h)", "DoneCopy.USERNAME_SAVED, PeopleCopy.handle(saved)")),
             "AccountHubScreen.kt" to (1 to listOf("DoneCopy.SIGNED_OUT")),
             "SettleAll.kt" to (1 to listOf("DoneCopy.settledWith(")),
@@ -764,6 +763,14 @@ class DoneMomentsTest {
             for (want in table[f.name]?.second.orEmpty()) assertTrue("${f.name} posts $want", want in words)
         }
         assertEquals("the posting files and their counts", table.mapValues { it.value.first }, found.toSortedMap().toMap())
+        // D-245 (decision 199): Profile and the welcome save through ProfileSave, whose one door posts Profile's toast or,
+        // in the welcome, plays the success alone; its moments read DoneCopy through DoneMoments (iOS's twin alike).
+        val save = kt("ProfileConfirm.kt").substringAfter("object ProfileSave {").substringBefore("\n}\n")
+        assertTrue("val nameMoment: DoneMoment get() = DoneMoments.line(DoneCopy.NAME_SAVED)" in save)
+        assertTrue("DoneMoments.line(if (avatar == Avatar.None) DoneCopy.PICTURE_REMOVED else DoneCopy.PICTURE_SAVED)" in save)
+        assertTrue("Feedback.TOAST -> center.post(moment, now)" in save)
+        assertTrue("Feedback.HAPTIC -> center.success(now)" in save)
+        assertEquals("Profile's two saves", 2, kt("Profile.kt").split("ProfileSave.Feedback.TOAST)").size - 1)
         // The add-person screen's own centre, shown by its own host (it is a screen above the shell; iOS's is a sheet).
         val people = kt("People.kt")
         assertTrue("a local centre", "val localDone = remember { DoneMomentCenter() }" in people)

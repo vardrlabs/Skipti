@@ -121,7 +121,8 @@ class AccountOwnerTest {
         assertNull(VaultRecovery.retried(VaultRecovery.Launch.Opened(launchedBefore = true)))
         assertNull(VaultRecovery.retried(VaultRecovery.Launch.Opened(launchedBefore = false)))
         val root = File("src/main/java/com/vardrlabs/skipti/AppRoot.kt").readText()
-        val goOn = root.substringAfter("fun goOn(opened: VaultRecovery.Launch.Opened) {").substringBefore("\n    }\n")
+        // D-245: goOn also takes whether the welcome shows (read from the vault by the same two paths).
+        val goOn = root.substringAfter("fun goOn(opened: VaultRecovery.Launch.Opened, welcomeShows: Boolean) {").substringBefore("\n    }\n")
         assertTrue("the lock for a ledger opened before", "if (opened.launchedBefore) AppLock.launch(context)" in goOn)
         assertTrue("the screen goes", "vaultScreen = null" in goOn)
         assertEquals("the launch and the retry both go on through it", 2, Regex("""goOn\(""").findAll(root).count() - 1)

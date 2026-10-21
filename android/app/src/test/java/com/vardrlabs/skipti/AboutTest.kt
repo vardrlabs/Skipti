@@ -201,7 +201,8 @@ class AboutTest {
     }
 
     /** The About copy is iOS's, word for word: both pin the same hash,
-     *  derived independently (.drafts/d146/copy_golden.py; D-196: .drafts/d196/copy_golden.py; D-197: .drafts/d197/copy_golden.py). */
+     *  derived independently (.drafts/d146/copy_golden.py; D-196: .drafts/d196/copy_golden.py; D-197: .drafts/d197/copy_golden.py;
+     *  D-245, promise 5 after decision 171: .drafts/d245/about_golden.py, the hash iOS pins). */
     @Test
     fun the_about_copy_matches_ios() {
         assertEquals("GUARANTEES.md has seven", 7, AboutInfo.PROMISES.size)
@@ -212,7 +213,7 @@ class AboutTest {
             ).joinToString("\n")
         val digest = MessageDigest.getInstance("SHA-256").digest(joined.toByteArray())
             .joinToString("") { "%02x".format(it) }
-        assertEquals("9218fdd5c098d5adbb7463c821a20031a84ff65b9a03227f6bc8fbbdb9b4d1ae", digest)
+        assertEquals("0efa2d26a8486466afd7ff1a6caed1a46de3dd99f1e9adf2bc9e032fcb088b60", digest)
         assertEquals("Version 0.1.0 (1000)", AboutInfo.versionLine("0.1.0", "1000"))
         assertEquals("Core 0.1.0", AboutInfo.coreLine("0.1.0"))
     }

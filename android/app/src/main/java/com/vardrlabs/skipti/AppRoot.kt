@@ -36,6 +36,7 @@ import androidx.compose.foundation.ScrollState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -200,6 +201,7 @@ class MainActivity : ComponentActivity() {
                         CompositionLocalProvider(LocalArtBackdrop provides rememberArtBackdrop()) {
                             AppRoot(
                                 verificationArg = proofArg(),
+                                forceWelcome = ProofArgs.welcome(intent?.getStringExtra("args"), debuggable()),
                                 openedInvite = openedInvite.value,
                                 onInviteHandled = { openedInvite.value = null },
                                 openedPush = openedPush.value,
@@ -318,6 +320,8 @@ internal fun skiptiColorScheme(dark: Boolean): androidx.compose.material3.ColorS
 @Composable
 fun AppRoot(
     verificationArg: String? = null,
+    /** D-245: `--es args --welcome` (Debug builds only): the ordinary app with the welcome shown (a look's tool). */
+    forceWelcome: Boolean = false,
     openedInvite: String? = null,
     onInviteHandled: () -> Unit = {},
     openedPush: PushRoute.Target? = null,
@@ -448,11 +452,22 @@ fun AppRoot(
     var vaultRetry by rememberOnce { mutableIntStateOf(0) }
     val vaultBusy = rememberOnce { VaultRecovery.Busy() }
 
+    // D-245 (U9, decision 177): the vault's `welcome/pending` as this launch read it, and the welcome's state, kept
+    // here, above the lock and the shell, so a lock that comes back or a re-made activity keeps its step.
+    var welcomePending by rememberOnce { mutableStateOf(false) }
+    val welcome = rememberSaveable(saver = WelcomeSession.Saver) { WelcomeSession() }
+
     suspend fun readVault(): VaultRecovery.Launch =
-        withContext(Dispatchers.IO) { VaultRecovery.launch(LAUNCHED_KEY) { LedgerStore(vaultPath) } }
+        withContext(Dispatchers.IO) {
+            VaultRecovery.launch(LAUNCHED_KEY, firstLaunch = { WelcomeGate.mark(it) }) { LedgerStore(vaultPath) }
+        }
+
+    // D-245: whether the welcome shows: a new install, or the flag still set (a welcome killed midway); a forced one.
+    suspend fun readWelcome(opened: VaultRecovery.Launch.Opened): Boolean = forceWelcome ||
+        withContext(Dispatchers.IO) { WelcomeGate.atLaunch(opened.launchedBefore) { WelcomeGate.pending(LedgerStore(vaultPath)) } }
 
     // The vault opened, at launch or from Try again: the app goes on as a normal launch.
-    fun goOn(opened: VaultRecovery.Launch.Opened) {
+    fun goOn(opened: VaultRecovery.Launch.Opened, welcomeShows: Boolean) {
         vaultScreen = null
         // D-163: locked BEFORE the ledger first renders, so it never flashes.
         // A first launch has nothing to lock, and a lock prompt is no welcome.
@@ -460,6 +475,7 @@ fun AppRoot(
         // D-244 (ADR-0043): signed in, the account's settings the vault holds are applied, then (once per process) an
         // icon change still pending, at the front only, after the lock's decision above.
         SettingsSync.launched(context)
+        welcomePending = welcomeShows
         kitLoaded = true
     }
 
@@ -470,7 +486,7 @@ fun AppRoot(
         kitLoaded = null
         when (val launch = readVault()) {
             is VaultRecovery.Launch.Unavailable -> vaultScreen = VaultRecovery.Screen(launch.reason)
-            is VaultRecovery.Launch.Opened -> goOn(launch)
+            is VaultRecovery.Launch.Opened -> goOn(launch, readWelcome(launch))
         }
     }
 
@@ -488,7 +504,7 @@ fun AppRoot(
                 scope.launch {
                     val launch = readVault()
                     when (val after = VaultRecovery.retried(launch)) {
-                        null -> (launch as? VaultRecovery.Launch.Opened)?.let { goOn(it) }
+                        null -> (launch as? VaultRecovery.Launch.Opened)?.let { goOn(it, readWelcome(it)) }
                         else -> vaultScreen = after
                     }
                     vaultBusy.finish()
@@ -536,12 +552,26 @@ fun AppRoot(
             CoversShellToast()
             JoinScreen(vaultPath, openedInvite, onJoined = { onInviteHandled() }, onBack = onInviteHandled, asSheet = true)
         } else {
-            HomeShell(
-                vaultPath = vaultPath, pushed = openedPush, onPushHandled = onPushHandled,
-                invitations = openedInvitations, onInvitationsHandled = onInvitationsHandled,
-                phones = openedPhones, onPhonesHandled = onPhonesHandled,
-                pushedGroup = openedGroup, onGroupHandled = onGroupHandled,
-            )
+            // D-245 (U9): the welcome is a full-screen layer over the shell (Home behind it, hidden from TalkBack while
+            // it shows), after the lock on a relaunch (the lock above replaces everything), never on a first launch's
+            // lock (there is none: a lock prompt is no welcome).
+            Box(if (welcomePending) Modifier.fillMaxSize().clearAndSetSemantics {} else Modifier.fillMaxSize()) {
+                HomeShell(
+                    vaultPath = vaultPath, pushed = openedPush, onPushHandled = onPushHandled,
+                    invitations = openedInvitations, onInvitationsHandled = onInvitationsHandled,
+                    phones = openedPhones, onPhonesHandled = onPhonesHandled,
+                    pushedGroup = openedGroup, onGroupHandled = onGroupHandled,
+                )
+            }
+            if (welcomePending) {
+                WelcomeLayer(vaultPath, WelcomeMode.FIRST_RUN, welcome) { exit ->
+                    welcomePending = false
+                    scope.launch(Dispatchers.IO) {
+                        WelcomeGate.closed(WelcomeMode.FIRST_RUN) { WelcomeGate.clear(LedgerStore(vaultPath)) }
+                    }
+                    WelcomeLook.after(context, exit)
+                }
+            }
         }
     }
 }
@@ -772,6 +802,15 @@ private fun HomeShell(
             glyphAvatar = runCatching { store.loadAvatar() }.getOrDefault(Avatar.None)
         }
     }
+    // D-245 (U9): the welcome's "Start a group" opens New group over Balance (iOS's `.skiptiStartGroup`).
+    LaunchedEffect(StartGroupRequest.pending) {
+        if (StartGroupRequest.pending) {
+            StartGroupRequest.pending = false
+            openGroup = null
+            selectedName = HomeTab.BALANCE.name
+            route = "new-group"
+        }
+    }
     BackHandler(enabled = route != null) { route = HomeRoutes.parent(route) }
     BackHandler(enabled = route == null && openGroup != null) { openGroup = null }
     // C2: a sign-in's confirmation and step belong to the sign-in route;
@@ -860,7 +899,7 @@ private fun HomeShell(
             return
         }
         "about" -> {
-            AboutScreen(onBack = { route = "account" }, onOpenLicences = { route = "licences" })
+            AboutScreen(vaultPath, onBack = { route = "account" }, onOpenLicences = { route = "licences" })
             return
         }
         "licences" -> {
@@ -1457,9 +1496,13 @@ object ProofArgs {
 
     fun proof(args: String?, debuggable: Boolean): String? {
         val trimmed = args?.trim()?.takeIf { it.isNotEmpty() } ?: return null
-        if (!debuggable || tokens(trimmed).first() == "--emulators") return null
+        if (!debuggable || tokens(trimmed).first() == "--emulators" || tokens(trimmed).first() == "--welcome") return null
         return trimmed
     }
+
+    /** D-245: `--welcome` (Debug builds only, alone or after `--emulators`): the ORDINARY app with the welcome shown,
+     *  a look's tool. Not a proof: the lock and the gate run as always, and closing it clears nothing it did not set. */
+    fun welcome(args: String?, debuggable: Boolean): Boolean = debuggable && "--welcome" in tokens(args)
 
     /** `--emulators` (Debug builds only): the ordinary app against the local
      *  emulators. It may carry `--emulator-as <sub>`. */

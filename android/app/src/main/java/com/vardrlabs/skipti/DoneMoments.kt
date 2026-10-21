@@ -392,6 +392,12 @@ open class DoneMomentCenter {
         if (moment is DoneMoment.Small) DoneCenter.target?.let { Haptics.play(it, HapticKind.SUCCESS, now / 1000.0) }
     }
 
+    /** D-245 (decision 199): the success haptic alone, no moment shown (the welcome's saves: its done row is the done
+     *  state). Through the one door, so the switch and the gate apply. The twin of iOS's `DoneCenter.success()`. */
+    fun success(now: Long = SystemClock.uptimeMillis()) {
+        DoneCenter.target?.let { Haptics.play(it, HapticKind.SUCCESS, now / 1000.0) }
+    }
+
     fun clear() {
         current = null
     }

@@ -378,6 +378,9 @@ fun FieldRow(
     actions: KeyboardActions = KeyboardActions.Default,
     spoken: String = placeholder,
     trailing: (@Composable () -> Unit)? = null,
+    /** D-245: the welcome's name field is centred (iOS's `.multilineTextAlignment(.center)`): the placeholder spans the
+     *  row so the style's centred alignment applies to it too. */
+    centred: Boolean = false,
 ) {
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         BasicTextField(
@@ -393,8 +396,11 @@ fun FieldRow(
                 Box(
                     Modifier
                         .heightIn(min = ThemeArt.m("touchTarget").dp)
+                        .then(if (centred) Modifier.fillMaxWidth() else Modifier)
                         .padding(vertical = ThemeArt.m("rowPadV").dp),
                     contentAlignment = Alignment.CenterStart,
+                    // D-245: centred, the placeholder and the typed text both span the row, so the style centres them.
+                    propagateMinConstraints = centred,
                 ) {
                     if (value.isEmpty()) Text(placeholder, style = style.copy(color = Tok.textFaint(dark)))
                     field()
@@ -419,6 +425,8 @@ fun HairlineField(
     modifier: Modifier = Modifier,
     style: TextStyle = Type.body(dark),
     keyboard: KeyboardOptions = KeyboardOptions.Default,
+    /** D-245 (the brief's twin defect): the keyboard's action (Profile's Done saves the name, as iOS's Return does). */
+    actions: KeyboardActions = KeyboardActions.Default,
 ) {
     val line = Tok.hairline(dark)
     BasicTextField(
@@ -428,6 +436,7 @@ fun HairlineField(
         textStyle = style,
         cursorBrush = SolidColor(Tok.accent(dark)),
         keyboardOptions = keyboard,
+        keyboardActions = actions,
         modifier = modifier
             .fillMaxWidth()
             .semantics { contentDescription = placeholder }
