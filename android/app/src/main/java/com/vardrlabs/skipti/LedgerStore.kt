@@ -1739,9 +1739,10 @@ class LedgerStore(
     }
 
     /** D-166: keeps a group built elsewhere (an import builds it with
-     *  `ffiCreateNamedGroup` before anything is saved), and selects it. */
-    fun adopt(created: NamedGroupWire) {
-        saveNamed(namedGroups() + created)
+     *  `ffiCreateNamedGroup` before anything is saved), and selects it. D-253: [nowMs] is the save's clock (the store
+     *  seed keeps its groups at their rows' times, as `createGroup` does). */
+    fun adopt(created: NamedGroupWire, nowMs: Long = System.currentTimeMillis()) {
+        saveNamed(namedGroups() + created, nowMs)
         selectGroup(created.group.id)
     }
 

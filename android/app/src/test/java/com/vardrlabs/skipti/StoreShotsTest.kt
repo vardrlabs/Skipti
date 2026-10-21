@@ -59,8 +59,9 @@ class StoreShotsTest {
     fun the_seed_table_is_ios_own() {
         val file = swift("StoreShots.swift")
         val groups = swiftBlock(file, "static let groups: [StoreShotsGroup] = [")
-        val g = Regex("""\.init\(name: "([^"]*)", currency: "([^"]*)", people: \[([^\]]*)\]\),""").findAll(groups)
-            .map { StoreShotsGroup(it.groupValues[1], it.groupValues[2], names(it.groupValues[3])) }.toList()
+        val g = Regex("""\.init\(name: "([^"]*)", currency: "([^"]*)", people: \[([^\]]*)\], id: "([0-9a-f]{32})"\),""")
+            .findAll(groups)
+            .map { StoreShotsGroup(it.groupValues[1], it.groupValues[2], names(it.groupValues[3]), it.groupValues[4]) }.toList()
         assertEquals(groups.split(".init(").size - 1, g.size)
         assertEquals(StoreShots.GROUPS, g)
 
@@ -447,6 +448,24 @@ class StoreShotsTest {
     }
 
     // ---- Home from the seed (core's numbers, pinned once against .drafts/d251/expected.py; iOS pins the same) ----
+
+    /** D-253: the seeded groups keep the seed's fixed ids (iOS's own, compared above), so their tiles take the same
+     *  tones on both phones on every capture: Goa trip teal, Flat 4B pink, Paris blue. The negative: a group built by
+     *  core alone gets a random id, never the seed's. */
+    @Test
+    fun the_seeded_groups_keep_their_fixed_ids_and_tones() {
+        val store = tempStore()
+        StoreShots.seed(store, late, ZoneOffset.UTC)
+        val named = store.namedGroups()
+        assertEquals(StoreShots.GROUPS.map { it.id }, named.map { it.group.id })
+        assertEquals(listOf(GroupTone.TEAL, GroupTone.PINK, GroupTone.BLUE), named.map { GroupTone.of(it.group.id) })
+        assertEquals(listOf(2, 5, 1), named.map { GroupTone.of(it.group.id).ordinal })
+        assertEquals("three different ids", 3, named.map { it.group.id }.toSet().size)
+        for (g in named) assertTrue(g.group.id, Regex("[0-9a-f]{32}").matches(g.group.id))
+        val me = store.ensureSelf()
+        val random = uniffi.skipti_core.ffiCreateNamedGroup("Goa trip", "INR", uniffi.skipti_core.MemberWire(me.id, "Sam"), listOf("Meera"))
+        assertFalse("core's id is random", random.group.id in StoreShots.GROUPS.map { it.id })
+    }
 
     @Test
     fun the_seeded_vault_gives_home_its_numbers() {

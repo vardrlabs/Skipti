@@ -69,6 +69,7 @@ import androidx.compose.ui.semantics.expand
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -382,6 +383,20 @@ fun ThemeSwitch(isOn: Boolean, dark: Boolean, enabled: Boolean = true, modifier:
     }
 }
 
+/** D-253 (the store look, shot 4): what a field row shows. A LABELLED row (a split kind's person row: Exact, Percent,
+ *  Shares, Adjustment) keeps its label, the person's name, at its start whatever is typed, and its field trails, so
+ *  "1500" never stands alone with the placeholder gone; its prompt is the placeholder's first words ("Amount" of
+ *  "Amount for Meera"), and TalkBack still hears the whole placeholder. A row with no label is today's. The twin of
+ *  iOS's `FieldRowShows` in ListRows.swift. */
+object FieldRowShows {
+    /** The label drawn before the field: the row's label, typed into or not. */
+    fun label(label: String?, text: String): String? = label
+
+    /** The prompt in the field: the placeholder, or for a labelled row the words before " for ". */
+    fun prompt(placeholder: String, label: String?): String =
+        if (label == null || " for " !in placeholder) placeholder else placeholder.substringBefore(" for ")
+}
+
 /** D-225 (Designs 1, 11, 12): a field as a list row: a plain field padded `rowPadV` at the 48 dp minimum, the
  *  [placeholder] in `textFaint` (and its name to TalkBack), the accent caret, an optional [trailing] piece (a clear
  *  cross) a row gap after it. The padding and the minimum height sit INSIDE the field's decoration box (T3 review), so a
@@ -406,13 +421,26 @@ fun FieldRow(
     /** D-248 (U29.2): the text field's own modifier (a form that moves the keyboard between rows hangs its
      *  `focusRequester` here; [modifier] is the whole row's). */
     fieldModifier: Modifier = Modifier,
+    /** D-253: the person's name before the field ([FieldRowShows]); null for an unlabelled row. */
+    label: String? = null,
 ) {
+    val trails = label != null
+    val prompt = FieldRowShows.prompt(placeholder, label)
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        // D-253: the person's name, as a list row's title (`Type.name(dark, 16)`), sharing the row half and half with the
+        // field (a value row's layout); TalkBack hears the field's whole name instead.
+        FieldRowShows.label(label, value)?.let { shown ->
+            Text(
+                shown, style = Type.name(dark, 16).copy(color = Tok.text(dark)), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).clearAndSetSemantics {},
+            )
+            Spacer(Modifier.width(ThemeArt.m("rowGap").dp))
+        }
         BasicTextField(
             value = value,
             onValueChange = onValueChange,
             singleLine = true,
-            textStyle = style,
+            textStyle = if (trails) style.copy(textAlign = TextAlign.End) else style,
             cursorBrush = SolidColor(Tok.accent(dark)),
             keyboardOptions = keyboard,
             keyboardActions = actions,
@@ -421,13 +449,14 @@ fun FieldRow(
                 Box(
                     Modifier
                         .heightIn(min = ThemeArt.m("touchTarget").dp)
-                        .then(if (centred) Modifier.fillMaxWidth() else Modifier)
+                        .then(if (centred || trails) Modifier.fillMaxWidth() else Modifier)
                         .padding(vertical = ThemeArt.m("rowPadV").dp),
-                    contentAlignment = Alignment.CenterStart,
+                    // D-253: a labelled row's prompt and words sit at the row's end.
+                    contentAlignment = if (trails) Alignment.CenterEnd else Alignment.CenterStart,
                     // D-245: centred, the placeholder and the typed text both span the row, so the style centres them.
                     propagateMinConstraints = centred,
                 ) {
-                    if (value.isEmpty()) Text(placeholder, style = style.copy(color = Tok.textFaint(dark)))
+                    if (value.isEmpty()) Text(prompt, style = style.copy(color = Tok.textFaint(dark)))
                     field()
                 }
             },

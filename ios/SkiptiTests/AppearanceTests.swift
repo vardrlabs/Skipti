@@ -754,10 +754,11 @@ final class AppearanceTests: XCTestCase {
         }
     }
 
-    /// D-234 (A1, the founder's): the sample line is "Lunch at Shake Shack" and 48 US dollars for everyone, whatever the
+    /// D-234 (A1, the founder's): the sample line is "Lunch with Luna" (decision 227, D-253) and 48 US dollars for everyone, whatever the
     /// default currency; minor units and the string from core (`$48.00` in both locales core knows: format.rs).
     func testTheSampleLine() throws {
-        XCTAssertEqual(SampleLine.parts(amount: "$48.00"), ["Lunch at Shake Shack", "$48.00"])
+        XCTAssertEqual(SampleLine.parts(amount: "$48.00"), ["Lunch with Luna", "$48.00"])
+        XCTAssertFalse(SampleLine.title.contains("Shake Shack"), "decision 227: no brand in the sample")
         XCTAssertEqual(SampleLine.amount(locale: .enUs), "$48.00")
         XCTAssertEqual(SampleLine.amount(locale: .enIn), "$48.00", "the same line for everyone")
         XCTAssertEqual(SampleLine.currency, "USD")
@@ -1433,7 +1434,7 @@ final class AppearanceTests: XCTestCase {
     /// X4 (final review S5): the sample line is read as its parts joined by a comma, like Android's contentDescription:
     /// Norse's ᛫ separator is never read aloud.
     func testTheSampleLineIsReadWithoutItsSeparator() throws {
-        XCTAssertEqual(SampleLine.spoken(amount: "$48.00"), "Lunch at Shake Shack, $48.00")
+        XCTAssertEqual(SampleLine.spoken(amount: "$48.00"), "Lunch with Luna, $48.00")
         let hub = try appFile("AccountHubScreen.swift")
         let screen = try between(hub, from: "struct SettingsSectionScreen: View {", to: "\n}\n")
         // D-225: Security's and Your data's items share one case (`case .appLock, .privacy, ...`) since their pages draw them.
@@ -1577,6 +1578,31 @@ final class AppearanceTests: XCTestCase {
         XCTAssertEqual(at, at.sorted(), "the field, its padding and minimum, the tap area, the focusing tap, then the trailing piece")
         XCTAssertEqual(occurrences(body, "trailing"), 1, "the trailing piece outside the tap area")
         XCTAssertFalse(body.contains(".onTapGesture"), "a plain tap would take the field's own taps")
+    }
+
+    /// D-253 (the store look, shot 4: Exact's rows read "1500", "1200", "900" with nobody named): a split kind's person
+    /// row keeps the person's name before its field once a number is typed, the field at the row's end and its prompt the
+    /// placeholder's first words; VoiceOver still hears the whole placeholder. An unlabelled row is today's (the
+    /// negative). Android's twin is AddExpenseTest.a_split_row_keeps_its_name_with_a_value_typed.
+    func testASplitRowKeepsItsNameWithAValueTyped() throws {
+        XCTAssertEqual(FieldRowShows.label("Meera", text: ""), "Meera")
+        XCTAssertEqual(FieldRowShows.label("Meera", text: "1500"), "Meera", "the name stays with a value typed")
+        XCTAssertNil(FieldRowShows.label(nil, text: "1500"), "an unlabelled row draws no name")
+        XCTAssertNil(FieldRowShows.label(nil, text: ""))
+        XCTAssertEqual(FieldRowShows.prompt("Amount for Meera", label: "Meera"), "Amount")
+        XCTAssertEqual(FieldRowShows.prompt("Adjustment for Meera", label: "Meera"), "Adjustment")
+        XCTAssertEqual(FieldRowShows.prompt("Amount for Meera", label: nil), "Amount for Meera", "an unlabelled prompt is whole")
+        XCTAssertEqual(FieldRowShows.prompt("Tax", label: "Meera"), "Tax")
+        // The row draws through it, and every kind's person row passes the person's name.
+        let field = try between(try appFile("ListRows.swift"), from: "struct FieldRow<Trailing: View>: View {", to: "\n}\n")
+        XCTAssertTrue(field.contains("if let shown = FieldRowShows.label(label, text: text) {"), field)
+        XCTAssertTrue(field.contains("prompt: Text(verbatim: FieldRowShows.prompt(placeholder, label: label))"), field)
+        XCTAssertTrue(field.contains(".accessibilityLabel(Text(verbatim: spoken ?? placeholder))"), field)
+        XCTAssertTrue(field.contains(".multilineTextAlignment(fieldAlignment)"), field)
+        let add = try appFile("AddExpenseScreen.swift")
+        for kind in ["Amount", "Percent", "Shares", "Adjustment"] {
+            XCTAssertEqual(occurrences(add, "FieldRow(\"\(kind) for \\(m.name)\", label: m.name, text:"), 1, kind)
+        }
     }
 
     // ---- D-216 Task 2: the app icon's decisions, names and copy (Design 3 to 5; Android's AppearanceTest pins the same

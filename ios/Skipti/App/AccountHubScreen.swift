@@ -160,12 +160,13 @@ enum StepSlider {
     static func adjusted(_ step: Int, by delta: Int) -> Int { clamped(step + delta) }
 }
 
-/// D-234 (A1, the founder's): Appearance's live sample line, "Lunch at Shake Shack" and 48 US dollars for everyone,
+/// D-234 (A1, the founder's): Appearance's live sample line, "Lunch with Luna" (decision 227, D-253: no brand in public
+/// copy) and 48 US dollars for everyone,
 /// whatever the default currency; converted to minor units by core's currency exponent and formatted by core in the
 /// phone's locale (`$48.00` in both locales core knows). Nothing here formats a number (a test reads this body).
 /// Android's twin is `SampleLine` in AccountHubScreen.kt.
 enum SampleLine {
-    static let title = "Lunch at Shake Shack"
+    static let title = "Lunch with Luna"
     static let wholeAmount = "48"
     static let currency = "USD"
 

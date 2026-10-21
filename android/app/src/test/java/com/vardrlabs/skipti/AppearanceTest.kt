@@ -73,11 +73,13 @@ class AppearanceTest {
         }
     }
 
-    /** D-234 (A1, the founder's): the twin of iOS's testTheSampleLine: "Lunch at Shake Shack" and 48 US dollars for
+    /** D-234 (A1, the founder's): the twin of iOS's testTheSampleLine: "Lunch with Luna" (decision 227, D-253) and 48 US dollars for
      *  everyone, the amount from the real core ($48.00 in both locales core knows). */
     @Test
     fun the_sample_line() {
-        assertEquals(listOf("Lunch at Shake Shack", "\$48.00"), SampleLine.parts("\$48.00"))
+        assertEquals(listOf("Lunch with Luna", "\$48.00"), SampleLine.parts("\$48.00"))
+        assertFalse("decision 227: no brand in the sample", "Shake Shack" in SampleLine.TITLE)
+        assertEquals("read with a comma, as iOS's spoken line", "Lunch with Luna, \$48.00", SampleLine.parts("\$48.00").joinToString(", "))
         assertEquals("\$48.00", SampleLine.amount(uniffi.skipti_core.LocaleTag.EN_US))
         assertEquals("the same line for everyone", "\$48.00", SampleLine.amount(uniffi.skipti_core.LocaleTag.EN_IN))
         assertEquals("USD", SampleLine.CURRENCY)

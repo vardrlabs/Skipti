@@ -87,6 +87,33 @@ class AddExpenseTest {
         assertTrue("Save is still the pinned action", "actions = {\n            PrimaryAction(" in t)
     }
 
+    /** D-253 (the store look, shot 4: Exact's rows read "1500", "1200", "900" with nobody named): the twin of iOS's
+     *  testASplitRowKeepsItsNameWithAValueTyped. A split kind's person row keeps the person's name before its field once
+     *  a number is typed, the field at the row's end and its prompt the placeholder's first words; TalkBack still hears
+     *  the whole placeholder. An unlabelled row is today's (the negative). */
+    @Test
+    fun a_split_row_keeps_its_name_with_a_value_typed() {
+        assertEquals("Meera", FieldRowShows.label("Meera", ""))
+        assertEquals("the name stays with a value typed", "Meera", FieldRowShows.label("Meera", "1500"))
+        assertEquals("an unlabelled row draws no name", null, FieldRowShows.label(null, "1500"))
+        assertEquals(null, FieldRowShows.label(null, ""))
+        assertEquals("Amount", FieldRowShows.prompt("Amount for Meera", "Meera"))
+        assertEquals("Adjustment", FieldRowShows.prompt("Adjustment for Meera", "Meera"))
+        assertEquals("an unlabelled prompt is whole", "Amount for Meera", FieldRowShows.prompt("Amount for Meera", null))
+        assertEquals("Tax", FieldRowShows.prompt("Tax", "Meera"))
+        // The row draws through it, and every kind's person row passes the person's name.
+        val row = src("ListRows.kt").substringAfter("fun FieldRow(").substringBefore("\n}\n")
+        for (s in listOf(
+            "FieldRowShows.label(label, value)?.let { shown ->", "val prompt = FieldRowShows.prompt(placeholder, label)",
+            "if (value.isEmpty()) Text(prompt,", "semantics { contentDescription = spoken }",
+            "textStyle = if (trails) style.copy(textAlign = TextAlign.End) else style",
+        )) assertTrue("FieldRow: $s", s in row)
+        val t = src("AddExpenseScreen.kt")
+        for ((kind, keyboard) in listOf("Amount" to "decimal", "Percent" to "number", "Shares" to "number", "Adjustment" to "decimal")) {
+            assertTrue(kind, Regex("""\"$kind for \$\{name\(id\)\}",\s*dark, style = numeric, keyboard = $keyboard, label = name\(id\)\)""").containsMatchIn(t))
+        }
+    }
+
     /** The twin of iOS's currency pill guard (A22): the pill opens the whole currency list page at once (its "Common"
      *  section holds the promoted codes), no chip row toggled under it. */
     @Test

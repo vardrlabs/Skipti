@@ -13,11 +13,14 @@ import SwiftUI
 // written (they are the phone's settings, as Appearance writes them), and D-232's migrated mark goes. Android's twin is
 // StoreShots.kt; its StoreShotsTest compares the seed table below with its own, row by row.
 
-/// One group of the seed: you ("Sam") plus `people`.
+/// One group of the seed: you ("Sam") plus `people`. D-253: `id` is the group's FIXED id (32 hex), the same on both
+/// shells, so its tile takes the same tone on every capture (`GroupTone.of` reads the id's first byte; a created group's
+/// id is random, and D-251's two captures drew Goa trip and Flat 4B in different tones on the two phones).
 struct StoreShotsGroup: Equatable {
     let name: String
     let currency: String
     let people: [String]
+    let id: String
 }
 
 /// One expense of the seed. `ledger` is a group's name or "Just me"; `category` is "Parent/Leaf" in core's default
@@ -60,9 +63,9 @@ enum StoreShots {
     // MARK: - The seed table (Android's StoreShots.kt holds the same rows, in the same order)
 
     static let groups: [StoreShotsGroup] = [
-        .init(name: "Goa trip", currency: "INR", people: ["Meera", "Kiran", "Rahul"]),
-        .init(name: "Flat 4B", currency: "INR", people: ["Meera"]),
-        .init(name: "Paris", currency: "EUR", people: ["Ana"]),
+        .init(name: "Goa trip", currency: "INR", people: ["Meera", "Kiran", "Rahul"], id: "02bce5d13d3c6bbabded0d02baa8f38f"),
+        .init(name: "Flat 4B", currency: "INR", people: ["Meera"], id: "05812af319f50da19936d26e14706717"),
+        .init(name: "Paris", currency: "EUR", people: ["Ana"], id: "018c2fba8e39317ca229dc1fd08e9854"),
     ]
 
     static let expenses: [StoreShotsExpense] = [
@@ -259,8 +262,14 @@ enum StoreShots {
         let start = (at.min() ?? nowMs) - 3_600_000
         try store.setYourName(you, nowMs: start)
         for (i, g) in groups.enumerated() {
-            try store.createGroup(name: g.name, settlementCurrency: g.currency, people: g.people,
-                                  nowMs: start + UInt64(i + 1) * 1_000)
+            // D-253: built as `createGroup` builds a group (core's `ffiCreateNamedGroup`), then kept under the seed's
+            // fixed id, so the tile's tone is the same on both phones (Android's seed does the same).
+            let madeAt = start + UInt64(i + 1) * 1_000
+            let me = try store.ensureSelf(nowMs: madeAt)
+            var built = try ffiCreateNamedGroup(name: g.name, settlementCurrency: g.currency,
+                                                selfMember: MemberWire(id: me.id, name: you), otherNames: g.people)
+            built.group.id = g.id
+            try store.adopt(built, nowMs: madeAt)
         }
         let named = try store.namedGroups()
         let me = try store.ensureSelf().id

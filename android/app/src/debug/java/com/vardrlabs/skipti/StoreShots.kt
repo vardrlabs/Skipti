@@ -20,8 +20,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import uniffi.skipti_core.MemberWire
 import uniffi.skipti_core.NamedGroupWire
 import uniffi.skipti_core.ffiCategoryTreeDefault
+import uniffi.skipti_core.ffiCreateNamedGroup
 
 // D-251 (U32): `--es args "--store-shots --store-theme <theme> [--store-mode <mode>]"` (the flag anywhere, as on iOS),
 // the store pages' seed. Debug builds only, twice over: this file is in `src/debug` (a release build compiles
@@ -38,7 +40,10 @@ import uniffi.skipti_core.ffiCategoryTreeDefault
 // iOS's twin is StoreShots.swift; StoreShotsTest compares the seed table below with it, row by row.
 
 /** One group of the seed: you ("Sam") plus [people]. */
-data class StoreShotsGroup(val name: String, val currency: String, val people: List<String>)
+/** D-253: [id] is the group's FIXED id (32 hex), iOS's own, so its tile takes the same tone on every capture
+ *  (`GroupTone.of` reads the id's first byte; a created group's id is random, and D-251's two captures drew Goa trip
+ *  and Flat 4B in different tones on the two phones). */
+data class StoreShotsGroup(val name: String, val currency: String, val people: List<String>, val id: String)
 
 /** One expense of the seed. [ledger] is a group's name or "Just me"; [category] is "Parent/Leaf" in core's default
  *  tree; [among] is who shares it (empty: everyone in the ledger), split equally, a remainder to the first named. */
@@ -76,9 +81,9 @@ object StoreShots {
     // ---- The seed table (iOS's StoreShots.swift holds the same rows, in the same order) ----
 
     val GROUPS = listOf(
-        StoreShotsGroup("Goa trip", "INR", listOf("Meera", "Kiran", "Rahul")),
-        StoreShotsGroup("Flat 4B", "INR", listOf("Meera")),
-        StoreShotsGroup("Paris", "EUR", listOf("Ana")),
+        StoreShotsGroup("Goa trip", "INR", listOf("Meera", "Kiran", "Rahul"), "02bce5d13d3c6bbabded0d02baa8f38f"),
+        StoreShotsGroup("Flat 4B", "INR", listOf("Meera"), "05812af319f50da19936d26e14706717"),
+        StoreShotsGroup("Paris", "EUR", listOf("Ana"), "018c2fba8e39317ca229dc1fd08e9854"),
     )
 
     val EXPENSES = listOf(
@@ -293,7 +298,14 @@ object StoreShots {
         val at = times(EXPENSES.map { it.hoursAgo } + SETTLEMENTS.map { it.hoursAgo }, nowMs, monthStart)
         val start = (at.minOrNull() ?: nowMs) - 3_600_000L
         store.setYourName(YOU, start)
-        GROUPS.forEachIndexed { i, g -> store.createGroup(g.name, g.currency, g.people, start + (i + 1) * 1_000L) }
+        GROUPS.forEachIndexed { i, g ->
+            // D-253: built as `createGroup` builds a group (core's `ffiCreateNamedGroup`), then kept under the seed's
+            // fixed id, so the tile's tone is the same on both phones (iOS's seed does the same).
+            val madeAt = start + (i + 1) * 1_000L
+            val me = store.ensureSelf(madeAt)
+            val built = ffiCreateNamedGroup(g.name, g.currency, MemberWire(me.id, YOU), g.people)
+            store.adopt(built.copy(group = built.group.copy(id = g.id)), madeAt)
+        }
         val named = store.namedGroups()
         val me = store.ensureSelf().id
         val tree = ffiCategoryTreeDefault()

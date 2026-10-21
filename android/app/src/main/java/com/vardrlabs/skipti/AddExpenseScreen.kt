@@ -1122,7 +1122,8 @@ private fun SplitSection(
 private fun rememberCategoryTree(): CategoryTree =
     androidx.compose.runtime.remember { ffiCategoryTreeDefault() }
 
-/** §5.4's per-kind entry fields as rows of the split card, mirroring iOS's kindFields: one field row per person in the
+/** D-253: each row keeps the person's name before its field once a number is typed ([FieldRowShows]).
+ *  §5.4's per-kind entry fields as rows of the split card, mirroring iOS's kindFields: one field row per person in the
  *  split, in the group's order as the switch rows above (iOS's `ForEach(members)`; the draft is keyed by id, so the
  *  order is display only), with today's placeholders and keyboards. D-225 T7 (Design 11). */
 private fun ListCardScope.splitFieldRows(
@@ -1141,25 +1142,25 @@ private fun ListCardScope.splitFieldRows(
         is SplitDraft.Exact -> roster.forEach { id ->
             row {
                 FieldRow(draft.amounts[id] ?: "", { onDraft(draft.copy(amounts = draft.amounts + (id to it))) }, "Amount for ${name(id)}",
-                    dark, style = numeric, keyboard = decimal)
+                    dark, style = numeric, keyboard = decimal, label = name(id))
             }
         }
         is SplitDraft.Percentage -> roster.forEach { id ->
             row {
                 FieldRow(draft.percents[id] ?: "", { onDraft(draft.copy(percents = draft.percents + (id to it))) }, "Percent for ${name(id)}",
-                    dark, style = numeric, keyboard = number)
+                    dark, style = numeric, keyboard = number, label = name(id))
             }
         }
         is SplitDraft.Shares -> roster.forEach { id ->
             row {
                 FieldRow(draft.weights[id] ?: "", { onDraft(draft.copy(weights = draft.weights + (id to it))) }, "Shares for ${name(id)}",
-                    dark, style = numeric, keyboard = number)
+                    dark, style = numeric, keyboard = number, label = name(id))
             }
         }
         is SplitDraft.Adjustment -> roster.forEach { id ->
             row {
                 FieldRow(draft.deltas[id] ?: "", { onDraft(draft.copy(deltas = draft.deltas + (id to it))) }, "Adjustment for ${name(id)}",
-                    dark, style = numeric, keyboard = decimal)
+                    dark, style = numeric, keyboard = decimal, label = name(id))
             }
         }
         is SplitDraft.Itemised, SplitDraft.Equal, SplitDraft.PayerOnly -> Unit

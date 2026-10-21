@@ -248,12 +248,13 @@ object StepSlider {
     fun keyed(step: Int, key: Key): Int? = byKey(key)?.let { adjusted(step, it) }?.takeIf { it != step }
 }
 
-/** D-234 (A1, the founder's): Appearance's live sample line, "Lunch at Shake Shack" and 48 US dollars for everyone,
+/** D-234 (A1, the founder's): Appearance's live sample line, "Lunch with Luna" (decision 227, D-253: no brand in public
+ *  copy) and 48 US dollars for everyone,
  *  whatever the default currency; converted to minor units by core's currency exponent and formatted by core in the
  *  phone's locale ($48.00 in both locales core knows). Nothing here formats a number (a test reads this body). The twin
  *  of iOS's `SampleLine`. */
 object SampleLine {
-    const val TITLE = "Lunch at Shake Shack"
+    const val TITLE = "Lunch with Luna"
     const val WHOLE_AMOUNT = "48"
     const val CURRENCY = "USD"
 

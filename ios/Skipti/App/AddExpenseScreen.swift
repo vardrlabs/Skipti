@@ -690,7 +690,7 @@ struct AddExpenseScreen: View {
     }
 
     /// The kind's own fields as rows of the split card, one per person in the split, with today's placeholders and
-    /// keyboards. Itemised's lines follow the card (`itemisedCards`).
+    /// keyboards; D-253: each row keeps the person's name before its field once a number is typed (`FieldRowShows`). Itemised's lines follow the card (`itemisedCards`).
     @ViewBuilder
     private var kindFields: some View {
         switch kind {
@@ -699,25 +699,25 @@ struct AddExpenseScreen: View {
         case .exact:
             ForEach(members, id: \.id) { m in
                 if participants.contains(m.id) {
-                    FieldRow("Amount for \(m.name)", text: entryBinding($exactEntries, m.id), keyboard: .decimalPad, font: shareFont)
+                    FieldRow("Amount for \(m.name)", label: m.name, text: entryBinding($exactEntries, m.id), keyboard: .decimalPad, font: shareFont)
                 }
             }
         case .percentage:
             ForEach(members, id: \.id) { m in
                 if participants.contains(m.id) {
-                    FieldRow("Percent for \(m.name)", text: entryBinding($percentageEntries, m.id), keyboard: .numberPad, font: shareFont)
+                    FieldRow("Percent for \(m.name)", label: m.name, text: entryBinding($percentageEntries, m.id), keyboard: .numberPad, font: shareFont)
                 }
             }
         case .shares:
             ForEach(members, id: \.id) { m in
                 if participants.contains(m.id) {
-                    FieldRow("Shares for \(m.name)", text: entryBinding($shareEntries, m.id), keyboard: .numberPad, font: shareFont)
+                    FieldRow("Shares for \(m.name)", label: m.name, text: entryBinding($shareEntries, m.id), keyboard: .numberPad, font: shareFont)
                 }
             }
         case .adjustment:
             ForEach(members, id: \.id) { m in
                 if participants.contains(m.id) {
-                    FieldRow("Adjustment for \(m.name)", text: entryBinding($adjustmentEntries, m.id),
+                    FieldRow("Adjustment for \(m.name)", label: m.name, text: entryBinding($adjustmentEntries, m.id),
                              keyboard: .numbersAndPunctuation, font: shareFont)
                 }
             }
