@@ -114,6 +114,11 @@ enum DoneCopy {
     /// D-247: the held settle's toast action, and the toast that says Undo wrote nothing.
     static let undo = "Undo"
     static let notRecorded = "Not recorded."
+    /// D-248 (U30.4): an expense deleted, its Undo on the toast wherever the delete happened.
+    static let expenseDeleted = "Expense deleted"
+    /// D-248 fix wave (review M2): the toast when that Undo could not write the expense back (as `notRecorded` says a
+    /// settle's Undo wrote nothing).
+    static let notRestored = "Not restored."
     /// D-247 fix wave (decision 201): what a screen reader hears after a toast that offers an action, so the action is
     /// named and its time said (`seconds`, whole seconds as digits).
     static func actionSpoken(_ label: String, seconds: String) -> String { "\(label) is available for \(seconds) seconds." }
@@ -175,15 +180,21 @@ enum DoneMoments {
     /// there. A missing or blank part is left out, never shown empty, so a note-less expense reads "Expense added ᛫
     /// 2,400". Android's twin is `DoneMoments.line`.
     static func line(_ title: String, _ parts: String?...) -> DoneMoment {
-        .small(DoneLine(title: title, parts: parts.compactMap { part in
+        .small(DoneLine(title: title, parts: kept(parts)))
+    }
+
+    /// The parts that are there: a missing or blank one is left out.
+    private static func kept(_ parts: [String?]) -> [String] {
+        parts.compactMap { part in
             guard let kept = part?.trimmingCharacters(in: .whitespacesAndNewlines), !kept.isEmpty else { return nil }
             return kept
-        }))
+        }
     }
 
     /// D-247: an everyday moment that offers one action (`label`), shown for `seconds` (the hold's window).
-    static func line(_ title: String, action label: String, seconds: Double = DoneCenter.actionSeconds) -> DoneMoment {
-        .small(DoneLine(title: title, parts: [], action: label, actionSeconds: seconds))
+    static func line(_ title: String, parts: [String?] = [], action label: String,
+                     seconds: Double = DoneCenter.actionSeconds) -> DoneMoment {
+        .small(DoneLine(title: title, parts: kept(parts), action: label, actionSeconds: seconds))
     }
 
     /// The toast's time on screen: `ToastMotion.total`, or, with an action, the line's `actionSeconds` (the action's

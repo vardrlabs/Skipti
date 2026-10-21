@@ -10169,6 +10169,23 @@ public func ffiMoneyParseMinor(digits: String, currencyCode: String)throws  -> I
     )
 })
 }
+/**
+ * D-248 (decisions 184 and 203): THE parser for every amount a person types
+ * (Add, Edit, exact and itemised rows, tax and tip, Settle up's other
+ * amount, removal's settle-first), given the phone's decimal mark ("." or
+ * ","): a ',' is the decimal mark only on a "," phone. Import never calls it
+ * (see `money_parse_typed`).
+ */
+public func ffiMoneyParseTyped(text: String, currencyCode: String, decimalMark: String)throws  -> Int64  {
+    return try  FfiConverterInt64.lift(try rustCallWithError(FfiConverterTypeCoreError_lift) {
+        uniffiCallStatus in
+    uniffi_skipti_core_fn_func_ffi_money_parse_typed(
+        FfiConverterString.lower(text),
+        FfiConverterString.lower(currencyCode),
+        FfiConverterString.lower(decimalMark),uniffiCallStatus
+    )
+})
+}
 public func ffiMoneySpoken(minorUnits: Int64, currencyCode: String, locale: LocaleTag)throws  -> String  {
     return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeCoreError_lift) {
         uniffiCallStatus in
@@ -10176,6 +10193,21 @@ public func ffiMoneySpoken(minorUnits: Int64, currencyCode: String, locale: Loca
         FfiConverterInt64.lower(minorUnits),
         FfiConverterString.lower(currencyCode),
         FfiConverterTypeLocaleTag_lower(locale),uniffiCallStatus
+    )
+})
+}
+/**
+ * D-248 fix wave (decision 203): minor units as a person types them on a
+ * phone whose decimal mark is `decimal_mark` (see `money_typed_digits`):
+ * what an entry field starts from, and the example in its words.
+ */
+public func ffiMoneyTypedDigits(minorUnits: Int64, currencyCode: String, decimalMark: String)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeCoreError_lift) {
+        uniffiCallStatus in
+    uniffi_skipti_core_fn_func_ffi_money_typed_digits(
+        FfiConverterInt64.lower(minorUnits),
+        FfiConverterString.lower(currencyCode),
+        FfiConverterString.lower(decimalMark),uniffiCallStatus
     )
 })
 }
@@ -10633,7 +10665,13 @@ private let initializationResult: InitializationResult = {
     if (uniffi_skipti_core_checksum_func_ffi_money_parse_minor() != 26879) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_skipti_core_checksum_func_ffi_money_parse_typed() != 28449) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_skipti_core_checksum_func_ffi_money_spoken() != 1431) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_skipti_core_checksum_func_ffi_money_typed_digits() != 50111) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_skipti_core_checksum_func_ffi_named_group() != 62596) {

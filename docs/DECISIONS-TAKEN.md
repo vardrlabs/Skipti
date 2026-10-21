@@ -1353,6 +1353,45 @@ https://claude.ai/artifact/FwwzuzRkyyxiuGvJKNMPCG (v1); briefs `.drafts/u9/brief
 - **What:** with VoiceOver or TalkBack running the hold lasts 12 seconds and the toast's Undo is announced first.
 - **Why:** the review found Undo nearly unreachable by a screen reader inside 5 seconds.
 - **Status:** in D-247.
+
+### The D-248 chain, 184 to 186, 202, 203: the small fixes (U29 to U31)
+
+#### 184 and 203: a typed amount follows the phone's decimal mark; import stays strict
+
+- **What:** every field a person types an amount into goes through core's `ffi_money_parse_typed(text, currency,
+  decimal_mark)`: a comma is the decimal mark only on a phone whose mark is a comma; on a dot phone a comma is refused
+  with "Enter an amount like 12.50."; on a comma phone a dot followed by exactly three digits ("1.234") is refused as
+  ambiguous. Files (CSV import) keep core's strict parser, so "1,234" in a file is still refused.
+- **Why:** a German keyboard could not enter an amount at all; the review then found the first cut read "1,234" as 1.234
+  in the seven three-decimal currencies (KWD and others), 1000 times too low, without a word.
+- **Risk if wrong:** a person on a comma phone who types "1.234" meaning one thousand is refused and retypes it.
+- **Overturn:** accept both marks everywhere (the review's I1 returns).
+- **Status:** in D-248.
+
+#### 185: creating a group opens it
+
+- **What:** after Create, the new group's page opens on Home's stack (Back lands on Home); the first group's big moment
+  still plays over it.
+- **Why:** the next thing a person does is add people or an expense there; landing on Balance hid it.
+- **Status:** in D-248.
+
+#### 186 and 202: bar titles stay between 17 and 20 points on both phones, measured
+
+- **What:** pushed and sheet titles scale with text size between 17 and 20 pt (what iOS 26 and later draws itself;
+  Android clamped to the same, its bar pills too), and a width table on each
+  phone measures every title against the room beside the back button, and sheet titles against the room beside a Cancel
+  that grows with text size, in every theme at every step.
+- **Why:** iOS Norse cut "APPEARANCE" at step 2 (also a stale title width, fixed); the first cut capped iOS at 23 and
+  Android at 22, but iOS draws at most 20 itself, so Android's larger titles were a visible twin difference.
+- **Status:** in D-248.
+
+#### 204: iOS bar buttons stay between 17 and 20 points too
+
+- **What:** every text button in an iOS bar (Cancel, Done, Save and the rest) goes through one modifier that keeps its
+  text between 17 and 20 pt, as Android's pills do; a test hosts a real SwiftUI sheet bar and measures what it draws.
+- **Why:** the look found iOS's Cancel growing to about 44 pt at the largest step (SwiftUI buttons ignore the bar's
+  font), pushing "New group" off centre while Android's stayed put: a twin difference.
+- **Status:** in D-248.
 ---
 
 ## High: user-visible behaviour or a privacy surface

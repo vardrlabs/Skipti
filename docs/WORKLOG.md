@@ -87,6 +87,26 @@ then ONE round of pop-ups for every call of his, then build in his order with de
   7db9acf (iOS 932, JVM 1120; decision 201); sabotage 33 rows + 4 pins 95e6224; gate 23/23 (4m25s); RECORDED (182,
   183, 201). Merging. NEXT: D-248 small fixes (`.drafts/d246/plan.md` section "D-247: the small bugs" = D-248; add
   PlaceLost's twin words, D-247 residue e).
+- **D-247 MERGED (main, pushed, no Actions run); d247-look sim/AVD deleted; poster cache deleted.**
+- NOTE: `.drafts/d248/stage1-report.md` is now D-248's (small fixes); U10's core-stage report was overwritten and
+  recovered word for word to `.drafts/d248/u10-stage1-report.recovered.md` (U10 = D-249). D-248 stage 1 DONE fe60053
+  (core `ffi_money_parse_typed` + bindings; cargo 407) and 178a0e8 (iOS fixes; iOS 946/0; U31 had a second cause, a
+  stale title width: `remeasureTitle` + inline cap 23 with a 39 x 3 x 12 width table; U30.5 and U30.7 not reproduced;
+  PlaceLost: Android's words). Stage 2 Android dispatched (report `.drafts/d248/stage2-report.md`).
+- **D-248 DONE:** stage 2 bc5564f (Android), review (I1 KWD "1,234" read as 1.234 on a dot phone), fix wave 673b9fd
+  (decision 203: the phone's mark; `ffi_money_typed_digits`), title wave 4c51823 (17-20 both, decision 202), bar-button
+  wave 4ede6ef (decision 204), iOS sabotage lane 11 rows + pins d853e18; gate 23/23 (5m28s); RECORDED (JVM carried
+  forward). Merging. NEXT: D-249 = U10 Just me: rebase /private/tmp/skipti-d248-core (branch d248-just-me) onto main,
+  regenerate bindings (two new core fns now exist on main), then shells per `.drafts/d248/plan.md` (+ section 8).
+- **RESUME (session 11, mid D-248):** D-245, D-246, D-247 merged. D-248 (small fixes) branch d248-small-fixes from
+  main: stage 1 (core typed parser + bindings + iOS fixes) implementer dispatched, report `.drafts/d248/stage1-report.md`;
+  then stage 2 Android twin, review, sabotage, gate, record, merge. Then D-249 = U10 Just me (`.drafts/d248/plan.md`
+  + section 8; core stage on branch d248-just-me in worktree /private/tmp/skipti-d248-core: rebase it onto main after
+  D-248, then `make bindings`), D-250 fluidity (`.drafts/d249/plan.md` + `.drafts/d249/audit.md`), then U32 store pages
+  + U33 video (Motion artifact; captions decision 175; name "Sam"), then release prep (Fable opener, U35 checklist,
+  version bump decision 138, What to Test, the exemption reminder). Pattern per unit: plan -> stage implementers (Opus)
+  -> controller look -> Opus review -> fix wave -> sabotage lanes -> full gate -> record_unit.py ALONE (check exit;
+  `--jvm-carried-forward` when Gradle cached) -> decisions -> merge --no-ff -> push -> no Actions -> cleanup.
 
 ## SESSION 10 (closed): 2026-10-20 (Opus; opener `.drafts/stop/fable-opener-3.md`'s successor): FINISH D-239, THEN 0.5.1 U27, U26, U24, U25
 

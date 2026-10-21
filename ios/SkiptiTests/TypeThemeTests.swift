@@ -620,7 +620,7 @@ final class TypeThemeTests: XCTestCase {
             ("AccountHubScreen.swift", ".navigationTitle(\"Export\")", 0),
             ("AccountOwner.swift", ".navigationTitle(\"Export\")", 0),
             ("GroupSheets.swift", "ToolbarItem(placement: .cancellationAction)", 2),   // Your name, New group
-            ("GroupSheets.swift", "Button(\"Cancel\") { dismiss() }.barTint()", 2),
+            ("GroupSheets.swift", "Button(\"Cancel\") { dismiss() }.barButtonText().barTint()", 2),
             // D-217 final fix: Join's Cancel is JoinScreen's own, shown only before a join starts (the phase is not
             // locked), and the two sheets pass it in; a joined sheet leaves through Done (onJoined) alone.
             ("People.swift", "}, onCancel: { joining.wrappedValue = nil })", 1),  // the invitation's Join sheet
@@ -628,7 +628,7 @@ final class TypeThemeTests: XCTestCase {
             ("People.swift", "Button(\"Cancel\")", 0),
             ("SkiptiApp.swift", "Button(\"Cancel\")", 0),
             ("Invites.swift", "if let onCancel, !phase.locked {", 1),
-            ("Invites.swift", "Button(\"Cancel\") { onCancel() }.barTint()", 1),
+            ("Invites.swift", "Button(\"Cancel\") { onCancel() }.barButtonText().barTint()", 1),
             ("Invites.swift", "case .joining, .joined: true", 1),
             ("Invites.swift", "case .opening, .offer, .failed: false", 1),
             ("Invites.swift", ".navigationBarBackButtonHidden(phase.locked)", 1),

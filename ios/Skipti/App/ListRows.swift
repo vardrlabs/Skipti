@@ -275,22 +275,32 @@ struct CardCaption: View {
 /// (its padding and the 48 minimum included) focuses the field, as Android's twin does; the trailing piece keeps its
 /// own taps. D-225 T6: `spoken` names the field to VoiceOver apart from its placeholder (New group's "Person 2"), as
 /// Android's `FieldRow(spoken:)`; by default the placeholder names it.
+/// D-248 (U29.2): a field row whose focus its form drives: the row's id among the form's rows, the form's focus, and
+/// what Return does (the keyboard's key reads "Next").
+struct FieldFocus {
+    let id: Int
+    let focus: FocusState<Int?>.Binding
+    let onReturn: () -> Void
+}
+
 struct FieldRow<Trailing: View>: View {
     let placeholder: String
     @Binding var text: String
     var keyboard: UIKeyboardType = .default
     var font: Font = TypeRole.body()
     var spoken: String? = nil
+    var form: FieldFocus? = nil
     let trailing: Trailing
     @FocusState private var focused: Bool
 
     init(_ placeholder: String, text: Binding<String>, keyboard: UIKeyboardType = .default, font: Font = TypeRole.body(),
-         spoken: String? = nil, @ViewBuilder trailing: () -> Trailing) {
+         spoken: String? = nil, form: FieldFocus? = nil, @ViewBuilder trailing: () -> Trailing) {
         self.placeholder = placeholder
         _text = text
         self.keyboard = keyboard
         self.font = font
         self.spoken = spoken
+        self.form = form
         self.trailing = trailing()
     }
 
@@ -304,11 +314,13 @@ struct FieldRow<Trailing: View>: View {
             .tint(Tokens.accent)
             .keyboardType(keyboard)
             .accessibilityLabel(Text(verbatim: spoken ?? placeholder))
-            .focused($focused)
+            .modifier(FieldFocusing(local: $focused, form: form))
             .padding(.vertical, ThemeArt.m("rowPadV"))
             .frame(maxWidth: .infinity, minHeight: ThemeArt.m("touchTarget"), alignment: .leading)
             .contentShape(Rectangle())
-            .simultaneousGesture(TapGesture().onEnded { focused = true })
+            .simultaneousGesture(TapGesture().onEnded {
+                if let form { form.focus.wrappedValue = form.id } else { focused = true }
+            })
             trailing
         }
         .frame(minHeight: ThemeArt.m("touchTarget"))
@@ -317,8 +329,25 @@ struct FieldRow<Trailing: View>: View {
 
 extension FieldRow where Trailing == EmptyView {
     init(_ placeholder: String, text: Binding<String>, keyboard: UIKeyboardType = .default, font: Font = TypeRole.body(),
-         spoken: String? = nil) {
-        self.init(placeholder, text: text, keyboard: keyboard, font: font, spoken: spoken) { EmptyView() }
+         spoken: String? = nil, form: FieldFocus? = nil) {
+        self.init(placeholder, text: text, keyboard: keyboard, font: font, spoken: spoken, form: form) { EmptyView() }
+    }
+}
+
+/// The row's own focus, or (D-248) its form's, with Return as the form says.
+private struct FieldFocusing: ViewModifier {
+    let local: FocusState<Bool>.Binding
+    let form: FieldFocus?
+
+    func body(content: Content) -> some View {
+        if let form {
+            content
+                .focused(form.focus, equals: form.id)
+                .submitLabel(.next)
+                .onSubmit(form.onReturn)
+        } else {
+            content.focused(local)
+        }
     }
 }
 

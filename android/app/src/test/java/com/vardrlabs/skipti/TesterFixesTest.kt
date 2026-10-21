@@ -57,7 +57,8 @@ class TesterFixesTest {
         val saved = runCatching {
             AddExpenseUi.buildExpense("30000", "INR", "", null, people, draft, a, id(9))
         }.exceptionOrNull()
-        assertTrue("Save still refuses the empty amount", saved is CoreException.InvalidInput)
+        // D-248 (U30.3): in words, naming the row ("Enter an amount for {name}."), never core's raw error.
+        assertEquals("Save still refuses the empty amount", AmountEntry.Refusal("Enter an amount for $d."), saved)
     }
 
     @Test

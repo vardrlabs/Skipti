@@ -333,7 +333,7 @@ struct SettleScreen: View {
                 }
             } catch LedgerStore.GroupStoreError.needsYourName {
                 DispatchQueue.main.async {
-                    loadError = String(localized: "Add your name on Balance first.")
+                    loadError = String(localized: "Add your name first.")
                 }
             } catch {
                 DispatchQueue.main.async { loadError = "\(error)" }

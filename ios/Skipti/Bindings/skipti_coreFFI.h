@@ -543,9 +543,19 @@ RustBuffer uniffi_skipti_core_fn_func_ffi_money_input_digits(int64_t minor_units
 int64_t uniffi_skipti_core_fn_func_ffi_money_parse_minor(RustBuffer digits, RustBuffer currency_code, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SKIPTI_CORE_FN_FUNC_FFI_MONEY_PARSE_TYPED
+#define UNIFFI_FFIDEF_UNIFFI_SKIPTI_CORE_FN_FUNC_FFI_MONEY_PARSE_TYPED
+int64_t uniffi_skipti_core_fn_func_ffi_money_parse_typed(RustBuffer text, RustBuffer currency_code, RustBuffer decimal_mark, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SKIPTI_CORE_FN_FUNC_FFI_MONEY_SPOKEN
 #define UNIFFI_FFIDEF_UNIFFI_SKIPTI_CORE_FN_FUNC_FFI_MONEY_SPOKEN
 RustBuffer uniffi_skipti_core_fn_func_ffi_money_spoken(int64_t minor_units, RustBuffer currency_code, RustBuffer locale, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SKIPTI_CORE_FN_FUNC_FFI_MONEY_TYPED_DIGITS
+#define UNIFFI_FFIDEF_UNIFFI_SKIPTI_CORE_FN_FUNC_FFI_MONEY_TYPED_DIGITS
+RustBuffer uniffi_skipti_core_fn_func_ffi_money_typed_digits(int64_t minor_units, RustBuffer currency_code, RustBuffer decimal_mark, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SKIPTI_CORE_FN_FUNC_FFI_NAMED_GROUP
@@ -1188,9 +1198,21 @@ uint16_t uniffi_skipti_core_checksum_func_ffi_money_parse_minor(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SKIPTI_CORE_CHECKSUM_FUNC_FFI_MONEY_PARSE_TYPED
+#define UNIFFI_FFIDEF_UNIFFI_SKIPTI_CORE_CHECKSUM_FUNC_FFI_MONEY_PARSE_TYPED
+uint16_t uniffi_skipti_core_checksum_func_ffi_money_parse_typed(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SKIPTI_CORE_CHECKSUM_FUNC_FFI_MONEY_SPOKEN
 #define UNIFFI_FFIDEF_UNIFFI_SKIPTI_CORE_CHECKSUM_FUNC_FFI_MONEY_SPOKEN
 uint16_t uniffi_skipti_core_checksum_func_ffi_money_spoken(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SKIPTI_CORE_CHECKSUM_FUNC_FFI_MONEY_TYPED_DIGITS
+#define UNIFFI_FFIDEF_UNIFFI_SKIPTI_CORE_CHECKSUM_FUNC_FFI_MONEY_TYPED_DIGITS
+uint16_t uniffi_skipti_core_checksum_func_ffi_money_typed_digits(void
     
 );
 #endif

@@ -142,7 +142,7 @@ enum SettleAll {
 }
 
 /// D-247 (decisions 167, 183): a card's "Another amount": what the field starts with and what it may hold. Every amount
-/// is core's: the field is parsed by `ffiMoneyParseMinor` and checked by `ffiCheckSettlement`; the shell only compares
+/// is core's: the field is parsed by `ffiMoneyParseTyped` (D-248: a decimal comma reads) and checked by `ffiCheckSettlement`; the shell only compares
 /// two of core's minor-unit numbers (never adds or subtracts them). Android's twin is `OtherAmount` in SettleAll.kt.
 enum OtherAmount {
     /// What the field says about itself.
@@ -151,13 +151,21 @@ enum OtherAmount {
         case incomplete
         /// More than the debt: refused in words, Settle disabled (a partial never flips who owes whom).
         case tooMuch(String)
+        /// D-248 (U30.2): something typed that is not an amount: `AmountEntry`'s words, said at a Settle tap or once the
+        /// field has rested (`wordsPause`), never on the first keystroke (fix wave, review M1); nothing is recorded.
+        case notAnAmount(String)
         /// Settle records this many minor units.
         case settles(Int64)
     }
 
-    /// The whole debt as the field takes it back (core's entry form: "450.00", no symbol, no grouping).
-    static func prefill(debt: Int64, currency: String) -> String {
-        (try? ffiMoneyInputDigits(minorUnits: debt, currencyCode: currency)) ?? ""
+    /// D-248 fix wave (review M1): how long the field rests before its not-an-amount words show (a lone '.' or ',' is
+    /// the start of "0,5", not a mistake). Android's twin is `OtherAmount.WORDS_PAUSE_MS`.
+    static let wordsPause: Duration = .seconds(1)
+
+    /// The whole debt as the field takes it back (core's entry form in the phone's mark: "450.00", "450,00" on a ','
+    /// phone; no symbol, no grouping).
+    static func prefill(debt: Int64, currency: String, locale: Locale = .autoupdatingCurrent) -> String {
+        AmountEntry.digits(debt, currency: currency, locale: locale) ?? ""
     }
 
     /// D-247 fix wave (review M3): the cap again at the Settle tap, against the card's LIVE debt (`live`, from
@@ -173,9 +181,12 @@ enum OtherAmount {
     /// `text` against the debt (`debt`, the card's amount, always above 0). `check` is core's settlement check of the
     /// amount (`SettleAll.settlement(..., amount:)`); a refusal reads as incomplete.
     static func verdict(_ text: String, debt: Int64, currency: String, youOwe: Bool, other: String,
-                        check: (Int64) throws -> Void) -> Verdict {
-        guard let minor = try? ffiMoneyParseMinor(digits: text.trimmingCharacters(in: .whitespaces), currencyCode: currency),
-              minor > 0 else { return .incomplete }
+                        locale: Locale = .autoupdatingCurrent, check: (Int64) throws -> Void) -> Verdict {
+        if AmountEntry.isBlank(text) { return .incomplete }
+        guard let minor = AmountEntry.minor(text, currency: currency, locale: locale) else {
+            return .notAnAmount(AmountEntry.likeWords(currency: currency, locale: locale))
+        }
+        guard minor > 0 else { return .incomplete }
         if minor > debt { return .tooMuch(SettleAllCopy.moreThanDebt(youOwe: youOwe, other: other)) }
         guard (try? check(minor)) != nil else { return .incomplete }
         return .settles(minor)
@@ -401,7 +412,7 @@ struct SettleAllScreen: View {
                     settle(live, currency: draft.currency, named: draft.named,
                            key: SettleAll.key(named: draft.named, currency: draft.currency, entry: live), amount: amount)
                     return nil
-                case .tooMuch(let words): return words
+                case .tooMuch(let words), .notAnAmount(let words): return words
                 case .incomplete: return nil
                 }
             }, onCancel: { otherAmount = nil })
@@ -548,7 +559,7 @@ struct SettleAllScreen: View {
             #endif
             error = nil
         } catch LedgerStore.GroupStoreError.needsYourName {
-            error = String(localized: "Add your name on Balance first.")
+            error = String(localized: "Add your name first.")
         } catch {
             self.error = "Could not load the ledger. \(String(describing: error))"
         }
@@ -567,6 +578,8 @@ struct OtherAmountSheet: View {
     let onCancel: () -> Void
     @State private var text: String
     @State private var refused: String?
+    /// The field has rested since its last change (or Settle was tapped): its not-an-amount words may show.
+    @State private var rested = false
     @FocusState private var focused: Bool
 
     init(draft: OtherAmountDraft, onSettle: @escaping (Int64) -> String?, onCancel: @escaping () -> Void) {
@@ -610,7 +623,7 @@ struct OtherAmountSheet: View {
                         .padding(.horizontal, 12)
                         .padding(.vertical, 4)
                         .themePill(.accent, onPage: false)
-                    if let words = OtherAmountSheet.capWords(verdict, refused: refused) {
+                    if let words = OtherAmountSheet.capWords(verdict, refused: refused, rested: rested) {
                         Text(verbatim: words).font(TypeRole.body(TypeScale.detail)).foregroundStyle(Tokens.owed)
                     }
                     // Section 11.6, verbatim.
@@ -625,9 +638,10 @@ struct OtherAmountSheet: View {
                 VStack(spacing: 10) {
                     Button {
                         if case .settles(let minor) = verdict { refused = onSettle(minor) }
+                        if case .notAnAmount = verdict { rested = true }
                     } label: { Text(verbatim: SettleAllCopy.settle) }
                         .buttonStyle(PrimaryButtonStyle())
-                        .disabled(!OtherAmountSheet.settles(verdict) || refused != nil)
+                        .disabled(!OtherAmountSheet.tappable(verdict) || refused != nil)
                     Button(action: onCancel) { Text(verbatim: SettleAllCopy.cancel) }
                         .buttonStyle(SecondaryButtonStyle())
                 }
@@ -642,12 +656,26 @@ struct OtherAmountSheet: View {
         .onAppear { focused = true }
         // A refusal at the tap was about what the field said then.
         .onChange(of: text) { refused = nil }
+        // Review M1: the not-an-amount words wait for the field to rest.
+        .task(id: text) {
+            rested = false
+            try? await Task.sleep(for: OtherAmount.wordsPause)
+            if !Task.isCancelled { rested = true }
+        }
     }
 
-    /// The cap's line: the field's own (more than the debt the sheet opened on), else the tap's refusal.
-    static func capWords(_ verdict: OtherAmount.Verdict, refused: String?) -> String? {
+    /// The cap's line: the field's own (more than the debt the sheet opened on; not an amount, once `rested`), else the
+    /// tap's refusal.
+    static func capWords(_ verdict: OtherAmount.Verdict, refused: String?, rested: Bool) -> String? {
         if case .tooMuch(let words) = verdict { return words }
+        if case .notAnAmount(let words) = verdict, rested { return words }
         return refused
+    }
+
+    /// Settle can be tapped for an amount it settles, and for one that is not an amount (the tap says why, at once).
+    static func tappable(_ verdict: OtherAmount.Verdict) -> Bool {
+        if case .notAnAmount = verdict { return true }
+        return settles(verdict)
     }
 
     static func settles(_ verdict: OtherAmount.Verdict) -> Bool {

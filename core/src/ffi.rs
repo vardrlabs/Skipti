@@ -442,6 +442,83 @@ pub fn money_parse_minor(digits: &str, code: &str) -> Result<i64, CoreError> {
     narrow(signed)
 }
 
+/// D-248 (decision 184; fix wave, decision 203): parses an amount a person
+/// TYPED into an entry field on a phone whose decimal mark is `mark` ("." or
+/// ","; anything else is refused, the shells pass one of the two).
+///
+/// - On a "." phone a ',' is never a decimal mark: any ',' is refused (an
+///   English keyboard's comma is a grouping separator, and "1,500" read as
+///   1.500 would be a silent 1000x misread in KWD, BHD, IQD, JOD, LYD, OMR and
+///   TND, the review's I1). Everything else is the strict rule.
+/// - On a "," phone (de, fr, es, it, pt-BR, id...) text with exactly one ','
+///   and no '.' reads the comma as the decimal mark ("12,50" is 12.50). A '.'
+///   followed by exactly three digits ("1.234") is refused as ambiguous: that
+///   phone groups thousands with a dot. Other dots follow the strict rule
+///   ("12.50" still reads, so core's own entry forms round-trip).
+///
+/// Grouping ("1,234.56", "1.234,56", "1,234,567") stays refused, too many
+/// decimals are refused, never rounded, and text with no digit at all ("," or
+/// ".") is refused. Import keeps `money_parse_minor` itself: a CSV cell
+/// "1,234" must stay refused, never become 1.234.
+pub fn money_parse_typed(text: &str, code: &str, mark: &str) -> Result<i64, CoreError> {
+    let comma_phone = typed_mark(mark)? == ',';
+    // The strict rule reads a lone "." as 0 (older than D-248; import keeps
+    // it). A field holding only a mark has no amount in it: refuse it.
+    if !text.bytes().any(|b| b.is_ascii_digit()) {
+        return Err(CoreError::InvalidInput("no digits in amount".to_string()));
+    }
+    let commas = text.bytes().filter(|b| *b == b',').count();
+    if !comma_phone {
+        // The strict rule refuses every ','.
+        return money_parse_minor(text, code);
+    }
+    if commas == 1 && !text.contains('.') {
+        return money_parse_minor(&text.replacen(',', ".", 1), code);
+    }
+    let trimmed = text.trim();
+    if let Some((_, after)) = trimmed.split_once('.') {
+        if after.len() == 3 && after.bytes().all(|b| b.is_ascii_digit()) {
+            return Err(CoreError::InvalidInput(
+                "a dot and three digits could be grouping on this phone".to_string(),
+            ));
+        }
+    }
+    money_parse_minor(text, code)
+}
+
+/// The two decimal marks the typed parser reads (decision 203).
+fn typed_mark(mark: &str) -> Result<char, CoreError> {
+    match mark {
+        "." => Ok('.'),
+        "," => Ok(','),
+        _ => Err(CoreError::InvalidInput(
+            "decimal mark must be '.' or ','".to_string(),
+        )),
+    }
+}
+
+/// D-248 fix wave (decision 203, review M3 and M6): `minor` in the form a
+/// person types on a phone whose decimal mark is `mark`: the whole part, the
+/// mark, and the currency's own decimals, no grouping and no symbol (EUR 1250
+/// on a "," phone is "12,50"; JPY 1250 is "1250" on either; KWD 1250 is
+/// "1.250" on a "." phone and "1,250" on a "," one). Built from the parts, so
+/// no shell swaps a character in a formatted amount; `money_parse_typed`
+/// with the same mark reads it back exactly (the prefills of Edit, Settle
+/// up's Another amount and Redistribute, and the words' example).
+pub fn money_typed_digits(minor: i64, code: &str, mark: &str) -> Result<String, CoreError> {
+    let mark = typed_mark(mark)?;
+    let exp = Currency::parse(code)?.exponent() as u32;
+    let scale = 10i128.pow(exp);
+    let abs = (minor as i128).abs();
+    let (whole, frac) = (abs / scale, abs % scale);
+    let sign = if minor < 0 { "-" } else { "" };
+    Ok(if exp == 0 {
+        format!("{sign}{whole}")
+    } else {
+        format!("{sign}{whole}{mark}{frac:0width$}", width = exp as usize)
+    })
+}
+
 /// Parses a manually-entered decimal rate ("83.25") into the exact
 /// rational the record freezes (8325/100). Same discipline as
 /// money_parse_minor: digits and one dot, no floats, denominator capped
@@ -1636,6 +1713,32 @@ pub fn ffi_convert_minor(
 #[uniffi::export]
 pub fn ffi_money_parse_minor(digits: String, currency_code: String) -> Result<i64, CoreError> {
     money_parse_minor(&digits, &currency_code)
+}
+
+/// D-248 (decisions 184 and 203): THE parser for every amount a person types
+/// (Add, Edit, exact and itemised rows, tax and tip, Settle up's other
+/// amount, removal's settle-first), given the phone's decimal mark ("." or
+/// ","): a ',' is the decimal mark only on a "," phone. Import never calls it
+/// (see `money_parse_typed`).
+#[uniffi::export]
+pub fn ffi_money_parse_typed(
+    text: String,
+    currency_code: String,
+    decimal_mark: String,
+) -> Result<i64, CoreError> {
+    money_parse_typed(&text, &currency_code, &decimal_mark)
+}
+
+/// D-248 fix wave (decision 203): minor units as a person types them on a
+/// phone whose decimal mark is `decimal_mark` (see `money_typed_digits`):
+/// what an entry field starts from, and the example in its words.
+#[uniffi::export]
+pub fn ffi_money_typed_digits(
+    minor_units: i64,
+    currency_code: String,
+    decimal_mark: String,
+) -> Result<String, CoreError> {
+    money_typed_digits(minor_units, &currency_code, &decimal_mark)
 }
 
 /// D-165: every currency code core accepts, sorted: the shells' "All
@@ -7091,6 +7194,182 @@ mod tests {
         assert!(money_parse_minor("12.", "INR").is_ok());
         // Overflow past i64 refuses rather than wrapping.
         assert!(money_parse_minor("99999999999999999999", "INR").is_err());
+    }
+
+    /// D-248 (decisions 184 and 203): the typed-amount parser, given the
+    /// phone's decimal mark. Goldens re-derived in Python with exact Fractions
+    /// (`.drafts/d248/typed_goldens.py`, run with `python3 -I`), not read back
+    /// out of the code. Stage 1 pinned "1,234" KWD as 1234 with no mark: the
+    /// review's I1 (1.234 KD read from what an English phone means as 1,234).
+    #[test]
+    fn money_parse_typed_reads_a_comma_only_on_a_comma_phone() {
+        let goldens: &[(&str, &str, &str, Option<i64>)] = &[
+            ("12,50", "EUR", ",", Some(1250)),
+            ("12,5", "EUR", ",", Some(1250)),
+            ("0,99", "EUR", ",", Some(99)),
+            (",5", "EUR", ",", Some(50)),
+            ("5,", "EUR", ",", Some(500)),
+            (" 12,5 ", "EUR", ",", Some(1250)),
+            ("1234,56", "INR", ",", Some(123456)),
+            ("1,005", "KWD", ",", Some(1005)),
+            ("1,234", "KWD", ",", Some(1234)),
+            ("1,500", "KWD", ",", Some(1500)),
+            ("0,1", "KWD", ",", Some(100)),
+            ("2,25", "BHD", ",", Some(2250)),
+            ("-12,40", "INR", ",", Some(-1240)),
+            ("1,234", "INR", ",", None),
+            ("10,5", "JPY", ",", None),
+            ("1234", "JPY", ",", Some(1234)),
+            ("12,505", "EUR", ",", None),
+            ("1,0005", "KWD", ",", None),
+            ("12.50", "EUR", ",", Some(1250)),
+            ("12.5", "EUR", ",", Some(1250)),
+            ("1.234", "KWD", ",", None),
+            ("1.234", "EUR", ",", None),
+            ("1.234", "JPY", ",", None),
+            (" 1.234 ", "INR", ",", None),
+            (".123", "OMR", ",", None),
+            ("1.05", "KWD", ",", Some(1050)),
+            ("1.2345", "KWD", ",", None),
+            ("-1.234", "BHD", ",", None),
+            ("1.234,56", "EUR", ",", None),
+            ("1.234.567", "EUR", ",", None),
+            ("1,234.56", "USD", ",", None),
+            ("12.50", "EUR", ".", Some(1250)),
+            ("1.005", "KWD", ".", Some(1005)),
+            ("1.234", "KWD", ".", Some(1234)),
+            ("1005", "JPY", ".", Some(1005)),
+            ("0.1", "INR", ".", Some(10)),
+            ("12,50", "EUR", ".", None),
+            ("1,234", "KWD", ".", None),
+            ("1,500", "KWD", ".", None),
+            ("1,005", "BHD", ".", None),
+            ("1,234", "INR", ".", None),
+            ("1,234", "JPY", ".", None),
+            ("1,234,567", "INR", ".", None),
+            ("1,234.56", "USD", ".", None),
+            ("2,00,000", "INR", ".", None),
+            (",5", "EUR", ".", None),
+            ("-12.40", "INR", ".", Some(-1240)),
+            (" 7.10 ", "USD", ".", Some(710)),
+            ("10.5", "JPY", ".", None),
+            ("12,000", "KRW", ".", None),
+            ("\u{ff11}\u{ff12},\u{ff15}", "EUR", ",", None),
+            ("\u{ff11}\u{ff12}.\u{ff15}", "EUR", ".", None),
+            ("12\u{66b}5", "KWD", ",", None),
+            ("12\u{66b}5", "KWD", ".", None),
+            ("\u{661}\u{662}", "KWD", ".", None),
+            ("1 234,5", "EUR", ",", None),
+            ("\u{202f}12,5\u{a0}", "EUR", ",", Some(1250)),
+            ("\u{2009}12.5", "EUR", ".", Some(1250)),
+            (",", "EUR", ",", None),
+            (".", "EUR", ",", None),
+            (",", "EUR", ".", None),
+            (".", "EUR", ".", None),
+            ("", "EUR", ",", None),
+            ("", "EUR", ".", None),
+            ("12,5a", "EUR", ",", None),
+            ("12 ,50", "EUR", ",", None),
+            ("99999999999999999999,00", "INR", ",", None),
+            ("99999999999999999999.00", "INR", ".", None),
+            ("12,50", "EUR", "\u{66b}", None),
+            ("12.50", "EUR", "", None),
+            ("12.50", "EUR", ".,", None),
+        ];
+        for (text, code, mark, want) in goldens {
+            assert_eq!(
+                ffi_money_parse_typed((*text).into(), (*code).into(), (*mark).into()).ok(),
+                *want,
+                "{code} {text:?} on a {mark:?} phone"
+            );
+        }
+        // I1, named: a thousands comma typed on a "." phone is refused, never
+        // read as 1.500 KD; the same text on a "," phone is the dinar's
+        // decimals.
+        assert!(money_parse_typed("1,500", "KWD", ".").is_err());
+        assert_eq!(money_parse_typed("1,005", "KWD", ","), Ok(1_005));
+        // Every three-decimal currency, on a "." phone.
+        for code in ["BHD", "IQD", "JOD", "KWD", "LYD", "OMR", "TND"] {
+            assert!(money_parse_typed("1,234", code, ".").is_err(), "{code}");
+            assert_eq!(money_parse_typed("1.234", code, "."), Ok(1_234), "{code}");
+            assert_eq!(money_parse_typed("1,234", code, ","), Ok(1_234), "{code}");
+            assert!(money_parse_typed("1.234", code, ",").is_err(), "{code}");
+        }
+        // The strict parser is untouched: a comma never reaches the ledger
+        // through it, whatever the currency.
+        assert!(money_parse_minor("12,50", "EUR").is_err());
+        assert!(money_parse_minor("1,234", "KWD").is_err());
+        // An unknown currency is refused, never given a guessed exponent.
+        assert!(ffi_money_parse_typed("12,50".into(), "XYZ".into(), ",".into()).is_err());
+        // A lone mark is no amount (the strict rule's "." as 0 is older and
+        // stays for import).
+        assert!(ffi_money_parse_typed(".".into(), "EUR".into(), ".".into()).is_err());
+        assert_eq!(money_parse_minor(".", "EUR"), Ok(0));
+        // Too large stays core's Overflow on both phones (SplitWords' words).
+        assert_eq!(
+            money_parse_typed("99999999999999999999,00", "INR", ","),
+            Err(CoreError::Overflow)
+        );
+        assert_eq!(
+            money_parse_typed("99999999999999999999", "INR", "."),
+            Err(CoreError::Overflow)
+        );
+    }
+
+    /// D-248 fix wave (decision 203): the entry form in the phone's mark,
+    /// re-derived with divmod in `.drafts/d248/typed_goldens.py --digits`;
+    /// each reads back exactly through the typed parser with the same mark.
+    #[test]
+    fn money_typed_digits_writes_the_phones_mark_and_reads_back() {
+        let goldens: &[(i64, &str, &str, &str)] = &[
+            (1250, "EUR", ".", "12.50"),
+            (1250, "EUR", ",", "12,50"),
+            (1250, "JPY", ".", "1250"),
+            (1250, "JPY", ",", "1250"),
+            (1250, "KWD", ".", "1.250"),
+            (1250, "KWD", ",", "1,250"),
+            (5, "INR", ",", "0,05"),
+            (123400, "INR", ".", "1234.00"),
+            (1005, "KWD", ",", "1,005"),
+            (-250, "EUR", ",", "-2,50"),
+            (0, "BHD", ",", "0,000"),
+            (7, "USD", ".", "0.07"),
+        ];
+        for (minor, code, mark, want) in goldens {
+            let got = ffi_money_typed_digits(*minor, (*code).into(), (*mark).into()).unwrap();
+            assert_eq!(&got, want, "{code} {minor} on a {mark:?} phone");
+            assert_eq!(
+                money_parse_typed(&got, code, mark),
+                Ok(*minor),
+                "{code} {got:?}"
+            );
+        }
+        // Every currency core knows, both marks: what a field starts from
+        // reads back exactly (a KWD prefill "1.005" on a "," phone would be
+        // refused as ambiguous; "1,005" is not).
+        for code in crate::money::all_codes() {
+            for mark in [".", ","] {
+                for minor in [1_005_i64, 1_250, 7, 123_400] {
+                    let digits = money_typed_digits(minor, code, mark).unwrap();
+                    assert_eq!(
+                        money_parse_typed(&digits, code, mark),
+                        Ok(minor),
+                        "{code} {digits:?}"
+                    );
+                    assert_eq!(
+                        digits.contains(','),
+                        mark == "," && !digits.chars().all(|c| c.is_ascii_digit())
+                    );
+                }
+            }
+        }
+        assert!(ffi_money_typed_digits(1_250, "XYZ".into(), ".".into()).is_err());
+        assert!(ffi_money_typed_digits(1_250, "EUR".into(), "\u{66b}".into()).is_err());
+        // The "." form is D-142's entry form exactly.
+        assert_eq!(
+            money_typed_digits(123_400, "INR", ".").unwrap(),
+            ffi_money_input_digits(123_400, "INR".into()).unwrap()
+        );
     }
 
     #[test]

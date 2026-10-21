@@ -615,7 +615,8 @@ final class ThemeMotionTests: XCTestCase {
         // D-225 Task 6: 14, Add expense's "Split" label left its Form section for the page ground.
         // D-225 fix wave (decision 26): 2, every section label takes `textDim` (testEverySectionLabelTakesTextDim); the
         // two left are the expense detail's date and its micro lines on the ground.
-        XCTAssertEqual(try count("Tokens.groundFaint"), 2)
+        // D-248 (U29.4): 3, Add expense's "0" hint on the page ground.
+        XCTAssertEqual(try count("Tokens.groundFaint"), 3)
         // 1 text site on the ground (RemovalFlow's Edit amounts) and `barTint()` (F1, every toolbar item). D-221: You's
         // "Edit" is gone (Q11 a, the progress pill took its place). D-223 (D21): Lately's "See all" sits on the card's
         // surface, so it takes `accent` like every in-card link, not the ground token.

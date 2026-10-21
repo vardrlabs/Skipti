@@ -8,7 +8,7 @@ import uniffi.skipti_core.LocaleTag
 import uniffi.skipti_core.ProjectedExpenseOut
 import uniffi.skipti_core.SplitSpecInput
 import uniffi.skipti_core.ffiMoneyFormat
-import uniffi.skipti_core.ffiMoneyInputDigits
+import uniffi.skipti_core.ffiMoneyTypedDigits
 import uniffi.skipti_core.ffiSplitCompute
 
 /**
@@ -45,7 +45,11 @@ object ExpenseEditingUi {
      * expects; anything else opens as Exact with each stored share, which
      * reproduces it to the minor unit.
      */
-    fun prefill(p: ProjectedExpenseOut): Prefill {
+    /** D-248 fix wave (decision 203, review M6): the amounts start in the phone's own decimal mark
+     *  ([AmountEntry.mark]), so a KWD "1,005" on a ',' phone is never the ambiguous "1.005" the typed parser refuses
+     *  there. */
+    fun prefill(p: ProjectedExpenseOut, locale: java.util.Locale = java.util.Locale.getDefault()): Prefill {
+        val mark = AmountEntry.mark(locale)
         val e = p.expense
         val roster = e.shares.map { it.id }.sorted()
         val stored = normalised(e.shares)
@@ -59,11 +63,11 @@ object ExpenseEditingUi {
             reproduces(SplitSpecInput.PayerOnly(payer = e.payer)) -> SplitDraft.PayerOnly
             reproduces(SplitSpecInput.Equal) -> SplitDraft.Equal
             else -> SplitDraft.Exact(
-                e.shares.associate { it.id to ffiMoneyInputDigits(it.amountMinor, e.currencyCode) },
+                e.shares.associate { it.id to ffiMoneyTypedDigits(it.amountMinor, e.currencyCode, mark) },
             )
         }
         return Prefill(
-            amountText = ffiMoneyInputDigits(e.paidMinor, e.currencyCode),
+            amountText = ffiMoneyTypedDigits(e.paidMinor, e.currencyCode, mark),
             currency = e.currencyCode,
             note = p.note ?: "",
             category = p.category,

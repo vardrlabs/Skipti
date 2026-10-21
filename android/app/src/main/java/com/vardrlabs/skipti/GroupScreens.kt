@@ -36,6 +36,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.semantics.contentDescription
@@ -129,7 +133,7 @@ fun YourNameScreen(vaultPath: String, onSaved: () -> Unit, onBack: () -> Unit) {
  *  life, SPEC §5.2), and people added by name. Your name is asked here only
  *  while it is still unset. */
 @Composable
-fun CreateGroupScreen(vaultPath: String, onCreated: () -> Unit, onBack: () -> Unit, homeKeep: HomeKeep? = null) {
+fun CreateGroupScreen(vaultPath: String, onCreated: (String) -> Unit, onBack: () -> Unit, homeKeep: HomeKeep? = null) {
     val dark = isSystemInDarkTheme()
     val scope = rememberCoroutineScope()
     var groupName by rememberSaveable { mutableStateOf("") }
@@ -137,6 +141,27 @@ fun CreateGroupScreen(vaultPath: String, onCreated: () -> Unit, onBack: () -> Un
     var currency by rememberSaveable { mutableStateOf(DefaultCurrency.current) }
     var yourName by rememberSaveable { mutableStateOf("") }
     var people by rememberSaveable(stateSaver = PeopleDraft.Saver) { mutableStateOf(PeopleDraft()) }
+    // D-248 (U29.2): each person row's focus, by row id, and the row Next moved to (focused once it is composed).
+    val rowFocus = remember { mutableMapOf<Int, FocusRequester>() }
+    var focusNext by remember { mutableStateOf<Int?>(null) }
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    LaunchedEffect(focusNext) {
+        val id = focusNext ?: return@LaunchedEffect
+        runCatching { rowFocus[id]?.requestFocus() }
+        focusNext = null
+    }
+    /** D-248 (U29.2): Next on a person row ([PeopleDraft.afterReturn]); an empty last row ends editing. */
+    fun returned(id: Int) {
+        val (next, row) = people.afterReturn(id)
+        people = next
+        if (row == null) {
+            focusManager.clearFocus()
+            keyboardController?.hide()
+        } else {
+            focusNext = row
+        }
+    }
     var needsYourName by remember { mutableStateOf<Boolean?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
@@ -191,7 +216,8 @@ fun CreateGroupScreen(vaultPath: String, onCreated: () -> Unit, onBack: () -> Un
                                 GroupsCopy.detailParts(created.members.size, created.group.settlementCurrency),
                             ),
                         )
-                        onCreated()
+                        // D-248 (U30.6): the new group's id, so the shell opens its page.
+                        onCreated(created.group.id)
                     },
                     onFailure = { error = GroupCopy.message(it) },
                 )
@@ -238,6 +264,8 @@ fun CreateGroupScreen(vaultPath: String, onCreated: () -> Unit, onBack: () -> Un
                                 "Name",
                                 dark,
                                 spoken = "Person ${index + 1}",
+                                focus = rowFocus.getOrPut(r.id) { FocusRequester() },
+                                onNext = { returned(r.id) },
                                 trailing = {
                                     RemoveGlyphButton(
                                         if (r.name.isBlank()) "Remove person ${index + 1}" else "Remove ${r.name}",
@@ -626,6 +654,10 @@ private fun NameField(
     spoken: String? = null,
     onDone: (() -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
+    /** D-248 (U29.2): a person row of New group: the keyboard's Next is the form's ([onNext]), and the form moves the
+     *  keyboard with [focus]. */
+    focus: FocusRequester? = null,
+    onNext: (() -> Unit)? = null,
 ) {
     FieldRow(
         value,
@@ -636,9 +668,14 @@ private fun NameField(
             capitalization = KeyboardCapitalization.Words,
             imeAction = if (onDone != null) ImeAction.Done else ImeAction.Next,
         ),
-        actions = KeyboardActions(onDone = { onDone?.invoke() }),
+        actions = if (onNext != null) {
+            KeyboardActions(onNext = { onNext() })
+        } else {
+            KeyboardActions(onDone = { onDone?.invoke() })
+        },
         spoken = spoken ?: label,
         trailing = trailing,
+        fieldModifier = focus?.let { Modifier.focusRequester(it) } ?: Modifier,
     )
 }
 
@@ -658,6 +695,18 @@ data class PeopleDraft(val rows: List<Row> = listOf(Row(0, "")), val nextId: Int
 
     /** The button reads "Add a person" once every row is gone. */
     val addLabel: String get() = if (rows.isEmpty()) "Add a person" else "Add another person"
+
+    /** D-248 (U29.2): Next on row [id]: the draft after it, and the row to focus next (null: editing ends). The last row
+     *  with a name adds a new row and moves to it; an empty last row ends editing; any other row moves to the one below.
+     *  The twin of iOS's `PeopleDraft.afterReturn`. */
+    fun afterReturn(id: Int): Pair<PeopleDraft, Int?> {
+        val index = rows.indexOfFirst { it.id == id }
+        if (index < 0) return this to null
+        if (index < rows.size - 1) return this to rows[index + 1].id
+        if (rows[index].name.isBlank()) return this to null
+        val added = add()
+        return added to added.rows.last().id
+    }
 
     companion object {
         /** Survives rotation, as the plain name list did. */

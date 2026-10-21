@@ -10,7 +10,7 @@ import SwiftUI
 /// are gone. A tap opens the expense (`ExpenseDetailView`) with Edit and
 /// Delete; a long press offers the same two without leaving the list (the
 /// founder's choice, 2026-09-19). A delete is confirmed first, and Undo is
-/// offered at the foot of the list until the person moves on.
+/// offered on the done toast (D-248: `ExpenseUndo`, as from every detail page).
 /// D-181: the Expenses tab's words; Android's twin is `ExpenseCopy`.
 enum ExpenseCopy {
     static let allGroups = "All groups"
@@ -62,10 +62,9 @@ struct ExpenseListView: View {
     /// "Name (You)". No fixture names on a real ledger.
     @State private var groups: [NamedGroupWire] = []
 
-    /// D-142: the long-press menu's targets, and the expense just deleted.
+    /// D-142: the long-press menu's targets (D-248: a delete's Undo is the toast, `ExpenseUndo`).
     @State private var editing: ExpenseEditTarget?
     @State private var confirmingDelete: ProjectedExpenseOut?
-    @State private var undoable: ProjectedExpenseOut?
     @State private var actionError: String?
 
     private func name(_ id: String) -> String {
@@ -136,7 +135,7 @@ struct ExpenseListView: View {
                                             store: store,
                                             expenseID: expense.id,
                                             named: group(of: expense),
-                                            onDeleted: { deleted in offerUndo(deleted) }
+                                            onDeleted: { _ in load() }
                                         )
                                     } label: {
                                         // D-181: rows share their group's glass card.
@@ -182,9 +181,6 @@ struct ExpenseListView: View {
                 .auroraBackground() // D-176
             }
         }
-        .safeAreaInset(edge: .bottom) {
-            if let undoable { undoBar(undoable) }
-        }
         .navigationTitle("Expenses")
         .navigationBarTitleDisplayMode(.large)
         .sheet(item: $editing) { target in
@@ -192,16 +188,13 @@ struct ExpenseListView: View {
                 AddExpenseScreen(onSaved: { editing = nil; load() }, editing: target)
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
-                            Button("Cancel") { editing = nil }.barTint()
+                            Button("Cancel") { editing = nil }.barButtonText().barTint()
                         }
                     }
             }
         }
         // D-178: read again when sync brings records.
         .task(id: SyncStatus.shared.revision) { load() }
-        // Undo is offered while the person is still here; leaving the tab
-        // moves on (the expense stays recoverable in the records).
-        .onDisappear { if editing == nil { undoable = nil } }
     }
 
     /// D-181: All groups, then each group that has expenses.
@@ -263,28 +256,7 @@ struct ExpenseListView: View {
 
     private func startEdit(_ expense: ProjectedExpenseOut) {
         guard let named = group(of: expense) else { return }
-        undoable = nil
         editing = ExpenseEditTarget(expense: expense, named: named, store: store)
-    }
-
-    private func undoBar(_ deleted: ProjectedExpenseOut) -> some View {
-        HStack(spacing: 12) {
-            Text(verbatim: deleted.note.map { String(localized: "Deleted “\($0)”.") }
-                ?? String(localized: "Expense deleted."))
-                .font(TypeRole.body())
-                .foregroundStyle(Tokens.text)
-                .lineLimit(2)
-            Spacer()
-            Button("Undo") { undo(deleted) }
-                .buttonStyle(SecondaryButtonStyle())
-                .fixedSize()
-                .accessibilityHint("Brings the expense back.")
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(Tokens.surfaceRaised, in: ThemeArt.panelShape(AppearanceState.shared.theme, radius: 12, continuous: true))
-        .padding(.horizontal, 16)
-        .padding(.bottom, 8)
     }
 
     // MARK: - Delete and Undo
@@ -293,30 +265,9 @@ struct ExpenseListView: View {
         do {
             try store.reviseExpense(ExpenseEditing.delete(expense, editor: group(of: expense)?.selfId))
             CloudSync.shared.ledgerChanged()
-            offerUndo(expense)
-        } catch {
-            actionError = "\(error)"
-        }
-    }
-
-    private func offerUndo(_ deleted: ProjectedExpenseOut) {
-        undoable = deleted
-        actionError = nil
-        AccessibilityNotification.Announcement(
-            String(localized: "Expense deleted. Undo is at the foot of the list.")
-        ).post()
-        load()
-    }
-
-    /// Written from the projection that HOLDS the delete, so the Undo has
-    /// seen it.
-    private func undo(_ deleted: ProjectedExpenseOut) {
-        do {
-            let current = try store.projectedExpenses().expenses
-                .first { $0.id == deleted.id } ?? deleted
-            try store.reviseExpense(ExpenseEditing.undo(current, editor: group(of: deleted)?.selfId))
-            CloudSync.shared.ledgerChanged()
-            undoable = nil
+            // D-248 (U30.4): the Undo is the toast, as from every detail page.
+            ExpenseUndo.offer(expense, store: store, editor: group(of: expense)?.selfId)
+            actionError = nil
             load()
         } catch {
             actionError = "\(error)"

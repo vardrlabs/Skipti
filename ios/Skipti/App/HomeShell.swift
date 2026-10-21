@@ -89,6 +89,8 @@ struct HomeShell: View {
     @State private var adding = false
     /// D-245 (U9): the welcome's "Start a group" opens New group over Balance.
     @State private var startingGroup = false
+    /// D-248 (U30.6): the group the welcome's sheet made, opened once it has gone.
+    @State private var startedGroupID: String?
     /// D-180: where the bar shows (see ShellChrome).
     @State private var chrome = ShellChrome()
     @Environment(\.motionReduced) private var reduceMotion
@@ -102,7 +104,7 @@ struct HomeShell: View {
         ZStack {
             NavigationStack {
                 // D-180: every group at once; a group opens its page.
-                OverviewScreen { selectedRaw = HomeTab.settle.rawValue }
+                OverviewScreen(root: roots[.balance, default: 0]) { selectedRaw = HomeTab.settle.rawValue }
                     .shellRoot(.balance, chrome)
                     .safeAreaInset(edge: .top, spacing: 0) { banner }
                     // D-178: pull to sync (the founder, 2026-09-29).
@@ -114,11 +116,17 @@ struct HomeShell: View {
             .tabPage(selection.wrappedValue == .balance)
 
             NavigationStack {
-                GroupsScreen(store: LedgerStore.defaultStore()) {
+                GroupsScreen(store: LedgerStore.defaultStore(), onOpen: {
                     selectedRaw = HomeTab.balance.rawValue
                     // Every screen reads the chosen group again.
                     SyncStatus.shared.changed()
-                }
+                }, onCreated: { id in
+                    // D-248 (U30.6): the new group's page on Home's stack, from Home's root (Back lands on Home).
+                    selectedRaw = HomeTab.balance.rawValue
+                    roots[.balance, default: 0] += 1
+                    // For the rebuilt Home alone (review M7): the old one, still on screen this turn, leaves it.
+                    GroupOpening.shared.request(id, root: roots[.balance, default: 0])
+                })
                 .shellRoot(.groups, chrome)
                 .safeAreaInset(edge: .top, spacing: 0) { banner }
                 // D-178: pull to sync (the founder, 2026-09-29).
@@ -187,16 +195,20 @@ struct HomeShell: View {
                 })
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { adding = false }.barTint()
+                        Button("Cancel") { adding = false }.barButtonText().barTint()
                     }
                 }
             }
         }
         // D-245 (U9): New group from the welcome's last screen, over Balance at its root.
-        .sheet(isPresented: $startingGroup) {
+        .sheet(isPresented: $startingGroup, onDismiss: {
+            // D-248 (U30.6): the new group's page, once the sheet has gone.
+            if let id = startedGroupID { startedGroupID = nil; GroupOpening.shared.request(id, root: roots[.balance, default: 0]) }
+        }) {
             NavigationStack {
                 let store = LedgerStore.defaultStore()
-                CreateGroupSheet(store: store, needsYourName: (try? store.ensureSelf())?.name == nil) { _ in
+                CreateGroupSheet(store: store, needsYourName: (try? store.ensureSelf())?.name == nil) { created in
+                    startedGroupID = created.group.id
                     startingGroup = false
                     OverviewActions.changed()
                 }

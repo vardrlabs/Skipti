@@ -1428,7 +1428,8 @@ final class ThemeArtTests: XCTestCase {
     func testEveryPanelTakesTheShapeFromTheOneDecision() throws {
         let sites: [(file: String, count: Int)] = [
             // D-225: About's panels are glass cards.
-            ("About.swift", 0), ("ExpenseDetailView.swift", 4), ("ExpenseListView.swift", 1), ("SettleScreen.swift", 1),
+            // D-248 (U30.4): the Expenses list's Undo foot panel went (the delete's Undo is the toast).
+            ("About.swift", 0), ("ExpenseDetailView.swift", 4), ("ExpenseListView.swift", 0), ("SettleScreen.swift", 1),
             ("GroupSettings.swift", 2), ("RemovalFlow.swift", 2), ("SettleAll.swift", 1), ("OverviewScreen.swift", 1),
         ]
         for site in sites {

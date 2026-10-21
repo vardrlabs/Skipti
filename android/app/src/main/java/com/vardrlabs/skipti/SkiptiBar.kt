@@ -230,6 +230,30 @@ object BarDecisions {
     fun titleSize(form: BarForm, collapsed: Boolean): Float =
         if (form == BarForm.TAB_ROOT && !collapsed) TypeScale.largeTitle else TypeScale.inlineTitle
 
+    /** D-248 (U31; second wave, decision 202 revised): the inline title's largest drawn size, dp. iOS 26 and later draw
+     *  an inline title at 20 at most whatever they are given (measured on iOS 27: 22 asked, 20 drawn; iOS's
+     *  `TitleStyle.inlineCap` is the same 20), so Android stops at 20 too and the twins' titles are the same size at every
+     *  step. The widest fixed pushed title, Norse's "Profile and account", 166.9 at 17, is about 196 at 20 in the 220 of
+     *  room ([INLINE_TITLE_ROOM_360], D248FixesTest's width table, AWT on the bundled faces). */
+    const val INLINE_TITLE_CAP = 20
+
+    /** D-248 second wave (decision 202 revised): the smallest bar text (the inline title and a pill's label) is drawn, dp.
+     *  iOS 26 and later draw bar text at 17 at least at the smaller text sizes (measured on iOS 27: 15 asked at XS, 17
+     *  drawn; iOS's `TitleWidth.floor`, applied by `TitleStyle.barText`), so a font scale under 1 does not shrink it here. */
+    const val BAR_TEXT_FLOOR = 17f
+
+    /** Bar text's drawn size in dp: the scaled 17 ([scaledDp], the font scale's), no smaller than [BAR_TEXT_FLOOR] and no
+     *  larger than [cap]: iOS 26's own range for bar text. */
+    fun barTextDp(scaledDp: Float, cap: Float): Float = scaledDp.coerceIn(BAR_TEXT_FLOOR, cap)
+
+    /** The room a pushed title has on a 360 dp phone: the bar inside its side margins, less the back button's node
+     *  ([controlShift] and the 48 dp target) on both sides (the title is centred on the bar) and [TITLE_GAP] each side. */
+    val INLINE_TITLE_ROOM_360: Int
+        get() = 360 - 2 * BAR_SIDE_MARGIN - 2 * (controlShift(BACK_CENTRE_FROM_EDGE) + TOUCH_TARGET) - 2 * TITLE_GAP
+
+    /** An inline title's size in dp: the scaled 17 ([scaledDp], the font scale's), 17 to [INLINE_TITLE_CAP]. */
+    fun inlineTitleDp(scaledDp: Float): Float = barTextDp(scaledDp, INLINE_TITLE_CAP.toFloat())
+
     /** Whether the bar's own centred title shows. A tab root shows it once the large title's bottom is under the
      *  bar: [largeTitleBottomPx] is that bottom measured from the bar's lower edge with the content unscrolled, so
      *  the title has gone under it when the content has scrolled that far. A pushed or sheet bar always shows it. */
@@ -294,6 +318,28 @@ object BarDecisions {
     const val PILL_SIDE_PADDING = 16
     const val PILL_VERTICAL_PADDING = 10
 
+    /** The pill's own inset in its 48 dp target, each side, dp. */
+    const val PILL_TARGET_INSET = 2
+
+    /** D-248 fix wave (review I3): the largest a pill's label is drawn, dp. iOS 26 and later draw a bar button's text
+     *  at 20 at most whatever it is given (measured on iOS 27: Cancel at 20 from XXL up to AX5; iOS's
+     *  `TitleStyle.barButtonCap` is the same 20), so a sheet's title keeps its room beside the pill at any font scale
+     *  (D248FixesTest's sheet table). Uncapped, "Cancel" at the 2.0 scale is 103 dp wide and leaves a Norse "PICK YOUR
+     *  USERNAME" no room. */
+    const val PILL_TEXT_CAP = 20f
+
+    /** A pill label's size in dp: the scaled 17 ([scaledDp], the font scale's), 17 to [PILL_TEXT_CAP]. */
+    fun pillTextDp(scaledDp: Float): Float = barTextDp(scaledDp, PILL_TEXT_CAP)
+
+    /** A pill's whole node, dp, for a label [labelDp] wide: the label, [PILL_SIDE_PADDING] each side, and its inset in
+     *  the target. */
+    fun pillNodeWidth(labelDp: Float): Float = labelDp + 2 * PILL_SIDE_PADDING + 2 * PILL_TARGET_INSET
+
+    /** D-248 fix wave (review I3): the room a SHEET's title has on a 360 dp phone beside a pill whose label is
+     *  [labelDp] wide ([titleLeft]'s rule: clear of the pill by [TITLE_GAP], and [TITLE_GAP] from the bar's far margin). */
+    fun sheetTitleRoom360(labelDp: Float): Float =
+        360f - 2 * BAR_SIDE_MARGIN - pillNodeWidth(labelDp) - 2 * TITLE_GAP
+
     /** The pill's height in dp for a label line [lineDp] tall: the floor, or the line and its padding. */
     fun pillHeight(lineDp: Float): Float = maxOf(PILL_HEIGHT.toFloat(), lineDp + 2 * PILL_VERTICAL_PADDING)
 
@@ -301,11 +347,13 @@ object BarDecisions {
      *  size is taller than 48). */
     fun nodeHeight(minPx: Int, startPx: Int, endPx: Int): Int = maxOf(minPx, startPx, endPx)
 
-    /** D-217 final fix: the widest the centred title may be. It is centred on the bar (so on the SCREEN, not on what
-     *  is left between the controls), so it clears the WIDER of the two measured controls on both sides, and a gap
-     *  each side: a Cancel pill at a large text size is far wider than any fixed reserve. Never negative. */
+    /** D-217 final fix, D-248 fix wave (review I3): the widest the title may be: the room between the two measured
+     *  controls, less a gap beside each (a Cancel pill at a large text size is far wider than any fixed reserve). Never
+     *  negative. D-217 kept the title clear of the WIDER control on both sides; UIKit does not (measured on iOS 27,
+     *  D248FixesTests' real-bar table: a sheet title too wide to centre starts 12 pt after the Cancel pill and runs to
+     *  16 pt from the other side, whole), so that rule cut titles iOS shows whole. */
     fun titleMaxWidth(width: Int, leading: Int, trailing: Int, gap: Int): Int =
-        maxOf(0, width - 2 * maxOf(leading, trailing) - 2 * gap)
+        maxOf(0, width - leading - trailing - 2 * gap)
 
     /** Where a control or the title starts down the bar: one shorter than the bar is centred on it; a 48 dp target
      *  (taller than the bar) sits at its top and centres its own drawing on the bar. */
@@ -316,8 +364,13 @@ object BarDecisions {
      *  control and the title all centre on the same line. At the default size nothing is taller, so nothing moves. */
     fun laneHeight(tallestPx: Int, barPx: Int, targetPx: Int): Int = if (tallestPx > targetPx) tallestPx else barPx
 
-    /** The title's start, centred on the bar's width. */
-    fun titleLeft(width: Int, titleWidth: Int): Int = (width - titleWidth) / 2
+    /** The title's start: centred on the bar (so on the screen) when that clears both controls by [gap]; else moved
+     *  just clear of the control it would run into (UIKit's rule, measured). */
+    fun titleLeft(width: Int, titleWidth: Int, leading: Int, trailing: Int, gap: Int): Int {
+        val least = leading + gap
+        val most = maxOf(least, width - trailing - gap - titleWidth)
+        return ((width - titleWidth) / 2).coerceIn(least, most)
+    }
 }
 
 private val BarSideMargin = BarDecisions.BAR_SIDE_MARGIN.dp
@@ -416,7 +469,8 @@ private fun BarFrame(
 }
 
 /** D-217 final fix: the bar's row, measured: the controls first, then the title at most as wide as
- *  [BarDecisions.titleMaxWidth] allows, centred on the bar, so it never draws under a control however wide the text
+ *  [BarDecisions.titleMaxWidth] allows, centred on the bar where it clears both controls and moved clear of one where
+ *  it does not ([BarDecisions.titleLeft], D-248 fix wave), so it never draws under a control however wide the text
  *  size makes it. Placed relative to the layout direction (the start control is on the right in a right-to-left
  *  language). */
 @Composable
@@ -431,13 +485,14 @@ private fun BarRow(start: (@Composable () -> Unit)?, end: (@Composable () -> Uni
         val loose = constraints.copy(minWidth = 0, minHeight = 0, maxHeight = Constraints.Infinity)
         val s = startMeasurables.firstOrNull()?.measure(loose)
         val e = endMeasurables.firstOrNull()?.measure(loose)
-        val maxTitle = BarDecisions.titleMaxWidth(width, s?.width ?: 0, e?.width ?: 0, BarDecisions.TITLE_GAP.dp.roundToPx())
+        val gap = BarDecisions.TITLE_GAP.dp.roundToPx()
+        val maxTitle = BarDecisions.titleMaxWidth(width, s?.width ?: 0, e?.width ?: 0, gap)
         val t = titleMeasurables.firstOrNull()?.measure(Constraints(maxWidth = maxTitle))
         val lane = BarDecisions.laneHeight(maxOf(s?.height ?: 0, e?.height ?: 0), barPx, BarDecisions.TOUCH_TARGET.dp.roundToPx())
         layout(width, BarDecisions.nodeHeight(BarDecisions.TOUCH_TARGET.dp.roundToPx(), s?.height ?: 0, e?.height ?: 0)) {
             s?.placeRelative(0, BarDecisions.centredTop(s.height, lane))
             e?.placeRelative(width - e.width, BarDecisions.centredTop(e.height, lane))
-            t?.placeRelative(BarDecisions.titleLeft(width, t.width), BarDecisions.centredTop(t.height, lane))
+            t?.placeRelative(BarDecisions.titleLeft(width, t.width, s?.width ?: 0, e?.width ?: 0, gap), BarDecisions.centredTop(t.height, lane))
         }
     }
 }
@@ -445,9 +500,13 @@ private fun BarRow(start: (@Composable () -> Unit)?, end: (@Composable () -> Uni
 /** The centred 17 title: one line, ellipsis, as wide as [BarRow] lets it be. [alpha] is the tab root's crossfade. */
 @Composable
 private fun InlineTitle(title: String, form: BarForm, dark: Boolean, alpha: Float, heading: Boolean) {
+    // D-248 (U31; second wave): the 17 scaled by the font scale (nonlinear on Android 14 and later), kept to 17 to 20.
+    val size = with(LocalDensity.current) {
+        BarDecisions.inlineTitleDp(BarDecisions.titleSize(form, collapsed = true).sp.toDp().value).dp.toSp().value
+    }
     Text(
         title,
-        style = Type.title(dark, BarDecisions.titleSize(form, collapsed = true)),
+        style = Type.title(dark, size),
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
         modifier = Modifier
@@ -853,7 +912,7 @@ private fun BarPill(label: String, dark: Boolean, enabled: Boolean, onSurface: B
         Modifier
             .heightIn(min = BarDecisions.TOUCH_TARGET.dp)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-            .padding(horizontal = 2.dp),
+            .padding(horizontal = BarDecisions.PILL_TARGET_INSET.dp),
         contentAlignment = Alignment.TopCenter,
     ) {
         Box(
@@ -868,7 +927,10 @@ private fun BarPill(label: String, dark: Boolean, enabled: Boolean, onSurface: B
             contentAlignment = Alignment.Center,
         ) {
             // D-217 final fix: the bar tint (iOS `.barTint()`, BarTint.token), not the accent: they differ in Aurora light.
-            Text(label, style = Type.body(dark).copy(fontSize = BarDecisions.BAR_BUTTON_SIZE.sp, color = Tok.groundAccent(dark)), maxLines = 1)
+            // D-248 fix wave (review I3): the 17 scaled by the font scale, stopped at the pill's cap (iOS's bar buttons stop
+            // at the same 20).
+            val size = with(LocalDensity.current) { BarDecisions.pillTextDp(BarDecisions.BAR_BUTTON_SIZE.sp.toDp().value).dp.toSp() }
+            Text(label, style = Type.body(dark).copy(fontSize = size, color = Tok.groundAccent(dark)), maxLines = 1)
         }
     }
 }

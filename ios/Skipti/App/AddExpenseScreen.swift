@@ -99,6 +99,67 @@ enum AddExpenseRows {
     }
 }
 
+/// D-248 (U30.2, decisions 184 and 203): every amount a person types is read by core's typed parser
+/// (`ffiMoneyParseTyped`), given the phone's decimal mark: on a ',' phone one ',' and no '.' is the decimal mark (a
+/// decimal-comma keyboard can enter an amount) and "1.234" is refused as ambiguous; on a '.' phone any ',' is refused
+/// (an English "1,500" is never 1.500 KD). A field that still holds no amount says so in words, with an example in the
+/// phone's own mark, and every field starts from core's entry form in that mark (`digits`). Android's twin is
+/// `AmountEntry` in AddExpenseScreen.kt.
+enum AmountEntry {
+    /// A typed amount refused in words (the save-error state shows `words`).
+    struct Refusal: Error, Equatable {
+        let words: String
+    }
+
+    /// The amount field's hint (U29.4: drawn in `groundFaint`, never the system's placeholder colour).
+    static let hint = "0"
+
+    /// The phone's decimal mark: ',' where its region writes one, else '.' (the two core's typed parser reads).
+    static func mark(_ locale: Locale = .autoupdatingCurrent) -> String {
+        locale.decimalSeparator == "," ? "," : "."
+    }
+
+    /// `minor` as a person types it on this phone: core's entry form in the phone's mark ("12,50" on a ',' phone,
+    /// "1.005" KWD on a '.' one), which the typed parser reads back exactly. What Edit, Settle up's Another amount and
+    /// Redistribute start from. Nil for a currency core does not know.
+    static func digits(_ minor: Int64, currency: String, locale: Locale = .autoupdatingCurrent) -> String? {
+        try? ffiMoneyTypedDigits(minorUnits: minor, currencyCode: currency, decimalMark: mark(locale))
+    }
+
+    /// An example amount in `currency`'s own decimals: core's entry form of 1,250 minor units in the phone's mark
+    /// ("12.50"; "1250" in JPY; "1,250" in KWD on a ',' phone), built by core (review M3: never a mark swapped into a
+    /// formatted string). Nil for a currency core does not know (no example is made up).
+    static func example(currency: String, locale: Locale = .autoupdatingCurrent) -> String? {
+        digits(1_250, currency: currency, locale: locale)
+    }
+
+    static func likeWords(currency: String, locale: Locale = .autoupdatingCurrent) -> String {
+        guard let example = example(currency: currency, locale: locale) else { return "Enter an amount." }
+        return "Enter an amount like \(example)."
+    }
+
+    /// U30.3: an exact row left blank at Save.
+    static func forPerson(_ name: String) -> String { "Enter an amount for \(name)." }
+
+    /// Core's minor units for `text` typed on this phone, or nil while it is not an amount (the live lines).
+    static func minor(_ text: String, currency: String, locale: Locale = .autoupdatingCurrent) -> Int64? {
+        try? ffiMoneyParseTyped(text: text, currencyCode: currency, decimalMark: mark(locale))
+    }
+
+    /// Save's read: core's minor units, or a `Refusal` in words. Too large keeps core's own error (SplitWords' words).
+    static func parse(_ text: String, currency: String, locale: Locale = .autoupdatingCurrent) throws -> Int64 {
+        do {
+            return try ffiMoneyParseTyped(text: text, currencyCode: currency, decimalMark: mark(locale))
+        } catch CoreError.Overflow {
+            throw CoreError.Overflow
+        } catch {
+            throw Refusal(words: likeWords(currency: currency, locale: locale))
+        }
+    }
+
+    static func isBlank(_ text: String?) -> Bool { (text ?? "").trimmingCharacters(in: .whitespaces).isEmpty }
+}
+
 /// D-184: why a split cannot be saved, in words, with core's amounts. A
 /// tester read "expected=3000000, got=2500000" (core's message, in minor
 /// units) when four exact amounts came to ₹25,000 of ₹30,000. Android's twin
@@ -158,7 +219,7 @@ enum SplitWords {
 
 /// §5.3/§5.4's add-expense core loop: a Transaction with a Split. Amounts
 /// enter as DECIMAL STRINGS and become integer minor units through
-/// `ffiMoneyParseMinor`, never through a float (ADR-0002). Split types
+/// `ffiMoneyParseTyped` (D-248, `AmountEntry`), never through a float (ADR-0002). Split types
 /// are core's full SplitSpec enum (D-42); shares are COMPUTED by core
 /// (`ffiSplitCompute`) and persisted through the vault loop, so the
 /// balance line recomputes from what was persisted.
@@ -236,6 +297,9 @@ struct AddExpenseScreen: View {
     /// D-225 T6 (Design 11): the currency list page the pill opens (its "Common" section holds the promoted codes, so
     /// the quick menu went).
     @State private var listingCurrencies = false
+    /// D-248 (U29.3): the amount takes the keyboard when a NEW expense opens (never on Edit), once.
+    @FocusState private var amountFocused: Bool
+    @State private var focusedOnce = false
 
     private var title: String {
         editing == nil ? String(localized: "Add expense") : String(localized: "Edit expense")
@@ -374,6 +438,13 @@ struct AddExpenseScreen: View {
             selectedCategoryID = CategoryLevels.keep(selectedCategoryID, under: parent, in: categoryTree)
         }
         .task { loadGroup() }
+        .onAppear {
+            // D-248 (U29.3): a new expense starts at its amount, once (not again back from a choice page, not on Edit).
+            if AmountFocus.focusesOnOpen(editing: editing != nil, already: focusedOnce) {
+                focusedOnce = true
+                amountFocused = true
+            }
+        }
     }
 
     /// D-183 (the founder's canvas): the amount first, big and centred, its currency on a pill. D-225 T6 (Design 11):
@@ -383,8 +454,13 @@ struct AddExpenseScreen: View {
             Text(verbatim: AddSheetCopy.howMuch)
                 .font(TypeRole.body(14))
                 .foregroundStyle(Tokens.textDim)
-            TextField("0", text: $amountText)
+            // D-248 (U29.4): the hint in `groundFaint` at full opacity on the page ground (the system's placeholder colour
+            // is not ours), as Android's.
+            TextField(text: $amountText, prompt: Text(verbatim: AmountEntry.hint).foregroundStyle(Tokens.groundFaint)) {
+                Text(verbatim: "Amount")
+            }
                 .keyboardType(.decimalPad)
+                .focused($amountFocused)
                 .multilineTextAlignment(.center)
                 .font(TypeRole.numeric(48, weight: 700))
                 .foregroundStyle(Tokens.text)
@@ -439,7 +515,7 @@ struct AddExpenseScreen: View {
                 if amountText.isEmpty { currency = current.group.settlementCurrency }
             }
         } catch LedgerStore.GroupStoreError.needsYourName {
-            error = String(localized: "Add your name on Balance first.")
+            error = String(localized: "Add your name first.")
         } catch {
             self.error = "\(error)"
         }
@@ -487,7 +563,7 @@ struct AddExpenseScreen: View {
     /// ffiYourEffect. Nil while the form cannot be computed yet.
     private var summaryLine: String? {
         guard let named, !payer.isEmpty, !participants.isEmpty,
-              let total = try? ffiMoneyParseMinor(digits: amountText, currencyCode: currency), total > 0
+              let total = AmountEntry.minor(amountText, currency: currency), total > 0
         else { return nil }
         let roster = participants.sorted()
         guard let spec = try? buildSpec(roster: roster),
@@ -505,7 +581,7 @@ struct AddExpenseScreen: View {
     /// refusal, in words). Nil when it adds up or cannot be computed yet.
     private var splitProblem: String? {
         guard !participants.isEmpty,
-              let total = try? ffiMoneyParseMinor(digits: amountText, currencyCode: currency), total > 0
+              let total = AmountEntry.minor(amountText, currency: currency), total > 0
         else { return nil }
         let roster = participants.sorted()
         guard let spec = try? buildSpec(roster: roster, blanksAsZero: true) else { return nil }
@@ -651,7 +727,7 @@ struct AddExpenseScreen: View {
     private func save() {
         error = nil
         do {
-            let total = try ffiMoneyParseMinor(digits: amountText, currencyCode: currency)
+            let total = try AmountEntry.parse(amountText, currency: currency)
             guard total > 0 else {
                 throw CoreError.InvalidInput("the amount must be positive")
             }
@@ -673,7 +749,7 @@ struct AddExpenseScreen: View {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             let store = LedgerStore(path: dir.appendingPathComponent("ledger-vault.db").path)
             guard let named, !payer.isEmpty else {
-                throw CoreError.InvalidInput(String(localized: "Create a group on Balance first."))
+                throw CoreError.InvalidInput(String(localized: "Create a group first."))
             }
             let expense = LedgerStore.ExpenseDTO(
                 payer: payer,
@@ -696,6 +772,8 @@ struct AddExpenseScreen: View {
             // D-224 (Design 8, GUARANTEES #2): the toast, then the sheet closes at once (the 0.6 s hold is gone).
             DoneCenter.shared.post(DoneMoments.expense(edited: false, note: note, paidMinor: total, currency: currency))
             if let onSaved { onSaved() } else { dismiss() }
+        } catch let refusal as AmountEntry.Refusal {
+            error = refusal.words
         } catch let e as CoreError {
             error = SplitWords.message(e, currency: currency) ?? "\(e)"
         } catch {
@@ -749,11 +827,36 @@ struct AddExpenseScreen: View {
     /// `blanksAsZero` (D-184) is the live line's: an exact amount not typed
     /// yet counts as nothing, so the line shows while the amounts are being
     /// filled in. Save passes false and still wants each one.
+    /// D-248 (U30.3): tax, tip, an adjustment and an item's amount left blank are 0 (an item at 0 gets core's "Every item
+    /// needs an amount above zero."); an exact row left blank at Save is named ("Enter an amount for Rahul."); anything
+    /// typed that is not an amount gets `AmountEntry`'s words, never core's raw error.
     private func buildSpec(roster: [String], blanksAsZero: Bool = false) throws -> SplitSpecInput {
-        func minor(_ text: String?) throws -> Int64 {
-            if blanksAsZero, (text ?? "").trimmingCharacters(in: .whitespaces).isEmpty { return 0 }
-            return try ffiMoneyParseMinor(digits: text ?? "", currencyCode: currency)
+        try AmountEntry.spec(kind: kind, roster: roster, payer: payer, currency: currency, blanksAsZero: blanksAsZero,
+                             name: { id in members.first { $0.id == id }?.name ?? "" },
+                             exact: exactEntries, percentage: percentageEntries, shares: shareEntries,
+                             adjustment: adjustmentEntries, lines: itemLines.map { ($0.amount, $0.who.sorted()) },
+                             tax: taxText, tip: tipText)
+    }
+}
+
+extension AmountEntry {
+    /// The split as core takes it, from the form's text (Add and Edit; pure, so the tests read it). See `buildSpec`.
+    static func spec(kind: AddExpenseScreen.SplitKind, roster: [String], payer: String, currency: String, blanksAsZero: Bool,
+                     name: (String) -> String, exact: [String: String], percentage: [String: String],
+                     shares: [String: String], adjustment: [String: String], lines: [(amount: String, who: [String])],
+                     tax: String, tip: String, locale: Locale = .autoupdatingCurrent) throws -> SplitSpecInput {
+        func optional(_ text: String?) throws -> Int64 {
+            if isBlank(text) { return 0 }
+            return try parse(text ?? "", currency: currency, locale: locale)
         }
+        func required(_ text: String?, of id: String) throws -> Int64 {
+            if isBlank(text) {
+                if blanksAsZero { return 0 }
+                throw Refusal(words: forPerson(name(id)))
+            }
+            return try parse(text ?? "", currency: currency, locale: locale)
+        }
+        let exactEntries = exact, percentageEntries = percentage, shareEntries = shares, adjustmentEntries = adjustment
         switch kind {
         case .equal:
             return .equal
@@ -761,7 +864,7 @@ struct AddExpenseScreen: View {
             return .payerOnly(payer: payer)
         case .exact:
             return .exact(entries: try roster.map { id in
-                IdAmount(id: id, amountMinor: try minor(exactEntries[id]))
+                IdAmount(id: id, amountMinor: try required(exactEntries[id], of: id))
             })
         case .percentage:
             // Whole percents ("25") → basis points (2500). No floats; the
@@ -781,19 +884,25 @@ struct AddExpenseScreen: View {
             })
         case .adjustment:
             return .adjustment(entries: try roster.map { id in
-                IdAmount(id: id, amountMinor: try minor(adjustmentEntries[id]))
+                IdAmount(id: id, amountMinor: try optional(adjustmentEntries[id]))
             })
         case .itemised:
             return .itemised(
-                lines: try itemLines.map { draft in
+                lines: try lines.map { line in
                     LineInput(
-                        amountMinor: try minor(draft.amount),
-                        participants: draft.who.sorted()
+                        amountMinor: try optional(line.amount),
+                        participants: line.who
                     )
                 },
-                taxMinor: try minor(taxText),
-                tipMinor: try minor(tipText)
+                taxMinor: try optional(tax),
+                tipMinor: try optional(tip)
             )
         }
     }
+}
+
+/// D-248 (U29.3): when Add expense's amount takes the keyboard: a new expense, the first time its page appears (not back
+/// from a choice page, not after a save error, never on Edit). Android's twin is `AmountFocus`.
+enum AmountFocus {
+    static func focusesOnOpen(editing: Bool, already: Bool) -> Bool { !editing && !already }
 }

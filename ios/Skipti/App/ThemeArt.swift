@@ -1203,10 +1203,53 @@ enum BarTint {
 extension View {
     /// A bar item's tint: the ground's accent (BarTint).
     func barTint() -> some View { tint(Tokens.groundAccent) }
+
+    /// D-248 (decision 204): a text bar button (Cancel, Done, Close, a toolbar link) in the bar button's own font, 17 to
+    /// 20 (`TitleStyle.barButtonFont`), as UIKit draws its own bar buttons on iOS 26 and later and as Android's pill is
+    /// (`BarDecisions.pillTextDp`). Without it a SwiftUI toolbar Button takes the root's `.font(TypeRole.body())`
+    /// (AppearanceApplier), the body face scaled with no cap: 44 pt at the largest step, a pill 171 pt wide (the look).
+    /// Applied per text Button, never inside `barTint()` (which also wraps the avatar link); a source guard in
+    /// D248FixesTests checks every text toolbar Button carries it.
+    func barButtonText() -> some View {
+        font(Font(TitleStyle.barButtonFont(theme: AppearanceState.shared.theme, category: AppearanceState.shared.contentSizeCategory)))
+    }
 }
 
 /// D-213 (the founder, demo option A): every navigation title in the theme's display face, set on the
 /// navigation bars themselves, so the system's large title that folds into the bar on scroll is kept.
+/// D-248 (U31, decision 186): the room an inline title has on the narrowest iPhone (375 pt) beside the back button. UIKit
+/// centres the title, so it keeps clear of the back button's side on both sides: iOS 26 and later draw the back button
+/// as a 44 pt glass circle 16 from the edge, and the title keeps 8 more off it. Measured against the cut the founder saw
+/// (Norse's "Appearance" at text step 2; D248FixesTests).
+enum TitleWidth {
+    static let phone: CGFloat = 375
+    static let reserve: CGFloat = 16 + 44 + 8
+    static let room: CGFloat = phone - 2 * reserve
+
+    /// D-248 fix wave (review I3): a SHEET's bar, measured on iOS 27 (`.drafts/d248/fix/probe-ios2.txt`, and pinned
+    /// against UIKit's own layout by D248FixesTests): Cancel, Close or Done is a glass pill `edge` from the side,
+    /// `pillPadding` wider each side than its text, the text growing with the text size up to `TitleStyle.barButtonCap`.
+    /// UIKit centres the title when that clears the pill, else starts it `pillGap` after the pill, and ends it `edge`
+    /// from the other side; only what still does not fit is cut. A sheet's title has `sheetRoom` for a pill that wide.
+    static let edge: CGFloat = 16
+    static let pillPadding: CGFloat = 16
+    static let pillGap: CGFloat = 12
+
+    /// iOS 26 and later draw bar text (the title and the buttons) at 17 at least, whatever smaller size it is given
+    /// (measured at the three smaller steps); the room is measured with that floor so it holds on every iOS.
+    static let floor: CGFloat = 17
+
+    static func sheetRoom(pill: CGFloat) -> CGFloat { phone - edge - pill - pillGap - edge }
+
+    /// The pill's width for `label` in `theme` at `category`: its text in the bar button's own attributes (no smaller
+    /// than `floor`), and the padding.
+    static func pill(_ label: String, theme: AppTheme, category: UIContentSizeCategory) -> CGFloat {
+        var attributes = TitleStyle.barButtonAttributes(theme: theme, category: category)
+        if let font = attributes[.font] as? UIFont, font.pointSize < floor { attributes[.font] = font.withSize(floor) }
+        return ceil(NSAttributedString(string: label, attributes: attributes).size().width) + 2 * pillPadding
+    }
+}
+
 enum TitleStyle {
     /// The Look Book's `.title`: 700 (Vardr Labs 600).
     static func weight(_ theme: AppTheme) -> CGFloat { theme == .vardr ? 600 : 700 }
@@ -1220,12 +1263,33 @@ enum TitleStyle {
         }
     }
 
-    /// The system's sizes (large 34, inline 17), scaled for SKIPTI's text size.
+    /// The system's sizes (large 34, inline 17), scaled for SKIPTI's text size. D-248 (U31, decision 186): an INLINE title
+    /// stops growing at `inlineCap` (UIKit centres it between the back button and the trailing items and cuts what does not
+    /// fit: Norse's "APPEARANCE" at text step 2); large titles are untouched.
     static func font(large: Bool, theme: AppTheme, category: UIContentSizeCategory) -> UIFont {
         let base = TypeRole.base(TypeRole.face(.display, theme: theme), size: large ? TypeScale.largeTitle : TypeScale.inlineTitle, weight: weight(theme), tabular: false)
-        return UIFontMetrics(forTextStyle: large ? .largeTitle : .headline)
-            .scaledFont(for: base, compatibleWith: UITraitCollection(preferredContentSizeCategory: category))
+        let traits = UITraitCollection(preferredContentSizeCategory: category)
+        if large {
+            return UIFontMetrics(forTextStyle: .largeTitle).scaledFont(for: base, compatibleWith: traits)
+        }
+        return barText(UIFontMetrics(forTextStyle: .headline).scaledFont(for: base, maximumPointSize: inlineCap(theme), compatibleWith: traits))
     }
+
+    /// D-248 second wave (decision 202, revised): bar text (the inline title and the bar buttons) is drawn between
+    /// `TitleWidth.floor` (17) and its cap (20), as iOS 26 and later draw it whatever they are given (measured on iOS 27,
+    /// `.drafts/d248/fix/probe-ios2.txt`). Asking for the same range here makes iOS 17 to 25 draw it too, and makes the
+    /// width tables measure what UIKit draws. Android's bar clamps its title and pill labels to the same 17 to 20
+    /// (`BarDecisions.barTextDp`).
+    static func barText(_ font: UIFont) -> UIFont {
+        font.pointSize < TitleWidth.floor ? font.withSize(TitleWidth.floor) : font
+    }
+
+    /// D-248 (U31; fix wave and second wave, decision 202 revised): the inline title's largest size. iOS 26 and later
+    /// draw an inline title at 20 at most whatever they are given (measured on iOS 27: 22 asked, 20 drawn), so the cap is
+    /// that 20: the width tables (D248FixesTests, a 375 pt iPhone; Android's at 360 dp) then measure what UIKit draws,
+    /// and iOS 17 to 25 draw the same. One cap on both shells (Android's `INLINE_TITLE_CAP`): the twins look identical.
+    /// The widest fixed title, Norse's "Profile and account", is 166.9 pt at 17 and about 196 at 20.
+    static func inlineCap(_ theme: AppTheme) -> CGFloat { 20 }
 
     static func attributes(large: Bool, theme: AppTheme, category: UIContentSizeCategory) -> [NSAttributedString.Key: Any] {
         let f = font(large: large, theme: theme, category: category)
@@ -1234,18 +1298,59 @@ enum TitleStyle {
 
     /// D-215: a bar button (Done, Cancel, a ToolbarItem) is UIKit's own text: the system sets it in the phone's face at
     /// 17, so it gets the theme's body face at 17, scaled like the system's `.body` text. Colour stays the bar's tint.
+    /// D-248 fix wave (review I3): it stops growing at `barButtonCap`.
     static func barButtonAttributes(theme: AppTheme, category: UIContentSizeCategory) -> [NSAttributedString.Key: Any] {
+        [.font: barButtonFont(theme: theme, category: category)]
+    }
+
+    /// The bar button's font: the theme's body face at 17 scaled like `.body`, kept to 17 to 20 (`barText`, `barButtonCap`).
+    /// UIKit's bar buttons take it through `barButtonAttributes`; SwiftUI's through `View.barButtonText()`.
+    static func barButtonFont(theme: AppTheme, category: UIContentSizeCategory) -> UIFont {
         let base = TypeRole.base(TypeRole.face(.body, theme: theme), size: 17, weight: 400, tabular: false)
         let font = UIFontMetrics(forTextStyle: .body)
-            .scaledFont(for: base, compatibleWith: UITraitCollection(preferredContentSizeCategory: category))
-        return [.font: font]
+            .scaledFont(for: base, maximumPointSize: barButtonCap, compatibleWith: UITraitCollection(preferredContentSizeCategory: category))
+        return barText(font)
     }
+
+    /// D-248 fix wave (review I3): the largest a bar button's text is drawn. iOS 26 and later draw it at 20 at most
+    /// whatever it is given (measured on iOS 27: Cancel at 20 from XXL up to AX5, `.drafts/d248/fix/probe-ios2.txt`), so
+    /// this cap changes nothing there and makes iOS 17 to 25 the same; Android's sheet pill stops at the same 20
+    /// (`BarDecisions.PILL_TEXT_CAP`). A sheet's title then keeps its room beside the pill at every text step.
+    static let barButtonCap: CGFloat = 20
 
     private static let barButtonStates: [UIControl.State] = [.normal, .highlighted, .disabled, .focused]
 
 
     static func styleBarButton(_ item: UIBarButtonItem, _ attributes: [NSAttributedString.Key: Any]) {
         for controlState in barButtonStates { item.setTitleTextAttributes(attributes, for: controlState) }
+    }
+
+    /// D-248 (U31, the look): a bar on screen keeps its title label at the width measured in the last font, so a text
+    /// size or theme changed while the page shows (Appearance's own slider) cut its title ("APPEARAN..." in Norse at step 2;
+    /// the same page entered again was whole). Setting the title again makes UIKit measure it in the new font.
+    /// The look found that setting the title again is not enough (step 3 was still cut): the label and every view up to
+    /// the bar are told their size is stale, the bar lays out now, and once more on the next turn (SwiftUI may write the
+    /// title after this runs).
+    @MainActor
+    static func remeasureTitle(of bar: UINavigationBar, again: Bool = true) {
+        guard let title = bar.topItem?.title else { return }
+        func stale(_ view: UIView) {
+            for sub in view.subviews {
+                if let label = sub as? UILabel, (label.attributedText?.string ?? label.text) == title {
+                    var up: UIView? = label
+                    while let v = up, v !== bar {
+                        v.invalidateIntrinsicContentSize()
+                        v.setNeedsLayout()
+                        up = v.superview
+                    }
+                }
+                stale(sub)
+            }
+        }
+        stale(bar)
+        bar.setNeedsLayout()
+        bar.layoutIfNeeded()
+        if again { DispatchQueue.main.async { remeasureTitle(of: bar, again: false) } }
     }
 
     /// Every bar already on screen, and the appearance proxy for bars made later (a sheet's own stack).
@@ -1274,6 +1379,7 @@ enum TitleStyle {
             bar.compactScrollEdgeAppearance = nil
             bar.largeTitleTextAttributes = large
             bar.titleTextAttributes = inline
+            remeasureTitle(of: bar)
             bar.tintColor = BarTint.color
             for item in bar.items ?? [] {
                 for button in (item.leftBarButtonItems ?? []) + (item.rightBarButtonItems ?? []) + [item.backBarButtonItem].compactMap({ $0 }) {

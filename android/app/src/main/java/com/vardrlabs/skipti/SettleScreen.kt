@@ -195,7 +195,7 @@ fun SettleScreen(vaultPath: String) {
         val current = try {
             store.currentGroup()
         } catch (_: NeedsYourNameException) {
-            throw IllegalStateException("Add your name on Balance first.")
+            throw IllegalStateException("Add your name first.")
         }
         groupId = current?.group?.id
         groupInfo = current?.group?.name to (current?.members?.size ?: 0)

@@ -30,7 +30,9 @@ enum ExpenseEditing {
     /// form opens as that type, so a changed amount re-splits the way the
     /// person expects; anything else opens as Exact with each stored share,
     /// which reproduces it to the minor unit.
-    static func prefill(_ p: ProjectedExpenseOut) throws -> Prefill {
+    /// D-248 fix wave (decision 203, review M6): the amounts start in the phone's own decimal mark (`AmountEntry.digits`),
+    /// so a KWD "1,005" on a ',' phone is never the ambiguous "1.005" the typed parser refuses there.
+    static func prefill(_ p: ProjectedExpenseOut, locale: Locale = .autoupdatingCurrent) throws -> Prefill {
         let e = p.expense
         let roster = e.shares.map(\.id).sorted()
         let stored = normalised(e.shares)
@@ -48,13 +50,11 @@ enum ExpenseEditing {
             kind = .equal
         } else {
             for share in e.shares {
-                exact[share.id] = try ffiMoneyInputDigits(
-                    minorUnits: share.amountMinor, currencyCode: e.currencyCode
-                )
+                exact[share.id] = try entryDigits(share.amountMinor, e.currencyCode, locale)
             }
         }
         return Prefill(
-            amountText: try ffiMoneyInputDigits(minorUnits: e.paidMinor, currencyCode: e.currencyCode),
+            amountText: try entryDigits(e.paidMinor, e.currencyCode, locale),
             currency: e.currencyCode,
             note: p.note ?? "",
             categoryID: p.category,
@@ -63,6 +63,11 @@ enum ExpenseEditing {
             kind: kind,
             exactEntries: exact
         )
+    }
+
+    /// Core's entry form in the phone's mark; core's own error for a currency it does not know.
+    private static func entryDigits(_ minor: Int64, _ code: String, _ locale: Locale) throws -> String {
+        try ffiMoneyTypedDigits(minorUnits: minor, currencyCode: code, decimalMark: AmountEntry.mark(locale))
     }
 
     /// The revision an edit writes: only the fields that changed (SPEC §6.1's

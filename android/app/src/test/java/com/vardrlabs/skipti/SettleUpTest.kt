@@ -121,10 +121,11 @@ class SettleUpTest {
      *  refused in words (both directions); empty, zero and what is not an amount keep Settle disabled with nothing said. */
     @Test
     fun the_other_amount_is_capped_at_the_debt() {
-        assertEquals("450.00", OtherAmount.prefill(45_000, "INR"))
-        assertEquals("1005", OtherAmount.prefill(1_005, "JPY"))
+        assertEquals("450.00", OtherAmount.prefill(45_000, "INR", java.util.Locale.US))
+        assertEquals("1005", OtherAmount.prefill(1_005, "JPY", java.util.Locale.US))
         val ok: (Long) -> Unit = {}
-        fun verdict(text: String, youOwe: Boolean = false) = OtherAmount.verdict(text, 45_000, "INR", youOwe, "Ana", ok)
+        fun verdict(text: String, youOwe: Boolean = false) =
+            OtherAmount.verdict(text, 45_000, "INR", youOwe, "Ana", locale = java.util.Locale.US, check = ok)
         assertEquals("the whole debt", OtherAmount.Verdict.Settles(45_000), verdict("450.00"))
         assertEquals(OtherAmount.Verdict.Settles(45_000), verdict("450"))
         assertEquals("a partial", OtherAmount.Verdict.Settles(20_000), verdict("200"))
@@ -134,8 +135,12 @@ class SettleUpTest {
         assertEquals(OtherAmount.Verdict.TooMuch("That is more than you owe Ana."), verdict("451", youOwe = true))
         assertEquals(OtherAmount.Verdict.TooMuch("That is more than Ana owes."), verdict("99999999"))
         // Settle disabled, nothing said.
-        for (text in listOf("", "0", "0.00", "abc", "1.2.3", "-5", "₹10")) {
+        for (text in listOf("", "  ", "0", "0.00", "-5")) {
             assertEquals("'$text'", OtherAmount.Verdict.Incomplete, verdict(text))
+        }
+        // D-248 (U30.2): what is not an amount is said (D248FixesTest has the locales and the comma).
+        for (text in listOf("abc", "1.2.3", "₹10")) {
+            assertEquals("'$text'", OtherAmount.Verdict.NotAnAmount(AmountEntry.likeWords("INR", java.util.Locale.US)), verdict(text))
         }
         // Core's check refusing reads as incomplete (never settles).
         assertEquals(
@@ -445,9 +450,9 @@ class SettleUpTest {
         assertNull("the other way round is not the same card", SettleAll.liveEntry(SettleAll.sections(store), group, "EUR", ana, youOwe = false))
         assertNull(SettleAll.liveEntry(SettleAll.sections(store), group, "INR", ana, youOwe = true))
         // The sheet shows the tap's refusal as the cap's line; the field's own line comes first.
-        assertEquals("r", OtherAmount.capWords(OtherAmount.Verdict.Settles(1), "r"))
-        assertEquals("t", OtherAmount.capWords(OtherAmount.Verdict.TooMuch("t"), "r"))
-        assertNull(OtherAmount.capWords(OtherAmount.Verdict.Settles(1), null))
+        assertEquals("r", OtherAmount.capWords(OtherAmount.Verdict.Settles(1), "r", rested = false))
+        assertEquals("t", OtherAmount.capWords(OtherAmount.Verdict.TooMuch("t"), "r", rested = false))
+        assertNull(OtherAmount.capWords(OtherAmount.Verdict.Settles(1), null, rested = true))
         val all = src("SettleAll.kt")
         assertEquals(1, count(all, "when (val verdict = OtherAmount.atSettle(minor, live, draft.youOwe, draft.other)) {"))
         assertEquals(1, count(all, "(verdict as? OtherAmount.Verdict.Settles)?.let { refused = onSettle(it.minor) }"))
@@ -528,10 +533,13 @@ class SettleUpTest {
     @Test
     fun the_sheets_settle_waits_for_an_amount_within_the_debt() {
         val sheet = src("SettleAll.kt").substringAfter("fun OtherAmountSheet(")
-        assertEquals(1, count(sheet, "PrimaryAction(SettleAllCopy.SETTLE, inDark, enabled = OtherAmount.settles(verdict) && refused == null) {"))
+        assertEquals(1, count(sheet, "PrimaryAction(SettleAllCopy.SETTLE, inDark, enabled = OtherAmount.tappable(verdict) && refused == null) {"))
         assertEquals("Settle is the sheet's one gated control", 1, count(sheet, "enabled = "))
         assertEquals(1, count(sheet, "(verdict as? OtherAmount.Verdict.Settles)?.let { refused = onSettle(it.minor) }"))
-        assertFalse("empty, zero, not an amount", OtherAmount.settles(OtherAmount.Verdict.Incomplete))
+        // D-248 fix wave (review M1): a tap on what is not an amount records nothing and says why at once.
+        assertEquals(1, count(sheet, "if (verdict is OtherAmount.Verdict.NotAnAmount) rested = true"))
+        assertFalse("empty, zero", OtherAmount.settles(OtherAmount.Verdict.Incomplete))
+        assertFalse(OtherAmount.tappable(OtherAmount.Verdict.Incomplete))
         assertFalse("more than owed", OtherAmount.settles(OtherAmount.Verdict.TooMuch(SettleAllCopy.moreThanDebt(false, "Ana"))))
         assertTrue(OtherAmount.settles(OtherAmount.Verdict.Settles(1)))
     }

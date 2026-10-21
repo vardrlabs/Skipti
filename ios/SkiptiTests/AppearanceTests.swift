@@ -119,6 +119,25 @@ final class AppearanceTests: XCTestCase {
         }
     }
 
+    /// D-248 (U29.4): Add expense's "0" hint sits on the page ground in `groundFaint` at full opacity (never the system's
+    /// placeholder colour, never dimmed): 4.5:1 on the page in every set. The negative: Android's old hint, `textFaint` at
+    /// 45%, came to about 2:1 on Norse's page.
+    func testTheAmountHintIsGroundFaintAtFullOpacityOnThePage() throws {
+        for set in ThemeSet.allCases {
+            func c(_ name: String) -> UIColor { Tokens.uiColor(name).resolvedColor(with: traits(set)) }
+            XCTAssertGreaterThanOrEqual(contrast(c("groundFaint"), c("bg")), 4.5, "\(set): the hint on the page")
+        }
+        let norse = traits(.norse)
+        let old = over(Tokens.uiColor("textFaint").resolvedColor(with: norse), 0.45, Tokens.uiColor("bg").resolvedColor(with: norse))
+        XCTAssertLessThan(contrast(old, Tokens.uiColor("bg").resolvedColor(with: norse)), 4.5, "the old 45% hint fails")
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Skipti/App/AddExpenseScreen.swift")
+        let add = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertTrue(add.contains("TextField(text: $amountText, prompt: Text(verbatim: AmountEntry.hint).foregroundStyle(Tokens.groundFaint)) {"))
+        XCTAssertFalse(add.contains("TextField(\"0\""), "no system placeholder")
+        XCTAssertEqual(AmountEntry.hint, "0")
+    }
+
     /// The floors of ADR-0036 and ADR-0038, extended by ADR-0041 to every set.
     func testEveryPairClearsItsContrastFloorInEveryThemeAndMode() {
         for set in ThemeSet.allCases {
@@ -1549,9 +1568,11 @@ final class AppearanceTests: XCTestCase {
         let field = try between(try appFile("ListRows.swift"), from: "struct FieldRow<Trailing: View>: View {", to: "\n}\n")
         XCTAssertTrue(field.contains("@FocusState private var focused: Bool"), field)
         let body = try between(field, from: "var body: some View {", to: "\n    }\n")
-        let order = [".focused($focused)", ".padding(.vertical, ThemeArt.m(\"rowPadV\"))",
+        // D-248 (U29.2): the row's own focus, or its form's (`FieldFocusing`); a tap focuses whichever it has.
+        let order = [".modifier(FieldFocusing(local: $focused, form: form))", ".padding(.vertical, ThemeArt.m(\"rowPadV\"))",
                      ".frame(maxWidth: .infinity, minHeight: ThemeArt.m(\"touchTarget\"), alignment: .leading)",
-                     ".contentShape(Rectangle())", ".simultaneousGesture(TapGesture().onEnded { focused = true })", "trailing"]
+                     ".contentShape(Rectangle())", ".simultaneousGesture(TapGesture().onEnded {", "trailing"]
+        XCTAssertTrue(body.contains("if let form { form.focus.wrappedValue = form.id } else { focused = true }"))
         let at = try order.map { try XCTUnwrap(body.range(of: $0), "FieldRow: \($0)").lowerBound }
         XCTAssertEqual(at, at.sorted(), "the field, its padding and minimum, the tap area, the focusing tap, then the trailing piece")
         XCTAssertEqual(occurrences(body, "trailing"), 1, "the trailing piece outside the tap area")

@@ -4,7 +4,7 @@ import SwiftUI
 /// 2026-09-19: tap a row for its detail with Edit and Delete). It shows the
 /// whole split and SPEC §5.7's "added by" and "last edited by" with a
 /// timestamp ("it ends arguments"). Edit opens the Add form filled in, as a
-/// sheet; Delete asks first, and the list then offers Undo. When two devices
+/// sheet; Delete asks first, and the toast then offers Undo (D-248). When two devices
 /// set different amounts, SPEC §6.1's question is the first thing on the
 /// page, with one button per version.
 ///
@@ -18,8 +18,8 @@ struct ExpenseDetailView: View {
     /// Nil when this vault no longer holds the group; Edit is then off, and
     /// Delete still works.
     let named: NamedGroupWire?
-    /// Called after a confirmed delete, before this page closes, so the list
-    /// can offer Undo.
+    /// Called after a confirmed delete, before this page closes, so the
+    /// opener can read again (D-248: the Undo is the toast, `ExpenseUndo`).
     var onDeleted: ((ProjectedExpenseOut) -> Void)?
 
     @Environment(\.dismiss) private var dismiss
@@ -55,7 +55,7 @@ struct ExpenseDetailView: View {
                 AddExpenseScreen(onSaved: { editing = nil; load() }, editing: target)
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
-                            Button("Cancel") { editing = nil }.barTint()
+                            Button("Cancel") { editing = nil }.barButtonText().barTint()
                         }
                     }
             }
@@ -248,6 +248,8 @@ struct ExpenseDetailView: View {
         do {
             try store.reviseExpense(ExpenseEditing.delete(e, editor: named?.selfId))
             CloudSync.shared.ledgerChanged()
+            // D-248 (U30.4): the Undo the dialog promised, here, whoever opened this page.
+            ExpenseUndo.offer(e, store: store, editor: named?.selfId)
             onDeleted?(e)
             dismiss()
         } catch {
@@ -393,3 +395,40 @@ struct ExpenseConflictProofScreen: View {
     }
 }
 #endif
+
+/// D-248 (U30.4): a deleted expense's Undo comes to where the delete happened: the done toast ("Expense deleted", its
+/// description) with Undo, wherever the detail was opened (the group page, Lately, Activity, a notification, the
+/// Expenses list) and for the list's long-press delete. It stays for the hold's window (`SettleHold.window`: longer with
+/// a screen reader). Undo writes the restoring revision from the projection that holds the delete, then every screen
+/// reads again. The Expenses list's foot row went (one way to undo, everywhere). Android's twin is `ExpenseUndo`.
+@MainActor
+enum ExpenseUndo {
+    static func moment(_ deleted: ProjectedExpenseOut, seconds: Double) -> DoneMoment {
+        DoneMoments.line(DoneCopy.expenseDeleted, parts: [deleted.note], action: DoneCopy.undo, seconds: seconds)
+    }
+
+    static func offer(_ deleted: ProjectedExpenseOut, store: LedgerStore, editor: String?, center: DoneCenter? = nil,
+                      screenReader: Bool? = nil) {
+        let screenReader = screenReader ?? UIAccessibility.isVoiceOverRunning
+        let center = center ?? .shared
+        center.post(moment(deleted, seconds: SettleHold.window(screenReader: screenReader)), onAction: {
+            // Review M2: a failed write is said, never silent.
+            if !undo(deleted, store: store, editor: editor) { center.post(DoneMoments.line(DoneCopy.notRestored)) }
+        })
+    }
+
+    /// Written from the projection that HOLDS the delete, so the Undo has seen it. False when it could not be written
+    /// (`offer` then posts "Not restored.").
+    @discardableResult
+    static func undo(_ deleted: ProjectedExpenseOut, store: LedgerStore, editor: String?) -> Bool {
+        do {
+            let current = try store.projectedExpenses().expenses.first { $0.id == deleted.id } ?? deleted
+            try store.reviseExpense(ExpenseEditing.undo(current, editor: editor))
+            CloudSync.shared.ledgerChanged()
+            SyncStatus.shared.changed()
+            return true
+        } catch {
+            return false
+        }
+    }
+}

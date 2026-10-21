@@ -1581,7 +1581,8 @@ class ThemeArtTest {
         val sites = listOf(
             // D-225 T5: About.kt 0 (its cards and licence panels are glass cards, Design 6).
             // D-225 T7: AddExpenseScreen.kt 0 (an item line is a list card, Design 11).
-            "About.kt" to 0, "AddExpenseScreen.kt" to 0, "ExpenseDetailScreen.kt" to 3, "ExpenseListScreen.kt" to 1,
+            // D-248 (U30.4): ExpenseListScreen.kt 0, the foot Undo row went (the Undo is the done toast), as iOS's.
+            "About.kt" to 0, "AddExpenseScreen.kt" to 0, "ExpenseDetailScreen.kt" to 3, "ExpenseListScreen.kt" to 0,
             "GroupScreens.kt" to 0, "GroupSettings.kt" to 2, "RemovalFlow.kt" to 2, "SettleAll.kt" to 1, "SettleScreen.kt" to 1,
             "OverviewTab.kt" to 1,
         )
