@@ -5,6 +5,64 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/** D-246: motion.py 5a's printout (.drafts/d246/motion-after2.out since the fix wave, "D-246 glyph peaks"): each Futhark glyph's blurred
+ *  mask's largest coverage at blur 0.18 x the size, and each layer's largest (the floors take it under the full core).
+ *  The twin of iOS's `GlyphGlowGoldens` (ThemeMotionTests.swift), value for value. */
+object GlyphGlowGoldens {
+    val PEAKS: List<Pair<String, Double>> = listOf(
+        "\u16A0" to 0.2319, "\u16A2" to 0.2203, "\u16A6" to 0.2498, "\u16A8" to 0.2454, "\u16B1" to 0.2641,
+        "\u16B2" to 0.1373, "\u16B7" to 0.2101, "\u16B9" to 0.2322, "\u16BA" to 0.2657, "\u16BE" to 0.2179,
+        "\u16C1" to 0.1572, "\u16C3" to 0.1145, "\u16C7" to 0.1739, "\u16C8" to 0.2081, "\u16C9" to 0.2604,
+        "\u16CA" to 0.1998, "\u16CF" to 0.2157, "\u16D2" to 0.2817, "\u16D6" to 0.2572, "\u16D7" to 0.3031,
+        "\u16DA" to 0.1797, "\u16DC" to 0.1961, "\u16DE" to 0.3430, "\u16DF" to 0.2247,
+    )
+    const val PAGE = 0.3430
+    const val HERO = 0.2657
+    const val FEHU = 0.2319
+
+    /** D-246 fix wave (I1): each layer's MEASURED ink reach (x size from the box's centre, motion.py 5a "ink reach"): the
+     *  receiving rune's ink wherever a glow lands on another rune (1d, 1e), where D-243's 0.30 disc stood. */
+    const val INK_PAGE = 0.4569
+    const val INK_HERO = 0.4463
+
+    /** motion.py 1d's lane bound (.drafts/d246/motion-after2.out): the most glow a hero row's measured ink takes from the
+     *  other rows at their lane distances, each at the top of its flare, summed (row 1, 328 wide). */
+    const val HERO_LANE_GLOW = 0.011468
+}
+
+/** D-246: GlyphGlow's raster on the JVM: the bundled Vardr Runes Carved (the res/font file, the D-215 way) through
+ *  java.awt, the glyph's outline filled anti-aliased, as the phone fills it through `Paint.getTextPath` on a software
+ *  canvas (that half needs a device and is seen on the emulator). No image: the JVM has no Bitmap. */
+object AwtGlyphRaster : GlyphGlow.Raster {
+    private val face = java.awt.Font.createFont(java.awt.Font.TRUETYPE_FONT, java.io.File("src/main/res/font/vardrrunes_carvedregular.ttf"))
+    private val frc = java.awt.font.FontRenderContext(null, true, true)
+
+    override fun metrics(glyph: String, em: Double): DoubleArray {
+        val font = face.deriveFont(em.toFloat())
+        val line = font.getLineMetrics(glyph, frc)
+        val advance = font.createGlyphVector(frc, glyph).getGlyphMetrics(0).advanceX.toDouble()
+        return doubleArrayOf(advance, line.ascent.toDouble(), line.descent.toDouble())
+    }
+
+    override fun coverage(glyph: String, em: Double, width: Int, height: Int, x: Double, baseline: Double): IntArray {
+        val image = java.awt.image.BufferedImage(width, height, java.awt.image.BufferedImage.TYPE_BYTE_GRAY)
+        val g = image.createGraphics()
+        g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON)
+        g.setRenderingHint(java.awt.RenderingHints.KEY_STROKE_CONTROL, java.awt.RenderingHints.VALUE_STROKE_PURE)
+        g.color = java.awt.Color.WHITE
+        g.fill(face.deriveFont(em.toFloat()).createGlyphVector(frc, glyph).getOutline(x.toFloat(), baseline.toFloat()))
+        g.dispose()
+        val px = IntArray(width * height)
+        image.raster.getPixels(0, 0, width, height, px)
+        return px
+    }
+
+    override fun image(alpha: DoubleArray, width: Int, height: Int): androidx.compose.ui.graphics.ImageBitmap? = null
+
+    /** The tests measure each mask's alpha (D-246 fix wave, M2: the seam the phone's raster leaves off). */
+    override val keepsAlpha: Boolean get() = true
+}
+
 /** D-214: the twin of iOS ThemeMotionTests, plus parity: ThemeMotion.swift's strengths and sign list equal Kotlin's. */
 class ThemeMotionTest {
     private val swift = java.io.File("../../ios/Skipti/App/ThemeMotion.swift").readText()
@@ -425,59 +483,68 @@ class ThemeMotionTest {
         assertTrue(tops > 0)
     }
 
-    /** D-243 (plan test 2): the glow's alphas; the page's core never passes 0.19 nor its halo 0.05, the hero's never 0.20;
-     *  still: 0.079 and 0.083, no halo, never a flare (the negative). The twin of iOS's testTheGlowAlphasAreTheMeasuredOnes. */
+    /** D-243 (plan test 2): the glow's alphas; the page's core never passes 0.19, the hero's never 0.20; still: 0.079 and
+     *  0.083, no glow, never a flare (the negative). D-246 (amended on purpose; D-243's halo was 0.05 on both layers, a
+     *  disc of 0.8 x size): the glow is the blurred glyph's alpha (motion.py 5a), 0.120 on the page (D-246 fix wave, I1:
+     *  0.145 before) and 0.345 on the hero at the top of a flare, in proportion below it, blurred by 0.18 x the size, seen
+     *  to 0.7899 (0.8043 before) and 0.8567 x the size.
+     *  The twin of iOS's testTheGlowAlphasAreTheMeasuredOnes, row for row. */
     @Test
     fun the_glow_alphas_are_the_measured_ones() {
-        assertEquals(listOf(0.19, 0.20, 0.05, 0.8), listOf(RuneGlow.PAGE_FLARE, RuneGlow.HERO_FLARE, RuneGlow.HALO, RuneGlow.HALO_RADIUS))
+        assertEquals(listOf(0.19, 0.20), listOf(RuneGlow.PAGE_FLARE, RuneGlow.HERO_FLARE))
+        assertEquals(listOf(0.18, 0.120, 0.345, 0.7899, 0.8567),
+            listOf(RuneGlow.BLUR, RuneGlow.PAGE_GLOW, RuneGlow.HERO_GLOW, RuneGlow.PAGE_REACH, RuneGlow.HERO_REACH))
         val page = Strength.METRICS.getValue("norsePageRunes")
         val hero = Strength.METRICS.getValue("norseHeroRunes")
-        val want = listOf( // strength, top, opacity, glow, core, halo
-            doubleArrayOf(0.79, 0.19, 0.18, 0.0, 0.142200, 0.037421), doubleArrayOf(0.79, 0.19, 0.18, 0.5, 0.166100, 0.043711),
-            doubleArrayOf(0.79, 0.19, 0.18, 1.0, 0.19, 0.05), doubleArrayOf(0.79, 0.19, 0.09, 0.5, 0.083050, 0.021855),
-            doubleArrayOf(0.83, 0.20, 0.18, 0.0, 0.149400, 0.037350), doubleArrayOf(0.83, 0.20, 0.18, 0.5, 0.174700, 0.043675),
-            doubleArrayOf(0.83, 0.20, 0.18, 1.0, 0.20, 0.05), doubleArrayOf(0.83, 0.20, 0.09, 0.5, 0.087350, 0.021837),
+        val want = listOf( // strength, top, glowTop, opacity, flare, core, glow
+            doubleArrayOf(0.79, 0.19, 0.120, 0.18, 0.0, 0.142200, 0.089811), doubleArrayOf(0.79, 0.19, 0.120, 0.18, 0.5, 0.166100, 0.104905),
+            doubleArrayOf(0.79, 0.19, 0.120, 0.18, 1.0, 0.19, 0.120), doubleArrayOf(0.79, 0.19, 0.120, 0.09, 0.5, 0.083050, 0.052453),
+            doubleArrayOf(0.83, 0.20, 0.345, 0.18, 0.0, 0.149400, 0.257715), doubleArrayOf(0.83, 0.20, 0.345, 0.18, 0.5, 0.174700, 0.301357),
+            doubleArrayOf(0.83, 0.20, 0.345, 0.18, 1.0, 0.20, 0.345), doubleArrayOf(0.83, 0.20, 0.345, 0.09, 0.5, 0.087350, 0.150679),
         )
         for (w in want) {
-            val a = RuneGlow.alphas(opacity = w[2], strength = w[0], top = w[1], glow = w[3], still = false)
-            assertEquals("core at ${w.toList()}", w[4], a.core, 1e-6)
-            assertEquals("halo at ${w.toList()}", w[5], a.halo, 1e-6)
-            assertEquals(a.core, RuneGlow.core(w[2], w[0], w[1], w[3], false), 0.0)
-            assertEquals(a.halo, RuneGlow.halo(a.core, w[1], false), 0.0)
+            val a = RuneGlow.alphas(opacity = w[3], strength = w[0], top = w[1], flare = w[4], glowTop = w[2], still = false)
+            assertEquals("core at ${w.toList()}", w[5], a.core, 1e-6)
+            assertEquals("glow at ${w.toList()}", w[6], a.glow, 1e-6)
+            assertEquals(a.core, RuneGlow.core(w[3], w[0], w[1], w[4], false), 0.0)
+            assertEquals(a.glow, RuneGlow.glow(a.core, w[1], w[2], false), 0.0)
         }
         for ((k, still) in listOf(page to 0.079, hero to 0.083)) {
-            val a = RuneGlow.alphas(opacity = 0.10, strength = k, top = RuneGlow.PAGE_FLARE, glow = 1.0, still = true)
+            val a = RuneGlow.alphas(opacity = 0.10, strength = k, top = RuneGlow.PAGE_FLARE, flare = 1.0, glowTop = RuneGlow.PAGE_GLOW, still = true)
             assertEquals("the still core at $k", still, a.core, 1e-9)
-            assertEquals("no halo when still", 0.0, a.halo, 0.0)
+            assertEquals("no glow when still", 0.0, a.glow, 0.0)
         }
         var pageCore = 0.0
-        var pageHalo = 0.0
+        var pageGlow = 0.0
         for (i in 0 until RuneDrift.COUNT) for (step in 0 until 600 * 30 / 7) {
             val t = step * 7 / 30.0
-            val a = RuneGlow.alphas(RuneDrift.pose(i, t, 402f, 874f).opacity, page, RuneGlow.PAGE_FLARE, RuneGlow.flare(i, t), false)
+            val a = RuneGlow.alphas(RuneDrift.pose(i, t, 402f, 874f).opacity, page, RuneGlow.PAGE_FLARE, RuneGlow.flare(i, t), RuneGlow.PAGE_GLOW, false)
             pageCore = kotlin.math.max(pageCore, a.core)
-            pageHalo = kotlin.math.max(pageHalo, a.halo)
-            val s = RuneGlow.alphas(RuneDrift.still(i, 402f, 874f).opacity, page, RuneGlow.PAGE_FLARE, RuneGlow.flare(i, t), true)
+            pageGlow = kotlin.math.max(pageGlow, a.glow)
+            val s = RuneGlow.alphas(RuneDrift.still(i, 402f, 874f).opacity, page, RuneGlow.PAGE_FLARE, RuneGlow.flare(i, t), RuneGlow.PAGE_GLOW, true)
             assertEquals("a still rune never flares", 0.10 * page, s.core, 1e-12)
-            assertEquals("a still rune has no halo", 0.0, s.halo, 0.0)
+            assertEquals("a still rune has no glow", 0.0, s.glow, 0.0)
         }
         assertTrue(pageCore <= 0.19 + 1e-12)
-        assertTrue(pageHalo <= 0.05 + 1e-12)
+        assertTrue(pageGlow <= 0.120 + 1e-12)
         assertTrue("the page runes do flare", pageCore > 0.185)
         var heroCore = 0.0
         for (i in 0 until HeroRunes.COUNT) for (step in 0 until 600 * 10) {
             val t = step / 10.0
-            val a = RuneGlow.alphas(HeroRunes.pose(i, t, 343f, 260f).opacity, hero, RuneGlow.HERO_FLARE, HeroRunes.flare(i, t), false)
+            val a = RuneGlow.alphas(HeroRunes.pose(i, t, 343f, 260f).opacity, hero, RuneGlow.HERO_FLARE, HeroRunes.flare(i, t), RuneGlow.HERO_GLOW, false)
             heroCore = kotlin.math.max(heroCore, a.core)
-            assertTrue(a.halo <= 0.05 + 1e-12)
+            assertTrue(a.glow <= 0.345 + 1e-12)
         }
         assertTrue(heroCore <= 0.20 + 1e-12)
         assertTrue("the hero runes do flare", heroCore > 0.19)
     }
 
     /** D-243 (plan test 3): the hero's own runes, in lanes left of the ᚠ; their poses and still layout; on the narrowest
-     *  hero (328) each rune's ink (0.30 x size) inside the inner frame's interior, its em box inside the hero, and no halo
-     *  (0.8 x size) on another lane's ink. The twin of iOS's testTheHeroRunesTable. */
+     *  hero (328) each rune's ink (0.30 x size) inside the inner frame's interior and its em box inside the hero. D-246
+     *  fix wave (I1, M4; amended on purpose: "no glow on another lane's ink" took the receiving ink as D-243's 0.30 disc,
+     *  which undercounts the measured ink, 0.4463 x size): with the measured ink no two rows' inks meet at any height,
+     *  and the glow a row's ink takes from the others at their lanes, each at its flare's top, is motion.py 1d's lane
+     *  bound (0.011468), which the floors hold (AppearanceTest). The twin of iOS's testTheHeroRunesTable. */
     @Test
     fun the_hero_runes_table() {
         assertEquals(
@@ -521,16 +588,38 @@ class ThemeMotionTest {
             val x = width * s.x
             assertTrue("row $i's ink inside the interior at $width", x - 0.30 * s.size >= inner && x + 0.30 * s.size <= width - inner)
             assertTrue("row $i's em box inside the hero at $width", x - s.size / 2 >= 0.0)
-            HeroRunes.SPECS.forEachIndexed { j, o ->
-                if (j != i) assertTrue("row $i's halo stays off row $j's ink at $width",
-                    Math.abs(s.x - o.x) * width >= RuneGlow.HALO_RADIUS * s.size + 0.30 * o.size)
-            }
         }
+        // The lanes with the measured ink (motion.py 1d, on 328, 343 and 402): row j's glow on row i's ink is
+        // HERO_GLOW x min(peak, Phi(-(r - ink s_j) / (blur s_j))), r the lane distance less row i's ink.
+        fun phi(x: Double) = ArtGeometry.erfc(-x / Math.sqrt(2.0)) / 2
+        val ink = GlyphGlowGoldens.INK_HERO
+        var laneGlow = 0.0
+        for (width in listOf(328.0, 343.0, 402.0)) HeroRunes.SPECS.forEachIndexed { i, s ->
+            var glow = 0.0
+            HeroRunes.SPECS.forEachIndexed { j, o ->
+                if (j != i) {
+                    val gap = Math.abs(s.x - o.x) * width
+                    assertTrue("rows $i and $j's measured inks never meet at $width", gap >= ink * (s.size + o.size))
+                    val r = kotlin.math.max(0.0, gap - ink * s.size)
+                    glow += RuneGlow.HERO_GLOW * kotlin.math.min(GlyphGlowGoldens.HERO, phi(-(r - ink * o.size) / (RuneGlow.BLUR * o.size)))
+                }
+            }
+            laneGlow = kotlin.math.max(laneGlow, glow)
+        }
+        assertEquals("motion.py 1d's lane bound (its inks rounded to 4 places)", GlyphGlowGoldens.HERO_LANE_GLOW, laneGlow, 1e-5)
+        // Why the rule changed (the negative of the old one): with the measured ink, "the glow stays off another lane's
+        // ink" (gap >= HERO_REACH s_j + ink s_i) is false on the narrowest hero; D-243's 0.30 receiver hid it.
+        val crossing = HeroRunes.SPECS.indices.flatMap { i -> HeroRunes.SPECS.indices.filter { it != i }.map { i to it } }
+            .filter { (i, j) -> Math.abs(HeroRunes.SPECS[i].x - HeroRunes.SPECS[j].x) * 328 < RuneGlow.HERO_REACH * HeroRunes.SPECS[j].size + ink * HeroRunes.SPECS[i].size }
+        assertTrue("a glow reaches a neighbour's measured ink", crossing.isNotEmpty())
     }
 
-    /** D-243 (plan test 4): the hero runes keep left of the ᚠ's halo. The ᚠ measured in the bundled Vardr Runes Carved
-     *  (java.awt.Font on the res/font file, the D-215 way) at 118: advance 0.460 em; on the narrowest hero (328) every
-     *  rune's reach (centre + 0.71 x size + its halo 0.8 x size) stays left of W - 13 - w / 2 - 0.5 x 118. */
+    /** D-243 (plan test 4): the hero runes keep left of the ᚠ's glow. The ᚠ measured in the bundled Vardr Runes Carved
+     *  (java.awt.Font on the res/font file, the D-215 way) at 118: advance 0.460 em. D-246 (amended on purpose; D-243's
+     *  halo started 0.5 x 118 left of the ᚠ's centre and a rune reached 0.71 + 0.8 x its size): the ᚠ's glow is seen to
+     *  WatermarkGlow.GLOW_LEFT x 118 (71.41) left of W - 13 - w / 2, and on the narrowest hero (328) every rune's reach
+     *  (centre + the farther of 0.71 x size for a turned em box and its glow's RuneGlow.HERO_REACH x size) stays left of
+     *  it (motion.py 1d: 201.67 < 216.45; iOS pins 343: 210.07 < 231.45). */
     @Test
     fun the_hero_runes_stay_left_of_the_fehu() {
         val size = ThemeArt.METRICS.getValue("heroWatermark")
@@ -542,30 +631,32 @@ class ThemeMotionTest {
         val advance = font.createGlyphVector(frc, Runes.BALANCE).getGlyphMetrics(0).advanceX.toDouble()
         assertEquals("motion.py: 0.460 em at 118", 54.28, advance, 0.01)
         val width = 328.0
-        val fehuHaloLeft = width - ThemeArt.METRICS.getValue("heroWatermarkTrailing") - advance / 2 - WatermarkGlow.HALO_RADIUS * size
-        val reach = HeroRunes.SPECS.maxOf { width * it.x + (0.71 + RuneGlow.HALO_RADIUS) * it.size }
-        assertTrue("the hero runes keep left of the ᚠ's halo: $reach < $fehuHaloLeft", reach < fehuHaloLeft)
-        assertEquals("motion.py 1d, 328 wide", 215.39, reach, 0.01)
-        assertEquals("motion.py 1d, 328 wide", 228.86, fehuHaloLeft, 0.01)
+        assertEquals(0.6052, WatermarkGlow.GLOW_LEFT, 0.0)
+        val fehuGlowLeft = width - ThemeArt.METRICS.getValue("heroWatermarkTrailing") - advance / 2 - WatermarkGlow.GLOW_LEFT * size
+        val reach = HeroRunes.SPECS.maxOf { width * it.x + kotlin.math.max(0.71, RuneGlow.HERO_REACH) * it.size }
+        assertTrue("the hero runes keep left of the ᚠ's glow: $reach < $fehuGlowLeft", reach < fehuGlowLeft)
+        assertEquals("motion.py 1d, 328 wide", 201.67, reach, 0.01)
+        assertEquals("motion.py 1d, 328 wide", 216.45, fehuGlowLeft, 0.01)
     }
 
-    /** D-243 (plan test 5): the ᚠ glows: 0.16 up to 0.208 on a 9 s cycle with a halo of 0.10 at the top; still 0.16, no
-     *  halo. The twin of iOS's testTheWatermarkGlows. */
+    /** D-243 (plan test 5): the ᚠ glows: 0.16 up to 0.208 on a 9 s cycle; still 0.16, no glow. D-246 (amended on
+     *  purpose; D-243's was a disc halo of 0.10, radius 0.5 x 118): over its own blurred shape at 0.305 at the top of the
+     *  glow (motion.py 5a: the disc's light over its ink; 1c''s cap 0.625). The twin of iOS's testTheWatermarkGlows. */
     @Test
     fun the_watermark_glows() {
-        assertEquals(listOf(0.16, 0.208, 9.0, 0.55, 0.70, 0.88, 0.10, 0.5), listOf(WatermarkGlow.REST, WatermarkGlow.PEAK,
-            WatermarkGlow.CYCLE, WatermarkGlow.RISE, WatermarkGlow.TOP, WatermarkGlow.FALL, WatermarkGlow.HALO, WatermarkGlow.HALO_RADIUS))
-        val want = listOf( // t, glow, alpha, halo
-            doubleArrayOf(0.0, 0.0, 0.16, 0.0), doubleArrayOf(4.95, 0.0, 0.16, 0.0), doubleArrayOf(5.6, 0.468099, 0.182469, 0.046810),
-            doubleArrayOf(6.3, 1.0, 0.208, 0.10), doubleArrayOf(7.0, 0.615709, 0.189554, 0.061571), doubleArrayOf(7.92, 0.0, 0.16, 0.0),
+        assertEquals(listOf(0.16, 0.208, 9.0, 0.55, 0.70, 0.88, 0.305, 0.6052), listOf(WatermarkGlow.REST, WatermarkGlow.PEAK,
+            WatermarkGlow.CYCLE, WatermarkGlow.RISE, WatermarkGlow.TOP, WatermarkGlow.FALL, WatermarkGlow.GLYPH_GLOW, WatermarkGlow.GLOW_LEFT))
+        val want = listOf( // t, glow, alpha, glyph glow
+            doubleArrayOf(0.0, 0.0, 0.16, 0.0), doubleArrayOf(4.95, 0.0, 0.16, 0.0), doubleArrayOf(5.6, 0.468099, 0.182469, 0.142770),
+            doubleArrayOf(6.3, 1.0, 0.208, 0.305), doubleArrayOf(7.0, 0.615709, 0.189554, 0.187791), doubleArrayOf(7.92, 0.0, 0.16, 0.0),
             doubleArrayOf(8.99, 0.0, 0.16, 0.0),
         )
         for (w in want) {
             assertEquals("glow at ${w[0]}", w[1], WatermarkGlow.glow(w[0]), 1e-6)
             assertEquals("alpha at ${w[0]}", w[2], WatermarkGlow.alpha(w[0], still = false), 1e-6)
-            assertEquals("halo at ${w[0]}", w[3], WatermarkGlow.haloAlpha(w[0], still = false), 1e-6)
+            assertEquals("glyph glow at ${w[0]}", w[3], WatermarkGlow.glyphGlowAlpha(w[0], still = false), 1e-6)
             assertEquals("still at ${w[0]}", 0.16, WatermarkGlow.alpha(w[0], still = true), 0.0)
-            assertEquals("no halo when still at ${w[0]}", 0.0, WatermarkGlow.haloAlpha(w[0], still = true), 0.0)
+            assertEquals("no glow when still at ${w[0]}", 0.0, WatermarkGlow.glyphGlowAlpha(w[0], still = true), 0.0)
         }
         for (step in 0 until 900) {
             val t = step * 0.02
@@ -578,7 +669,8 @@ class ThemeMotionTest {
      *  upright when still or when the clock is not finite. The twin of iOS's testTheRingTurns. */
     @Test
     fun the_ring_turns() {
-        assertEquals(listOf(90.0, 0.0, 0.35, 0.5), listOf(RingTurn.PERIOD, RingTurn.STILL, RingTurn.LIT_HALO, RingTurn.LIT_HALO_RADIUS))
+        // D-246 (amended on purpose; D-243's lit halo was 0.35, radius 0.5): the lit runes glow from their glyphs at 0.995.
+        assertEquals(listOf(90.0, 0.0, 0.995), listOf(RingTurn.PERIOD, RingTurn.STILL, RingTurn.LIT_GLOW))
         val want = listOf(0.0 to 0.0, 22.5 to 90.0, 45.0 to 180.0, 89.99 to 359.96, 90.0 to 0.0, 900.0 to 0.0, -22.5 to 270.0,
             Double.NaN to 0.0, Double.POSITIVE_INFINITY to 0.0, Double.NEGATIVE_INFINITY to 0.0)
         for ((s, d) in want) assertEquals("ring at $s", d, RingTurn.degrees(s), 1e-6)
@@ -591,8 +683,8 @@ class ThemeMotionTest {
 
     /** D-243 (plan test 6, the renderers' half): You's ring turns ([artTurn] on the art's clock, the layer alone); the
      *  picture over it does not; the done check's ring keeps its moment's own turn (negative: no artTurn there). Every lit
-     *  rune carries the static halo in RuneRing itself, so both rings have it. The twin of iOS's
-     *  testYouRingTurnsAndTheDoneRingKeepsItsOwnClock. */
+     *  rune carries the static glow (D-246: its own glyph's, on its own turned layer; D-243's halo) in RuneRing itself, so
+     *  both rings have it. The twin of iOS's testYouRingTurnsAndTheDoneRingKeepsItsOwnClock. */
     @Test
     fun you_ring_turns_and_the_done_ring_keeps_its_own_clock() {
         val hub = src("AccountHubScreen.kt")
@@ -606,11 +698,226 @@ class ThemeMotionTest {
         assertTrue("its own clock", "Modifier.graphicsLayer { rotationZ = CheckMotion.pose(p.elapsed(CheckMotion.STILL_ELAPSED)).degrees.toFloat() }," in done)
         assertTrue("RuneRing(1, 1, dark)" in done)
         val ring = src("YouProgress.kt").substringAfter("fun RuneRing(done: Int, total: Int, dark: Boolean, modifier: Modifier = Modifier) {").substringBefore("\n}\n")
-        assertTrue("the turn reaches the ring's box", "Box(modifier.size(ThemeArt.m(\"ringBox\").dp).clearAndSetSemantics {}.then(lights)" in ring)
-        assertTrue("the lit runes' halos", "for (i in 0 until lit.coerceAtMost(Runes.FUTHARK.size)) {" in ring)
-        assertTrue("one remembered unit brush", "val halo = remember(ring) { Brush.radialGradient(listOf(ring, ring.copy(alpha = 0f)), center = Offset.Zero, radius = 1f) }" in ring)
-        assertTrue("at its alpha", "alpha = RingTurn.LIT_HALO.toFloat()" in ring)
-        assertTrue("at its radius", "(RingTurn.LIT_HALO_RADIUS * ThemeArt.m(\"runeRingSize\")).toFloat().dp.toPx()" in ring)
+        assertTrue("the turn reaches the ring's box", "Box(modifier.size(ThemeArt.m(\"ringBox\").dp).clearAndSetSemantics {}, contentAlignment = Alignment.Center) {" in ring)
+        // D-246 (amended on purpose; D-243's was one remembered unit radial brush drawn behind the runes): each lit rune's
+        // glow is its own glyph's cached mask (built in composition, once), in the ring's colour at LIT_GLOW, drawn behind
+        // the rune on its own turned layer with the glow's glyph on the rune's baseline.
+        assertTrue("the lit runes' masks, built once", "val glows = remember(raster, lit) {\n        List(lit.coerceAtMost(Runes.FUTHARK.size)) { GlyphGlow.mask(Runes.FUTHARK[it], ThemeArt.m(\"runeRingSize\").toDouble(), RuneGlow.BLUR, raster) }" in ring)
+        assertTrue("one remembered tint", "val tint = remember(ring) { ColorFilter.tint(ring) }" in ring)
+        assertTrue("each rune's baseline from its layout", "onTextLayout = { baselines[i] = it.firstBaseline }," in ring)
+        assertTrue("on the rune's turned layer, behind it, lit runes only", ".rotate(angle)\n                    .then(\n                        if (i < glows.size) {\n                            Modifier.drawBehind { with(ArtDraw) { glyphGlow(glows[i], 0f, baselines[i], RingTurn.LIT_GLOW.toFloat(), tint) } }" in ring)
+    }
+
+    /** D-246 (decision 195, the founder: "make the actual rune glow"; plan: "no disc drawing left"): no rune glow draws
+     *  a circle, an oval or a radial gradient: not the rune layers' caches and draws (page, hero, the shared glowingRune
+     *  and glyphGlow), not GlyphGlow, not the page's rune canvas, not the Norse hero, not the ring's lit runes. The masks
+     *  are built only in composition (GlyphGlow.mask inside a remember), never by a draw; GlyphGlow fills the glyph's
+     *  own outline and blurs it with its own Gaussian, never a blur filter. The negative: the detector catches D-243's
+     *  halo, word for word. The twin of iOS's testNoRuneGlowDrawsADisc. */
+    @Test
+    fun no_rune_glow_draws_a_disc() {
+        fun code(text: String) = text.replace(Regex("/\\*[\\s\\S]*?\\*/"), "").replace(Regex("(?<![:\"])//.*"), "")
+        fun drawsADisc(text: String) = listOf("drawCircle(", "drawOval(", "addOval(", "drawArc(", "radialGradient", "RadialGradient",
+            "RadialGradientShader", "CircleShape", "Oval(").any { it in code(text) }
+        assertTrue("the detector sees D-243's halo", drawsADisc("""
+            }) { drawCircle(if (p.silver) glow.silver else glow.gold, radius = 1f, center = Offset.Zero, alpha = halo.toFloat()) }
+        """))
+        assertTrue("and its brush", drawsADisc("internal val gold: Brush = Brush.radialGradient(listOf(RUNE_GOLD, RUNE_GOLD.copy(alpha = 0f)), center = Offset.Zero, radius = 1f)"))
+        assertFalse("but not a comment", drawsADisc("// D-243's drawCircle halo is gone"))
+        assertFalse(drawsADisc("if (glow > 0.0) glyphGlow(mask, left, top + glyph.firstBaseline, glow.toFloat(), if (p.silver) cache.silver else cache.gold)"))
+        val motion = src("ThemeMotion.kt")
+        val runeParts = motion.substringAfter("    /** D-243: a rune layer's drawing, laid out once").substringBefore("    /** D-221 (L45, motion.py part 5): the settled burst")
+        assertTrue("the slice holds the rune draws", "fun DrawScope.glowingRune(" in runeParts && "fun DrawScope.glyphGlow(" in runeParts && "class NorseHeroCache(" in runeParts)
+        assertFalse("no disc in the runes' caches or draws", drawsADisc(runeParts))
+        val glyphGlow = motion.substringAfter("object GlyphGlow {").substringBefore("\n}\n")
+        assertFalse("GlyphGlow draws the glyph, never a disc", drawsADisc(glyphGlow))
+        assertTrue("it fills the glyph's own outline", "p.getTextPath(glyph, 0, glyph.length, x.toFloat(), baseline.toFloat(), outline)" in glyphGlow)
+        assertTrue("on a software bitmap", "android.graphics.Canvas(bitmap).drawPath(outline, p)" in glyphGlow)
+        for (filter in listOf("BlurMaskFilter", "RenderEffect", "BlurEffect", "setShadowLayer", "Shadow(")) {
+            assertFalse("GlyphGlow blurs with its own Gaussian, not $filter", filter in code(glyphGlow))
+        }
+        val canvas = motion.substringAfter("private fun Modifier.runesGround(").substringBefore("\n}\n").substringAfter("}.artCanvas(0.0, motion) { t ->")
+        assertTrue("the page's rune canvas is found", "runes(t, still, strength, glows)" in canvas)
+        assertFalse(drawsADisc(canvas))
+        val norse = motion.substringAfter("        AppTheme.NORSE -> {").substringBefore("        AppTheme.VARDR -> {")
+        assertFalse("the Norse hero's runes and ᚠ", drawsADisc(norse))
+        val ring = src("YouProgress.kt").substringAfter("fun RuneRing(done: Int, total: Int, dark: Boolean, modifier: Modifier = Modifier) {").substringBefore("\n}\n")
+        assertFalse("the ring's lit runes glow from their glyphs", drawsADisc(ring))
+        val main = java.io.File("src/main/java/com/vardrlabs/skipti").listFiles()!!.filter { it.name.endsWith(".kt") }.joinToString("\n") { it.readText() }
+        for (gone in listOf("RuneGlow.HALO", "HALO_RADIUS", "LIT_HALO", "haloAlpha", "fehuHalo")) assertFalse("the disc's $gone is gone", gone in main)
+        // Built once: GlyphGlow.mask is asked only inside a remember (the layer caches, the hero's cache, the ring), the
+        // draws take the masks they hold.
+        assertEquals("the layers' masks", 1, motion.split("private fun glowOf(p: RunePose, raster: GlyphGlow.Raster): GlyphGlow.Mask = GlyphGlow.mask(p.glyph, p.size, RuneGlow.BLUR, raster)").size - 1)
+        assertEquals("asked in two places in the art", 2, motion.split("GlyphGlow.mask(").size - 1)
+        assertTrue("the hero's, in its remembered cache", norse.indexOf("val fehuGlow = GlyphGlow.mask(") in norse.indexOf("val cache = remember(") until norse.indexOf("fun DrawScope.fill()"))
+        assertEquals("the ring's, in its remember", 1, ring.split("GlyphGlow.mask(").size - 1)
+    }
+
+    /** D-246: GlyphGlow builds each mask once a process: a second ask, or a size in the same whole-dp bucket, builds
+     *  nothing (the counter, and the same mask); a new size or blur builds one (the negative). The mask is the glyph's box
+     *  plus 4 sigma a side at six pixels a sigma, and its blurred peak is motion.py 5a's for every Futhark glyph (the same
+     *  Gaussian of the same outline: the JVM fills it through java.awt, the phone through Paint.getTextPath), so the
+     *  floors' model (the peak under the full core) is the shell's. The twin of iOS's
+     *  testGlyphGlowIsBuiltOnceAndIsMotionPysMask. */
+    @Test
+    fun glyph_glow_is_built_once_and_is_motion_pys_mask() {
+        val before = GlyphGlow.builds
+        val a = GlyphGlow.mask("\u16DE", 41.0, RuneGlow.BLUR, AwtGlyphRaster)
+        assertEquals("the first ask builds it", before + 1, GlyphGlow.builds)
+        val b = GlyphGlow.mask("\u16DE", 41.0, RuneGlow.BLUR, AwtGlyphRaster)
+        val c = GlyphGlow.mask("\u16DE", 40.7, RuneGlow.BLUR, AwtGlyphRaster)
+        repeat(50) { GlyphGlow.mask("\u16DE", 41.0, RuneGlow.BLUR, AwtGlyphRaster) }
+        assertEquals("never again, in the same bucket too", before + 1, GlyphGlow.builds)
+        assertTrue("the cached mask itself", a === b && a === c)
+        GlyphGlow.mask("\u16DE", 42.0, RuneGlow.BLUR, AwtGlyphRaster)
+        assertEquals("a new size builds one", before + 2, GlyphGlow.builds)
+        GlyphGlow.mask("\u16DE", 42.0, 0.12, AwtGlyphRaster)
+        assertEquals("a new blur builds one", before + 3, GlyphGlow.builds)
+        // The box: ascent to descent (1.15 em, as iOS's Text box) and the advance, plus 4 sigma a side, to a whole pixel.
+        val sigma = 0.18 * 41
+        assertEquals("six pixels a sigma", kotlin.math.min(3.0, 6 / sigma), a.scale, 1e-12)
+        assertTrue("the height", a.height / a.scale >= 1.15 * 41 + 8 * sigma - 0.5 && a.height / a.scale < 1.15 * 41 + 8 * sigma + 0.5 + 1 / a.scale)
+        assertTrue("the width: U+16DE's advance is 0.62 em", a.width / a.scale >= 0.62 * 41 + 8 * sigma - 0.5)
+        assertEquals("the glyph's origin centres its box across", (a.width - 0.62 * 41 * a.scale) / 2, a.originX, 0.5 * a.scale)
+        assertEquals("the tests' raster keeps the alpha", a.width * a.height, a.alpha!!.size)
+        // D-246 fix wave (M2): a raster without the test seam (the phone's) keeps no alpha, only the image and the peak.
+        val phoneLike = object : GlyphGlow.Raster by AwtGlyphRaster {
+            override val keepsAlpha: Boolean get() = false
+        }
+        val kept = GlyphGlow.mask("\u16DE", 44.0, RuneGlow.BLUR, phoneLike)
+        assertEquals("no doubles kept off the seam", null, kept.alpha)
+        assertTrue("the peak is kept", kept.peak > 0.3)
+        // motion.py 5a's peaks (blur 0.18), each glyph at a page rune's size: motion.py's mask (within 0.01).
+        for ((glyph, peak) in GlyphGlowGoldens.PEAKS) {
+            assertEquals("U+${glyph.codePointAt(0).toString(16).uppercase()}'s peak", peak, GlyphGlow.mask(glyph, 20.0, RuneGlow.BLUR, AwtGlyphRaster).peak, 0.01)
+        }
+        // D-246 fix wave (M1): the floors (AppearanceTest) take motion.py's layer peak, so the link to the masks the shell
+        // DRAWS is one-sided and tight: every mask a layer draws, at the size it draws it, peaks at most motion.py's layer
+        // peak + 0.002 (the 8-bit image rounds within 0.002 of it). A two-sided 0.01 let a page peak of 0.353 through.
+        var pagePeak = 0.0
+        for (i in 0 until RuneDrift.COUNT) {
+            val p = RuneDrift.still(i, 0f, 0f)
+            val peak = GlyphGlow.mask(p.glyph, p.size, RuneGlow.BLUR, AwtGlyphRaster).peak
+            assertTrue("page rune $i at ${p.size}: $peak", peak <= GlyphGlowGoldens.PAGE + 0.002)
+            pagePeak = kotlin.math.max(pagePeak, peak)
+        }
+        var heroPeak = 0.0
+        HeroRunes.SPECS.forEachIndexed { i, s ->
+            val peak = GlyphGlow.mask(s.glyph, s.size, RuneGlow.BLUR, AwtGlyphRaster).peak
+            assertTrue("hero row $i at ${s.size}: $peak", peak <= GlyphGlowGoldens.HERO + 0.002)
+            heroPeak = kotlin.math.max(heroPeak, peak)
+        }
+        val fehuPeak = GlyphGlow.mask(Runes.BALANCE, ThemeArt.METRICS.getValue("heroWatermark"), RuneGlow.BLUR, AwtGlyphRaster).peak
+        assertTrue("the ᚠ at 118: $fehuPeak", fehuPeak <= GlyphGlowGoldens.FEHU + 0.002)
+        assertTrue("the page's masks are motion.py's", pagePeak > GlyphGlowGoldens.PAGE - 0.01)
+        assertTrue("the hero's masks are motion.py's", heroPeak > GlyphGlowGoldens.HERO - 0.01)
+        assertTrue("the ᚠ's mask is motion.py's", fehuPeak > GlyphGlowGoldens.FEHU - 0.01)
+        // The blur keeps the light (a Gaussian sums to 1) and is motion.py's: one lit pixel spreads to the kernel.
+        val one = IntArray(41 * 41).also { it[20 * 41 + 20] = 255 }
+        val spread = GlyphGlow.blur(one, 41, 41, 3.0)
+        assertEquals("the light is kept", 1.0, spread.sum(), 1e-9)
+        assertEquals("the centre: the kernel's middle squared", 1 / (2 * Math.PI * 9.0), spread[20 * 41 + 20], 2e-4)
+        assertEquals("cut at 4 sigma", 0.0, spread[20 * 41 + 20 + 13], 0.0)
+    }
+
+    /** D-246 fix wave (M3): the glow sits on the glyph's ink, measured (the twin of iOS's testTheGlowSitsOnTheGlyphsInk).
+     *  The mask's alpha centre of mass (a Gaussian keeps it) lands within 0.5 px of the glyph's own centre of mass: its
+     *  outline's area by Green's theorem over the flattened java.awt.geom.Area (no raster), the glyph's origin put on the
+     *  mask's ([GlyphGlow.Mask.originX], [GlyphGlow.Mask.baseline]), for the ᚠ at 118, ᛞ at 27 and ᛃ at 25. The negative: a
+     *  raster that fills the glyph 0.6 dp low (iOS's stage 1 found text drawing 0.54 pt off) is caught. */
+    @Test
+    fun the_glow_sits_on_the_glyphs_ink() {
+        val face = java.awt.Font.createFont(java.awt.Font.TRUETYPE_FONT, java.io.File("src/main/res/font/vardrrunes_carvedregular.ttf"))
+        val frc = java.awt.font.FontRenderContext(null, true, true)
+        fun glowCentre(m: GlyphGlow.Mask): Pair<Double, Double> {
+            val a = m.alpha!!
+            var sx = 0.0
+            var sy = 0.0
+            var total = 0.0
+            for (y in 0 until m.height) for (x in 0 until m.width) {
+                val v = a[y * m.width + x]
+                sx += v * (x + 0.5)
+                sy += v * (y + 0.5)
+                total += v
+            }
+            return sx / total to sy / total
+        }
+        fun inkCentre(glyph: String, m: GlyphGlow.Mask, size: Double): Pair<Double, Double> {
+            val outline = java.awt.geom.Area(face.deriveFont((size * m.scale).toFloat()).createGlyphVector(frc, glyph)
+                .getOutline(m.originX.toFloat(), m.baseline.toFloat()))
+            val it = outline.getPathIterator(null, 0.001)
+            val c = DoubleArray(6)
+            var area = 0.0
+            var cx = 0.0
+            var cy = 0.0
+            var (x0, y0) = 0.0 to 0.0
+            var (px, py) = 0.0 to 0.0
+            fun edge(x1: Double, y1: Double) {
+                val cross = px * y1 - x1 * py
+                area += cross
+                cx += (px + x1) * cross
+                cy += (py + y1) * cross
+                px = x1
+                py = y1
+            }
+            while (!it.isDone) {
+                when (it.currentSegment(c)) {
+                    java.awt.geom.PathIterator.SEG_MOVETO -> { x0 = c[0]; y0 = c[1]; px = x0; py = y0 }
+                    java.awt.geom.PathIterator.SEG_LINETO -> edge(c[0], c[1])
+                    java.awt.geom.PathIterator.SEG_CLOSE -> edge(x0, y0)
+                }
+                it.next()
+            }
+            return cx / (3 * area) to cy / (3 * area)
+        }
+        for ((glyph, size) in listOf(Runes.BALANCE to 118.0, "\u16DE" to 27.0, "\u16C3" to 25.0)) {
+            val m = GlyphGlow.mask(glyph, size, RuneGlow.BLUR, AwtGlyphRaster)
+            val glow = glowCentre(m)
+            val ink = inkCentre(glyph, m, size)
+            assertEquals("$glyph at $size: across", ink.first, glow.first, 0.5)
+            assertEquals("$glyph at $size: down", ink.second, glow.second, 0.5)
+        }
+        // The negative: the glyph filled 0.6 dp low (a key of its own, so the real mask stays cached).
+        val low = object : GlyphGlow.Raster by AwtGlyphRaster {
+            override fun coverage(glyph: String, em: Double, width: Int, height: Int, x: Double, baseline: Double): IntArray =
+                AwtGlyphRaster.coverage(glyph, em, width, height, x, baseline + 0.6 * em / 27.0)
+            override val keepsAlpha: Boolean get() = true
+        }
+        val off = GlyphGlow.mask("\u16DE", 27.0, RuneGlow.BLUR + 1e-9, low)
+        assertTrue("a glow 0.6 dp low is caught", kotlin.math.abs(glowCentre(off).second - inkCentre("\u16DE", off, 27.0).second) > 0.5)
+    }
+
+    /** D-246: the glow lies under its glyph on the glyph's own turned layer, its glyph's origin on the crisp glyph's: the
+     *  page's and the hero's runes in one transform (the glow first, then the text), the ᚠ at its text's origin and
+     *  baseline, and glyphGlow scales the mask's pixels to the density about that origin. The twin of iOS's "the glow
+     *  turns with its glyph and lies under it". */
+    @Test
+    fun the_glow_lies_under_its_glyph_on_its_turned_layer() {
+        val motion = src("ThemeMotion.kt")
+        val glowing = motion.substringAfter("private fun DrawScope.glowingRune(").substringBefore("\n    }\n")
+        assertTrue(glowing.contains("""withTransform({
+            translate(p.x.toFloat(), p.y.toFloat())
+            rotate(p.rotationDegrees.toFloat(), Offset.Zero)
+        }) {
+            val left = -glyph.size.width / 2f
+            val top = -glyph.size.height / 2f
+            if (glow > 0.0) glyphGlow(mask, left, top + glyph.firstBaseline, glow.toFloat(), if (p.silver) cache.silver else cache.gold)
+            drawText(glyph, color = if (p.silver) RUNE_SILVER else RUNE_GOLD, topLeft = Offset(left, top), alpha = core.toFloat())
+        }"""))
+        assertEquals("one transform: the glow turns with its glyph", 1, glowing.split("withTransform(").size - 1)
+        assertEquals("one glow, the one inside it", 1, glowing.split("glyphGlow(").size - 1)
+        val draw = motion.substringAfter("fun DrawScope.glyphGlow(mask: GlyphGlow.Mask, x: Float, baseline: Float, alpha: Float, tint: ColorFilter) {").substringBefore("\n    }\n")
+        assertTrue("the mask's pixels at this density", "val f = density / mask.scale.toFloat()" in draw)
+        assertTrue("its glyph's origin on the given one", "translate(x - mask.originX.toFloat() * f, baseline - mask.baseline.toFloat() * f)" in draw)
+        assertTrue("scaled about it", "scale(f, f, Offset.Zero)" in draw)
+        assertTrue("a cached image, tinted", "drawImage(image, alpha = alpha, colorFilter = tint)" in draw)
+        val norse = motion.substringAfter("        AppTheme.NORSE -> {").substringBefore("        AppTheme.VARDR -> {")
+        val glow = "if (glow > 0f) with(ArtDraw) { glyphGlow(cache.fehuGlow, left, top + glyph.firstBaseline, glow, cache.fehuTint) }"
+        assertTrue("the ᚠ's glow on its text's origin", glow in norse)
+        assertTrue("under the ᚠ", norse.indexOf(glow) < norse.indexOf("drawText(glyph, color = accent, alpha = (WatermarkGlow.alpha(t, still) * k).toFloat(), topLeft = Offset(left, top))"))
+        assertTrue("at its alpha", "val glow = (WatermarkGlow.glyphGlowAlpha(t, still) * k).toFloat()" in norse)
+        assertTrue("the hero's runes at the hero's glow", "RuneGlow.glow(core, RuneGlow.HERO_FLARE, RuneGlow.HERO_GLOW, still)" in motion)
+        assertTrue("the page's at the page's", "RuneGlow.glow(core, RuneGlow.PAGE_FLARE, RuneGlow.PAGE_GLOW, still)" in motion)
     }
 
     /** D-243 (plan test 7): parity. Every `RuneGlow`, `WatermarkGlow` and `RingTurn` constant in ThemeMotion.swift is
@@ -619,8 +926,11 @@ class ThemeMotionTest {
     fun the_livelier_art_matches_ios() {
         assertEquals(
             mapOf(
-                "pageFlare" to listOf(RuneGlow.PAGE_FLARE), "heroFlare" to listOf(RuneGlow.HERO_FLARE), "halo" to listOf(RuneGlow.HALO),
-                "haloRadius" to listOf(RuneGlow.HALO_RADIUS), "rise" to listOf(RuneGlow.RISE), "top" to listOf(RuneGlow.TOP),
+                // D-246 (amended on purpose; D-243's halo and haloRadius): the glyph glow's blur, alphas and reaches.
+                "pageFlare" to listOf(RuneGlow.PAGE_FLARE), "heroFlare" to listOf(RuneGlow.HERO_FLARE), "blur" to listOf(RuneGlow.BLUR),
+                "pageGlow" to listOf(RuneGlow.PAGE_GLOW), "heroGlow" to listOf(RuneGlow.HERO_GLOW),
+                "pageReach" to listOf(RuneGlow.PAGE_REACH), "heroReach" to listOf(RuneGlow.HERO_REACH),
+                "rise" to listOf(RuneGlow.RISE), "top" to listOf(RuneGlow.TOP),
                 "fall" to listOf(RuneGlow.FALL), "ease" to RuneGlow.EASE,
             ),
             swiftConstants("RuneGlow"),
@@ -629,17 +939,18 @@ class ThemeMotionTest {
             mapOf(
                 "rest" to listOf(WatermarkGlow.REST), "peak" to listOf(WatermarkGlow.PEAK), "cycle" to listOf(WatermarkGlow.CYCLE),
                 "rise" to listOf(WatermarkGlow.RISE), "top" to listOf(WatermarkGlow.TOP), "fall" to listOf(WatermarkGlow.FALL),
-                "halo" to listOf(WatermarkGlow.HALO), "haloRadius" to listOf(WatermarkGlow.HALO_RADIUS),
+                "glyphGlow" to listOf(WatermarkGlow.GLYPH_GLOW), "glowLeft" to listOf(WatermarkGlow.GLOW_LEFT),
             ),
             swiftConstants("WatermarkGlow"),
         )
         assertEquals(
             mapOf(
-                "period" to listOf(RingTurn.PERIOD), "still" to listOf(RingTurn.STILL), "litHalo" to listOf(RingTurn.LIT_HALO),
-                "litHaloRadius" to listOf(RingTurn.LIT_HALO_RADIUS),
+                "period" to listOf(RingTurn.PERIOD), "still" to listOf(RingTurn.STILL), "litGlow" to listOf(RingTurn.LIT_GLOW),
             ),
             swiftConstants("RingTurn"),
         )
+        // D-246: GlyphGlow's one constant, six pixels a sigma (the blur's own formula is twinned in the build test).
+        assertEquals(mapOf("pixelsPerSigma" to listOf(GlyphGlow.PIXELS_PER_SIGMA)), swiftConstants("GlyphGlow"))
         val block = after("enum HeroRunes {").substringAfter("static let specs: [Spec] = [").substringBefore("\n    ]")
         val rows = Regex("""Spec\(glyph: "((?:\\u\{[0-9A-F]+\})+)", silver: (true|false), x: ([0-9.]+), size: ([0-9.]+), duration: ([0-9.]+), lead: ([0-9.]+), cycle: ([0-9.]+), flareLead: ([0-9.]+), stillY: ([0-9.]+)\)""")
             .findAll(block).toList()
@@ -916,7 +1227,10 @@ class ThemeMotionTest {
         val draws = listOf("fun DrawScope.runes(", "fun DrawScope.heroRunes(", "private fun DrawScope.glowingRune(")
             .map { motion.substringAfter(it).substringBefore("\n    }\n") }
         for (body in draws + lambda) {
-            for (alloc in listOf("Path()", "Brush.", "measurer.measure(", "rememberTextMeasurer(")) assertFalse("no $alloc per frame", alloc in body)
+            // D-246: nor a glow mask (GlyphGlow builds once, in composition), nor a blur of any kind.
+            for (alloc in listOf("Path()", "Brush.", "measurer.measure(", "rememberTextMeasurer(", "GlyphGlow.mask(", "BlurMaskFilter", "BlurEffect", "RenderEffect")) {
+                assertFalse("no $alloc per frame", alloc in body)
+            }
         }
         assertTrue("the hero is one layer between the still gradient and the still frame",
             ".graphicsLayer()\n                .artCanvas(0.0, motion) { t ->" in norse && "                .graphicsLayer()\n                .drawBehind {\n                    clipPath(cache.notch) {" in norse)
@@ -1022,8 +1336,9 @@ class ThemeMotionTest {
         val art = motion.substringAfter("private fun DrawScope.auroraArt(").substringBefore("\n}\n")
         assertTrue("night and dawn", "if (dark) nightSkyBody() else dawnBody()" in art)
         assertTrue("then the curtains", "with(ArtDraw) { curtains(t, dark, curtainStrength, starStrength, layer, cache) }" in art)
-        // D-243 (amended on purpose): the runes take their cached glyphs and halos (`halos`), not a measurer.
-        assertTrue("runes", "bled(bleed.value) { with(ArtDraw) { runes(t, still, strength, halos) } }" in motion)
+        // D-243 (amended on purpose): the runes take their cached glyphs and (D-246) glows (`glows`; D-243's `halos`),
+        // not a measurer.
+        assertTrue("runes", "bled(bleed.value) { with(ArtDraw) { runes(t, still, strength, glows) } }" in motion)
         assertTrue("the runes' ground", "drawBehind {\n        bled(bleed.value) {\n            drawRect(bg)" in motion)
         assertTrue("bled grows the node", "inset(-b.left, -b.top, -b.right, -b.bottom, block)" in motion)
         assertTrue("the grid", "inset(-b.left, -b.top, -b.right, -b.bottom) {" in src("Aurora.kt"))
@@ -1134,9 +1449,12 @@ class ThemeMotionTest {
         val norse = src("ThemeMotion.kt").substringAfter("        AppTheme.NORSE -> {").substringBefore("        AppTheme.VARDR -> {")
         // D-243 (amended on purpose): measured once in composition (the hero's cache), through the density, not per draw.
         assertTrue(norse.contains("val glyph = with(density) { measurer.measure(Runes.BALANCE, Type.rune(ThemeArt.m(\"heroWatermark\").dp.toSp())) }"))
-        assertTrue("held by the cache", "ArtDraw.NorseHeroCache(ArtDraw.RuneGlowCache.hero(measurer, density), glyph)" in norse)
-        // D-243 fix wave (M6): the cache is keyed on the colours its gradient and halo brush are filled from.
-        assertTrue("keyed on its colours", "val cache = remember(measurer, density, start, end, accent) {" in norse)
+        // D-246 (amended on purpose): the cache also holds the ᚠ's glow, GlyphGlow's mask, through the rune raster.
+        assertTrue("held by the cache", "ArtDraw.NorseHeroCache(ArtDraw.RuneGlowCache.hero(measurer, density, raster), glyph, fehuGlow)" in norse)
+        assertTrue("its glow", "val fehuGlow = GlyphGlow.mask(Runes.BALANCE, ThemeArt.m(\"heroWatermark\").toDouble(), RuneGlow.BLUR, raster)" in norse)
+        // D-243 fix wave (M6): the cache is keyed on the colours its gradient and tint (D-246; D-243's halo brush) are
+        // filled from, and (D-246) on the raster.
+        assertTrue("keyed on its colours", "val cache = remember(measurer, density, raster, start, end, accent) {" in norse)
         assertTrue("drawn from it", "val glyph = cache.fehu" in norse)
         assertFalse("no font of its own", norse.contains("fontFamily"))
         assertTrue("the tab bar's runes take the same face", src("TabBar.kt").contains("style = Type.rune(runeSize(\"tabRune\", LocalDensity.current)).copy(color = tint),"))
@@ -1211,8 +1529,9 @@ class ThemeMotionTest {
         val runes = src("ThemeMotion.kt").substringAfter("private fun Modifier.runesGround(").substringBefore("\n}\n")
         val bg = runes.indexOf("drawRect(bg)")
         val glows = runes.indexOf("for (g in NorseGlow.SPECS)")
-        val drawn = runes.indexOf("runes(t, still, strength, halos)") // D-243 (amended on purpose): the cached glyphs and halos
-        assertTrue("laid out once", "val halos = remember(measurer, density) { ArtDraw.RuneGlowCache.page(measurer, density) }" in runes)
+        // D-243 (amended on purpose by D-246): the cached glyphs and glows (D-243's halos).
+        val drawn = runes.indexOf("runes(t, still, strength, glows)")
+        assertTrue("laid out once", "val glows = remember(measurer, density, raster) { ArtDraw.RuneGlowCache.page(measurer, density, raster) }" in runes)
         assertTrue("all three: $bg, $glows, $drawn", bg >= 0 && glows >= 0 && drawn >= 0)
         assertTrue("the glows over the ground", glows > bg)
         assertTrue("and under the runes", glows < drawn)

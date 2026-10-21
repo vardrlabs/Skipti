@@ -348,10 +348,39 @@ final class WelcomeTests: XCTestCase {
         XCTAssertTrue(source.contains("MotionClock.momentTicks(reduceMotion: reduceMotion, active: phase == .active)"))
         XCTAssertFalse(source.contains("artTicks"), "not the art's clock")
         XCTAssertFalse(source.contains("PowerState"), "no read of power saving")
-        // The founder's look: the glow follows the glyph (a blurred copy), never a round halo.
-        let runes = try XCTUnwrap(source.components(separatedBy: "struct NorseRunes: View {").last)
+        // The founder's look: the glow follows the glyph (a blurred copy), never a round halo. D-246 fix wave (M5, amended
+        // on purpose: it was the Text re-blurred every frame): the copy is GlyphGlow's cached mask, sigma 3.2 at 26.
+        let runes = try XCTUnwrap(source.components(separatedBy: "struct NorseRunes: View {").last?
+            .components(separatedBy: "// MARK: - The screens").first)
         XCTAssertFalse(source.contains("RadialGradient"), "no halo disc")
-        XCTAssertTrue(runes.contains("glyph.foregroundStyle(Tokens.ring).fixedSize()\n                                .blur(radius: WelcomeProgress.glowBlur)"))
+        XCTAssertTrue(runes.contains("GlyphGlow.view(rune, size: size, blur: WelcomeProgress.runeGlow)\n                                .foregroundStyle(Tokens.ring)\n                                .opacity(pose.glow[i])"))
+        XCTAssertFalse(runes.contains(".blur("), "no per-frame blur of a rune")
+        XCTAssertEqual(WelcomeProgress.runeGlow, 3.2 / 26, accuracy: 1e-12)
+    }
+
+    /// D-246 fix wave (M5): the welcome's lit runes glow from GlyphGlow's cache, so drawing frames builds no mask. The
+    /// road rendered at a first frame builds at most its five masks (none if the welcome already drew them this process);
+    /// thirty more frames of the sweep and flare, every glow and scale different, build none (the counter does not grow).
+    @MainActor
+    func testTheWelcomeRunesGlowFromTheCacheAndBuildNothingPerFrame() throws {
+        func frame(_ elapsed: Double) throws {
+            let pose = WelcomeProgress.pose(.norse, from: 0, to: 4, elapsed: elapsed, still: false)
+            XCTAssertTrue(pose.lit.contains(true))
+            let renderer = ImageRenderer(content: NorseRunes(pose: pose))
+            renderer.scale = 2
+            _ = try XCTUnwrap(renderer.cgImage)
+        }
+        let before = GlyphGlow.builds
+        try frame(10)
+        let warm = GlyphGlow.builds
+        XCTAssertLessThanOrEqual(warm - before, WelcomeProgress.runes.count, "at most one mask a rune")
+        for k in 0..<30 { try frame(Double(k) / 30) }
+        XCTAssertEqual(GlyphGlow.builds, warm, "no frame builds a mask")
+        for rune in WelcomeProgress.runes {
+            let m = GlyphGlow.mask(rune, size: WelcomeProgress.runeSize, blur: WelcomeProgress.runeGlow)
+            XCTAssertEqual(Double(m.scale), min(3, 6 / 3.2), accuracy: 1e-9, "sigma 3.2 pt")
+        }
+        XCTAssertEqual(GlyphGlow.builds, warm, "the road's own masks")
     }
 
     /// Decision 197: the road's geometry is the mock-up's: arches up and down in turn, each ending 14 pt short of the

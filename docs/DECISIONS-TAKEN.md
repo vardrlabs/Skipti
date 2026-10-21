@@ -1308,6 +1308,21 @@ https://claude.ai/artifact/FwwzuzRkyyxiuGvJKNMPCG (v1); briefs `.drafts/u9/brief
 - **Risk if wrong:** someone who types a name and wants to move on without saving it must clear the field or Skip.
 - **Overturn:** show Next beside Save name.
 - **Status:** in D-245.
+
+### The D-246 chain, 196: the runes glow from the glyph (your 195)
+
+#### 196: the glow's numbers come from the floors, its shape from the glyph
+
+- **What:** every glowing Norse rune (the page's rising runes, the hero runes, the hero ᚠ, the You ring's lit runes)
+  draws a blurred copy of its own outline (Gaussian, sigma 0.18 x its size) under the crisp rune, cached once per glyph
+  and size on each phone, never blurred per frame (the welcome's runes too). Alphas re-derived in motion.py: page 0.120,
+  hero 0.345, ᚠ 0.305, ring 0.995, each the lesser of "the same light as the old disc" and what the text floors allow,
+  with a glow landing on a neighbour's MEASURED ink (the review's I1: the first cut, 0.145, assumed D-243's smaller ink
+  disc and failed 36 frames at textDim 4.400; 0.125 still fails 8).
+- **Why:** your word on the halos ("not aesthetic"); the page glow is held down by the page-rune overlap scan, so the page runes stay subtle while the ring and the ᚠ show it clearly.
+- **Risk if wrong:** the page runes' glow reads fainter than you want; raising it means loosening a contrast floor.
+- **Overturn:** a larger blur at the same light, or (your call) a lower floor for the page.
+- **Status:** in D-246.
 ---
 
 ## High: user-visible behaviour or a privacy surface

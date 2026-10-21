@@ -5,6 +5,28 @@ import XCTest
 
 /// D-214 (E2 motion, ADR-0041 "Theme art"): every animation is a pure function of time; goldens from
 /// .drafts/d214/motion.py, which ports the Look Book's own formulas. Android's twin is ThemeMotionTest.
+/// D-246: motion.py 5a's printout (.drafts/d246/motion-after2.out since the fix wave, "D-246 glyph peaks"): each Futhark glyph's blurred mask's
+/// largest coverage at blur 0.18 x the size, and each layer's largest (the floors take it under the full core).
+enum GlyphGlowGoldens {
+    static let peaks: [(String, Double)] = [
+        ("\u{16A0}", 0.2319), ("\u{16A2}", 0.2203), ("\u{16A6}", 0.2498), ("\u{16A8}", 0.2454), ("\u{16B1}", 0.2641),
+        ("\u{16B2}", 0.1373), ("\u{16B7}", 0.2101), ("\u{16B9}", 0.2322), ("\u{16BA}", 0.2657), ("\u{16BE}", 0.2179),
+        ("\u{16C1}", 0.1572), ("\u{16C3}", 0.1145), ("\u{16C7}", 0.1739), ("\u{16C8}", 0.2081), ("\u{16C9}", 0.2604),
+        ("\u{16CA}", 0.1998), ("\u{16CF}", 0.2157), ("\u{16D2}", 0.2817), ("\u{16D6}", 0.2572), ("\u{16D7}", 0.3031),
+        ("\u{16DA}", 0.1797), ("\u{16DC}", 0.1961), ("\u{16DE}", 0.3430), ("\u{16DF}", 0.2247),
+    ]
+    static let page = 0.3430
+    static let hero = 0.2657
+    static let fehu = 0.2319
+    /// D-246 fix wave (I1): each layer's MEASURED ink reach (x size from the box's centre, motion.py 5a "ink reach"): the
+    /// receiving rune's ink wherever a glow lands on another rune (1d, 1e), where D-243's 0.30 disc stood.
+    static let inkPage = 0.4569
+    static let inkHero = 0.4463
+    /// motion.py 1d's lane bound (.drafts/d246/motion-after2.out): the most glow a hero row's measured ink takes from the
+    /// other rows at their lane distances, each at the top of its flare, summed (row 1, 328 wide).
+    static let heroLaneGlow = 0.011468
+}
+
 final class ThemeMotionTests: XCTestCase {
     private func near(_ a: Double, _ b: Double, _ eps: Double = 1e-4, _ msg: String = "") {
         XCTAssertEqual(a, b, accuracy: eps, msg)
@@ -400,8 +422,9 @@ final class ThemeMotionTests: XCTestCase {
         XCTAssertTrue(motion.contains("MotionClock.shouldTick("))
         // F8: one blur for the three curtains, dithered, drawn as one layer.
         XCTAssertEqual(motion.components(separatedBy: ".addFilter(").count - 1, 1, "one blur per canvas")
-        // D-243 (amended on purpose): the glows (rune halos, the ᚠ's halo) are cached radial discs: still the curtains' one
-        // blur in the file, and no shadow.
+        // D-246 (amended on purpose; D-243's were cached radial discs): the rune glows are the glyphs' own masks, blurred
+        // ONCE by GlyphGlow's own Gaussian when first asked for, never by a filter per frame: still the curtains' one blur
+        // in the file, and no shadow.
         XCTAssertEqual(motion.components(separatedBy: ".blur(").count - 1, 1, "no blur but the curtains'")
         XCTAssertEqual(motion.components(separatedBy: ".shadow(").count - 1, 0, "no shadow in the art")
         XCTAssertTrue(motion.contains("outer.addFilter(.blur(radius: night ? 9 : 14, options: .dithersResult))"))
@@ -440,11 +463,14 @@ final class ThemeMotionTests: XCTestCase {
         let motion = try appSource("ThemeMotion.swift")
         let draw = try XCTUnwrap(motion.components(separatedBy: "enum ArtDraw {").last?.components(separatedBy: "/// The page ground per theme").first)
         // D-243 sabotage (I4, I20 survived): a still frame never flares, and the hero's still frame is its still layout.
-        XCTAssertTrue(draw.contains("glow: still ? 0 : RuneGlow.flare(i, t), still: still)"), "page runes: no flare when still")
+        XCTAssertTrue(draw.contains("flare: still ? 0 : RuneGlow.flare(i, t), glowTop: RuneGlow.pageGlow, still: still)"),
+                      "page runes: no flare when still, the page's glow")
+        XCTAssertTrue(draw.contains("flare: still ? 0 : HeroRunes.flare(i, t), glowTop: RuneGlow.heroGlow, still: still)"),
+                      "hero runes: no flare when still, the hero's glow")
         XCTAssertTrue(draw.contains("let p = still ? HeroRunes.still(i, in: size) : HeroRunes.pose(i, t, in: size)"),
                       "hero runes: the still layout when still")
-        // D-243 (amended on purpose): the runes (page and hero) draw through `glowingRune`, which resolves the glyph's and
-        // the halo's symbols; the ᚠ resolves its own two. None lays out text per frame.
+        // D-243 (amended on purpose by D-246): the runes (page and hero) draw through `glowingRune`, which resolves the
+        // glyph's and its glow's symbols; the ᚠ resolves its own two. None lays out text per frame.
         for name in ["static func runes(", "static func signs(", "static func heroRunes(", "static func watermark(",
                      "private static func glowingRune("] {
             let body = try XCTUnwrap(draw.components(separatedBy: name).last?.components(separatedBy: "\n    }\n").first)
@@ -454,40 +480,54 @@ final class ThemeMotionTests: XCTestCase {
             try XCTUnwrap(draw.components(separatedBy: name).last?.components(separatedBy: "\n    }\n").first)
         }
         XCTAssertTrue(try body("static func signs(").contains("ctx.resolveSymbol(id: i)"), "the signs draw their symbols")
-        XCTAssertTrue(try body("static func runes(").contains("glowingRune(&ctx, p, core: glow.core, halo: glow.halo, glyph: i, haloTag: pageHalo + i)"))
-        XCTAssertTrue(try body("static func heroRunes(").contains("glowingRune(&inner, p, core: glow.core, halo: glow.halo, glyph: heroRune + i, haloTag: heroHalo + i)"))
+        XCTAssertTrue(try body("static func runes(").contains("glowingRune(&ctx, p, core: a.core, glow: a.glow, glyph: i, glowTag: pageGlyphGlow + i)"))
+        XCTAssertTrue(try body("static func heroRunes(").contains("glowingRune(&inner, p, core: a.core, glow: a.glow, glyph: heroRune + i, glowTag: heroGlyphGlow + i)"))
         let glowing = try body("private static func glowingRune(")
-        XCTAssertTrue(glowing.contains("ctx.resolveSymbol(id: glyph)") && glowing.contains("ctx.resolveSymbol(id: haloTag)"),
-                      "the glyph and its halo are cached symbols")
+        XCTAssertTrue(glowing.contains("ctx.resolveSymbol(id: glyph)") && glowing.contains("ctx.resolveSymbol(id: glowTag)"),
+                      "the glyph and its glow are cached symbols")
+        // D-246: the glow is drawn on the glyph's own turned layer (it follows the ink), under the glyph.
+        XCTAssertTrue(glowing.contains("""
+                if glow > 0, let blurred = ctx.resolveSymbol(id: glowTag) {
+                    var under = layer
+                    under.opacity = glow
+                    under.draw(blurred, at: .zero)
+                }
+                layer.opacity = core
+                layer.draw(symbol, at: .zero)
+        """), "the glow turns with its glyph and lies under it")
         let watermark = try body("static func watermark(")
-        XCTAssertTrue(watermark.contains("ctx.resolveSymbol(id: fehu)") && watermark.contains("ctx.resolveSymbol(id: fehuHalo)"))
+        XCTAssertTrue(watermark.contains("ctx.resolveSymbol(id: fehu)") && watermark.contains("ctx.resolveSymbol(id: fehuGlyphGlow)"))
+        XCTAssertTrue(watermark.contains("under.draw(blurred, at: centre)") && watermark.contains("layer.draw(glyph, at: centre)"),
+                      "the ᚠ's glow on the ᚠ's centre")
         XCTAssertEqual(motion.components(separatedBy: "draw(Text(").count - 1, 0, "no Text drawn into a canvas")
         let layer = try XCTUnwrap(motion.components(separatedBy: "struct RuneLayer: View {").last?.components(separatedBy: "\n}\n").first)
         XCTAssertTrue(layer.contains("""
                     ArtCanvas(still: 0, symbols: {
                         ForEach(0..<RuneDrift.count, id: \\.self) { ArtDraw.runeSymbol($0) }
-                        ForEach(ArtDraw.pageHalo..<ArtDraw.pageHalo + RuneDrift.count, id: \\.self) { ArtDraw.runeHaloSymbol($0 - ArtDraw.pageHalo) }
+                        ForEach(ArtDraw.pageGlyphGlow..<ArtDraw.pageGlyphGlow + RuneDrift.count, id: \\.self) { ArtDraw.runeGlowSymbol($0 - ArtDraw.pageGlyphGlow) }
                     }) { ctx, size, t in
-        """), "the page's runes and halos are the canvas's symbols")
+        """), "the page's runes and their glows are the canvas's symbols")
         XCTAssertTrue(layer.contains("""
                     ArtCanvas(still: 0, symbols: {
                         ForEach(ArtDraw.heroRune..<ArtDraw.heroRune + HeroRunes.count, id: \\.self) { ArtDraw.heroRuneSymbol($0 - ArtDraw.heroRune) }
-                        ForEach(ArtDraw.heroHalo..<ArtDraw.heroHalo + HeroRunes.count, id: \\.self) { ArtDraw.heroHaloSymbol($0 - ArtDraw.heroHalo) }
+                        ForEach(ArtDraw.heroGlyphGlow..<ArtDraw.heroGlyphGlow + HeroRunes.count, id: \\.self) { ArtDraw.heroGlowSymbol($0 - ArtDraw.heroGlyphGlow) }
                         ArtDraw.fehuSymbol()
-                        ArtDraw.fehuHaloSymbol()
+                        ArtDraw.fehuGlowSymbol()
                     }) { ctx, size, t in
-        """), "the hero's runes, halos, ᚠ and its halo are the canvas's symbols")
+        """), "the hero's runes, their glows, the ᚠ and its glow are the canvas's symbols")
         // D-243: two ForEach over the same ids in one canvas's symbols trap on launch (CanvasSymbols): each iterates its
         // own tag range, and the ranges do not overlap.
         XCTAssertEqual(layer.components(separatedBy: "ForEach(0..<").count - 1, 1, "only the page's glyphs iterate from 0")
-        let ranges = [0..<RuneDrift.count, ArtDraw.pageHalo..<ArtDraw.pageHalo + RuneDrift.count,
-                      ArtDraw.heroRune..<ArtDraw.heroRune + HeroRunes.count, ArtDraw.heroHalo..<ArtDraw.heroHalo + HeroRunes.count,
-                      ArtDraw.fehu..<ArtDraw.fehu + 1, ArtDraw.fehuHalo..<ArtDraw.fehuHalo + 1]
+        let ranges = [0..<RuneDrift.count, ArtDraw.pageGlyphGlow..<ArtDraw.pageGlyphGlow + RuneDrift.count,
+                      ArtDraw.heroRune..<ArtDraw.heroRune + HeroRunes.count,
+                      ArtDraw.heroGlyphGlow..<ArtDraw.heroGlyphGlow + HeroRunes.count,
+                      ArtDraw.fehu..<ArtDraw.fehu + 1, ArtDraw.fehuGlyphGlow..<ArtDraw.fehuGlyphGlow + 1]
         for (a, x) in ranges.enumerated() { for y in ranges[(a + 1)...] { XCTAssertFalse(x.overlaps(y), "\(x) and \(y)") } }
-        // A halo is a cached disc, never a blur or a shadow.
-        let halo = try body("static func haloSymbol(tag: Int, colour: Color, radius: CGFloat) -> some View {")
-        XCTAssertTrue(halo.contains(".fill(RadialGradient(colors: [colour, colour.opacity(0)], center: .center, startRadius: 0, endRadius: radius))"))
-        XCTAssertFalse(halo.contains("blur") || halo.contains("shadow"))
+        // D-246 (D-243's "a halo is a cached disc", amended on purpose): a glow is GlyphGlow's cached blurred mask of the
+        // glyph, never a disc, a blur filter or a shadow.
+        let glowSymbol = try body("static func glowSymbol(_ glyph: String, size: CGFloat, colour: Color, tag: Int) -> some View {")
+        XCTAssertTrue(glowSymbol.contains("GlyphGlow.view(glyph, size: size, blur: RuneGlow.blur).foregroundColor(colour).tag(tag)"))
+        XCTAssertFalse(glowSymbol.contains(".blur(") || glowSymbol.contains("shadow"))
         XCTAssertTrue(motion.contains("ForEach(CurrencyField.floaters.indices, id: \\.self) { ArtDraw.signSymbol($0, width: width) }"))
         XCTAssertTrue(motion.contains("ArtDraw.signs(&ctx, size, t, strength: Strength.of(dark ? \"vardrDarkHeroSigns\" : \"vardrLightHeroSigns\"))"))
         XCTAssertTrue(motion.contains("} symbols: {\n                symbols\n            }"), "the canvas carries its symbols")
@@ -1073,49 +1113,175 @@ final class ThemeMotionTests: XCTestCase {
         XCTAssertGreaterThan(tops, 0)
     }
 
+    /// D-246 (decision 195, the founder: "make the actual rune glow"; plan: "no disc drawing left"): no rune glow draws a
+    /// circle, an ellipse or a radial gradient: not the canvas's rune and ᚠ symbols and renderers, not GlyphGlow, not
+    /// the ring's lit runes. And the glow masks are built only where symbols are made (once), never by a per-frame draw.
+    /// The negative: the guard's own detector catches D-243's disc halo, word for word.
+    func testNoRuneGlowDrawsADisc() throws {
+        func drawsADisc(_ code: String) -> Bool {
+            ["Circle(", "Ellipse(", "ellipseIn", "RadialGradient", "radialGradient", ".addEllipse(", "addArc("].contains { code.contains($0) }
+        }
+        XCTAssertTrue(drawsADisc("""
+                Circle()
+                    .fill(RadialGradient(colors: [colour, colour.opacity(0)], center: .center, startRadius: 0, endRadius: radius))
+        """), "the detector sees D-243's halo")
+        XCTAssertFalse(drawsADisc("GlyphGlow.view(glyph, size: size, blur: RuneGlow.blur).foregroundColor(colour).tag(tag)"))
+        let motion = try appSource("ThemeMotion.swift")
+        let draw = try XCTUnwrap(motion.components(separatedBy: "enum ArtDraw {").last?.components(separatedBy: "/// The page ground per theme").first)
+        let runeParts = try XCTUnwrap(draw.components(separatedBy: "/// D-243: symbol tags.").last?
+            .components(separatedBy: "/// Sign i of the currency field as a symbol").first)
+        XCTAssertTrue(runeParts.contains("static func glowingRune(") && runeParts.contains("static func watermark("),
+                      "the slice holds the rune renderers")
+        XCTAssertFalse(drawsADisc(runeParts), "no disc in the runes' symbols or renderers")
+        let glyphGlow = try motionSection("enum GlyphGlow {", to: "\n}\n")
+        XCTAssertFalse(drawsADisc(glyphGlow), "GlyphGlow draws the glyph, never a disc")
+        XCTAssertTrue(glyphGlow.contains("CTFontCreatePathForGlyph(runFont, glyph, &at)"), "it fills the glyph's own outline")
+        let layer = try motionSection("struct RuneLayer: View {", to: "\n}\n")
+        XCTAssertFalse(drawsADisc(layer))
+        let ring = try XCTUnwrap(try appSource("YouProgress.swift").components(separatedBy: "extension RuneRing: View {").last?
+            .components(separatedBy: "\n}\n").first)
+        XCTAssertFalse(drawsADisc(ring), "the ring's lit runes glow from their glyphs")
+        XCTAssertFalse(motion.contains("RingTurn.litHalo") || motion.contains("RuneGlow.halo"), "the disc's values are gone")
+        // Built once: only the symbol makers ask GlyphGlow; the per-frame renderers draw resolved symbols.
+        func body(_ name: String) throws -> String {
+            try XCTUnwrap(draw.components(separatedBy: name).last?.components(separatedBy: "\n    }\n").first)
+        }
+        for name in ["static func runes(", "static func heroRunes(", "static func watermark(", "private static func glowingRune("] {
+            XCTAssertFalse(try body(name).contains("GlyphGlow."), "\(name) builds no mask per frame")
+        }
+        XCTAssertEqual(draw.components(separatedBy: "GlyphGlow.").count - 1, 1, "one maker: glowSymbol")
+    }
+
+    /// D-246: GlyphGlow builds each mask once a process: a second ask, or a size in the same whole-point bucket, builds
+    /// nothing (the counter); a new size or blur builds one (the negative). The mask is the glyph's Text box plus 4 sigma a
+    /// side, and its blurred peak is motion.py 5a's for every Futhark glyph (it measures the same Gaussian of the same
+    /// outline), so the floors' model (the peak under the full core) is the shell's.
+    func testGlyphGlowIsBuiltOnceAndIsMotionPysMask() {
+        let before = GlyphGlow.builds
+        let a = GlyphGlow.mask("\u{16DE}", size: 41, blur: RuneGlow.blur)
+        XCTAssertEqual(GlyphGlow.builds, before + 1, "the first ask builds it")
+        let b = GlyphGlow.mask("\u{16DE}", size: 41, blur: RuneGlow.blur)
+        _ = GlyphGlow.mask("\u{16DE}", size: 40.7, blur: RuneGlow.blur)
+        for _ in 0..<50 { _ = GlyphGlow.view("\u{16DE}", size: 41, blur: RuneGlow.blur) }
+        XCTAssertEqual(GlyphGlow.builds, before + 1, "never again, in the same bucket too")
+        XCTAssertTrue(a.image === b.image, "the cached image itself")
+        _ = GlyphGlow.mask("\u{16DE}", size: 42, blur: RuneGlow.blur)
+        XCTAssertEqual(GlyphGlow.builds, before + 2, "a new size builds one")
+        _ = GlyphGlow.mask("\u{16DE}", size: 42, blur: 0.12)
+        XCTAssertEqual(GlyphGlow.builds, before + 3, "a new blur builds one")
+        // The box: the Text box (advance by ascender + descender, 1.15 em) plus 4 sigma a side, to a whole pixel.
+        let sigma = 0.18 * 41
+        XCTAssertGreaterThanOrEqual(Double(a.size.height), 1.15 * 41 + 8 * sigma - 1e-9)
+        XCTAssertLessThan(Double(a.size.height), 1.15 * 41 + 8 * sigma + 1 / Double(a.scale) + 1e-9)
+        XCTAssertGreaterThanOrEqual(Double(a.size.width), 0.62 * 41 + 8 * sigma - 1e-9, "U+16DE's advance is 0.62 em")
+        XCTAssertEqual(Double(a.scale), min(3, 6 / sigma), accuracy: 1e-9, "six pixels a sigma")
+        // motion.py 5a's peaks (blur 0.18), each glyph at a page rune's size: motion.py's mask (within 0.01).
+        for (glyph, peak) in GlyphGlowGoldens.peaks {
+            let m = GlyphGlow.mask(glyph, size: 20, blur: RuneGlow.blur)
+            XCTAssertEqual(m.peak, peak, accuracy: 0.01, "U+\(String(glyph.unicodeScalars.first!.value, radix: 16, uppercase: true))'s peak")
+        }
+        // D-246 fix wave (M1): the floors (AppearanceTests) take motion.py's layer peak, so the link to the masks the shell
+        // DRAWS is one-sided and tight: every mask a layer draws, at the size it draws it, peaks at most motion.py's layer
+        // peak + 0.002 (the 8-bit image rounds within 0.002 of it). A two-sided 0.01 let a page peak of 0.353 through.
+        var pagePeak = 0.0, heroPeak = 0.0
+        for i in 0..<RuneDrift.count {
+            let p = RuneDrift.still(i, in: .zero)
+            let peak = GlyphGlow.mask(p.glyph, size: p.size, blur: RuneGlow.blur).peak
+            XCTAssertLessThanOrEqual(peak, GlyphGlowGoldens.page + 0.002, "page rune \(i) at \(p.size)")
+            pagePeak = max(pagePeak, peak)
+        }
+        for (i, s) in HeroRunes.specs.enumerated() {
+            let peak = GlyphGlow.mask(s.glyph, size: s.size, blur: RuneGlow.blur).peak
+            XCTAssertLessThanOrEqual(peak, GlyphGlowGoldens.hero + 0.002, "hero row \(i) at \(s.size)")
+            heroPeak = max(heroPeak, peak)
+        }
+        let fehuPeak = GlyphGlow.mask(Runes.balance, size: ThemeArt.m("heroWatermark"), blur: RuneGlow.blur).peak
+        XCTAssertLessThanOrEqual(fehuPeak, GlyphGlowGoldens.fehu + 0.002, "the ᚠ at 118")
+        XCTAssertGreaterThan(pagePeak, GlyphGlowGoldens.page - 0.01, "the page's masks are motion.py's")
+        XCTAssertGreaterThan(heroPeak, GlyphGlowGoldens.hero - 0.01, "the hero's masks are motion.py's")
+        XCTAssertGreaterThan(fehuPeak, GlyphGlowGoldens.fehu - 0.01, "the ᚠ's mask is motion.py's")
+    }
+
+    /// D-246: the glow sits on the ink. The mask's centre of mass (the blur keeps it) lands on the centre of mass of the
+    /// glyph as SwiftUI lays its Text out, measured from each box's centre, for the ᚠ at 118 and a page rune at 27.
+    @MainActor
+    func testTheGlowSitsOnTheGlyphsInk() throws {
+        func centroid(_ image: CGImage, scale: CGFloat) -> (x: Double, y: Double) {
+            let w = image.width, h = image.height
+            var px = [UInt8](repeating: 0, count: w * h * 4)
+            px.withUnsafeMutableBytes { raw in
+                let ctx = CGContext(data: raw.baseAddress, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 4 * w,
+                                    space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+                ctx?.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+            }
+            var sx = 0.0, sy = 0.0, total = 0.0
+            for y in 0..<h { for x in 0..<w {
+                let a = Double(px[4 * (y * w + x) + 3])
+                sx += a * (Double(x) + 0.5); sy += a * (Double(y) + 0.5); total += a
+            } }
+            return ((sx / total - Double(w) / 2) / Double(scale), (sy / total - Double(h) / 2) / Double(scale))
+        }
+        for (glyph, size) in [(Runes.balance, 118.0), ("\u{16DE}", 27.0), ("\u{16C3}", 25.0)] {
+            let renderer = ImageRenderer(content: Text(verbatim: glyph).font(TypeRole.rune(size)).foregroundColor(.white))
+            renderer.scale = 3
+            let text = try XCTUnwrap(renderer.cgImage)
+            let ink = centroid(text, scale: 3)
+            let m = GlyphGlow.mask(glyph, size: size, blur: RuneGlow.blur)
+            let glow = centroid(try XCTUnwrap(m.image.cgImage), scale: m.scale)
+            XCTAssertEqual(glow.x, ink.x, accuracy: 0.02 * size, "\(glyph) at \(size): across")
+            XCTAssertEqual(glow.y, ink.y, accuracy: 0.02 * size, "\(glyph) at \(size): down")
+            XCTAssertEqual(Double(text.height) / 3, 1.15 * size, accuracy: 0.7, "the Text box is ascender to descender")
+        }
+    }
+
     /// D-243 (plan test 2): the glow's alphas. core = the rise's envelope (opacity over 0.18) x (rest + (top - rest) x
-    /// flare), rest = 0.18 x strength; the halo is 0.05 at the top of a flare, in proportion below it. Over 16 runes and
-    /// 600 s the page's core never passes 0.19 nor its halo 0.05, the hero's never 0.20. The still frame: the still pose's
-    /// 0.10 x strength (page 0.079, hero 0.083), no halo; a still frame never carries a flare (the negative).
+    /// flare), rest = 0.18 x strength; D-246: the glow (the blurred glyph's alpha, motion.py 5a) is 0.120 on the page and
+    /// 0.345 on the hero at the top of a flare, in proportion below it, blurred by 0.18 x the size. Over 16 runes and
+    /// 600 s the page's core never passes 0.19 nor its glow 0.120, the hero's never 0.20 nor 0.345. The still frame: the
+    /// still pose's 0.10 x strength (page 0.079, hero 0.083), no glow; a still frame never carries a flare (the negative).
     func testTheGlowAlphasAreTheMeasuredOnes() {
         XCTAssertEqual(RuneGlow.pageFlare, 0.19)
         XCTAssertEqual(RuneGlow.heroFlare, 0.20)
-        XCTAssertEqual(RuneGlow.halo, 0.05)
-        XCTAssertEqual(RuneGlow.haloRadius, 0.8)
+        XCTAssertEqual(RuneGlow.blur, 0.18)
+        // D-246 fix wave (I1, amended on purpose; 0.145 and 0.8043 before): 1e's cap with the receiver's measured ink.
+        XCTAssertEqual(RuneGlow.pageGlow, 0.120)
+        XCTAssertEqual(RuneGlow.heroGlow, 0.345)
+        XCTAssertEqual(RuneGlow.pageReach, 0.7899)
+        XCTAssertEqual(RuneGlow.heroReach, 0.8567)
         let page = Strength.of("norsePageRunes"), hero = Strength.of("norseHeroRunes")
-        let want: [(Double, Double, Double, Double, Double, Double)] = [  // strength, top, opacity, glow, core, halo
-            (0.79, 0.19, 0.18, 0, 0.142200, 0.037421), (0.79, 0.19, 0.18, 0.5, 0.166100, 0.043711),
-            (0.79, 0.19, 0.18, 1, 0.19, 0.05), (0.79, 0.19, 0.09, 0.5, 0.083050, 0.021855),
-            (0.83, 0.20, 0.18, 0, 0.149400, 0.037350), (0.83, 0.20, 0.18, 0.5, 0.174700, 0.043675),
-            (0.83, 0.20, 0.18, 1, 0.20, 0.05), (0.83, 0.20, 0.09, 0.5, 0.087350, 0.021837),
+        let want: [(Double, Double, Double, Double, Double, Double, Double)] = [  // strength, top, glowTop, opacity, flare, core, glow
+            (0.79, 0.19, 0.120, 0.18, 0, 0.142200, 0.089811), (0.79, 0.19, 0.120, 0.18, 0.5, 0.166100, 0.104905),
+            (0.79, 0.19, 0.120, 0.18, 1, 0.19, 0.120), (0.79, 0.19, 0.120, 0.09, 0.5, 0.083050, 0.052453),
+            (0.83, 0.20, 0.345, 0.18, 0, 0.149400, 0.257715), (0.83, 0.20, 0.345, 0.18, 0.5, 0.174700, 0.301357),
+            (0.83, 0.20, 0.345, 0.18, 1, 0.20, 0.345), (0.83, 0.20, 0.345, 0.09, 0.5, 0.087350, 0.150679),
         ]
-        for (k, top, opacity, glow, core, halo) in want {
-            let a = RuneGlow.alphas(opacity: opacity, strength: k, top: top, glow: glow, still: false)
-            near(a.core, core, 1e-6, "core at \(k) \(opacity) \(glow)")
-            near(a.halo, halo, 1e-6, "halo at \(k) \(opacity) \(glow)")
+        for (k, top, glowTop, opacity, flare, core, glow) in want {
+            let a = RuneGlow.alphas(opacity: opacity, strength: k, top: top, flare: flare, glowTop: glowTop, still: false)
+            near(a.core, core, 1e-6, "core at \(k) \(opacity) \(flare)")
+            near(a.glow, glow, 1e-6, "glow at \(k) \(opacity) \(flare)")
         }
         for (k, still) in [(page, 0.079), (hero, 0.083)] {
-            let a = RuneGlow.alphas(opacity: 0.10, strength: k, top: RuneGlow.pageFlare, glow: 1, still: true)
+            let a = RuneGlow.alphas(opacity: 0.10, strength: k, top: RuneGlow.pageFlare, flare: 1, glowTop: RuneGlow.pageGlow, still: true)
             near(a.core, still, 1e-9, "the still core at \(k)")
-            XCTAssertEqual(a.halo, 0, "no halo when still")
+            XCTAssertEqual(a.glow, 0, "no glow when still")
         }
         let size = CGSize(width: 402, height: 874)
-        var pageCore = 0.0, pageHalo = 0.0
+        var pageCore = 0.0, pageGlow = 0.0
         for i in 0..<RuneDrift.count {
             for step in 0..<(600 * 30 / 7) {
                 let t = Double(step * 7) / 30
                 let a = RuneGlow.alphas(opacity: RuneDrift.pose(i, t, in: size).opacity, strength: page, top: RuneGlow.pageFlare,
-                                        glow: RuneGlow.flare(i, t), still: false)
+                                        flare: RuneGlow.flare(i, t), glowTop: RuneGlow.pageGlow, still: false)
                 pageCore = max(pageCore, a.core)
-                pageHalo = max(pageHalo, a.halo)
+                pageGlow = max(pageGlow, a.glow)
                 let still = RuneGlow.alphas(opacity: RuneDrift.still(i, in: size).opacity, strength: page,
-                                            top: RuneGlow.pageFlare, glow: RuneGlow.flare(i, t), still: true)
+                                            top: RuneGlow.pageFlare, flare: RuneGlow.flare(i, t), glowTop: RuneGlow.pageGlow, still: true)
                 XCTAssertEqual(still.core, 0.10 * page, accuracy: 1e-12, "a still rune never flares")
-                XCTAssertEqual(still.halo, 0, "a still rune has no halo")
+                XCTAssertEqual(still.glow, 0, "a still rune has no glow")
             }
         }
         XCTAssertLessThanOrEqual(pageCore, 0.19 + 1e-12)
-        XCTAssertLessThanOrEqual(pageHalo, 0.05 + 1e-12)
+        XCTAssertLessThanOrEqual(pageGlow, 0.120 + 1e-12)
         XCTAssertGreaterThan(pageCore, 0.185, "the page runes do flare")
         let heroSize = CGSize(width: 343, height: 260)
         var heroCore = 0.0
@@ -1123,9 +1289,9 @@ final class ThemeMotionTests: XCTestCase {
             for step in 0..<(600 * 10) {
                 let t = Double(step) / 10
                 let a = RuneGlow.alphas(opacity: HeroRunes.pose(i, t, in: heroSize).opacity, strength: hero,
-                                        top: RuneGlow.heroFlare, glow: HeroRunes.flare(i, t), still: false)
+                                        top: RuneGlow.heroFlare, flare: HeroRunes.flare(i, t), glowTop: RuneGlow.heroGlow, still: false)
                 heroCore = max(heroCore, a.core)
-                XCTAssertLessThanOrEqual(a.halo, 0.05 + 1e-12)
+                XCTAssertLessThanOrEqual(a.glow, 0.345 + 1e-12)
             }
         }
         XCTAssertLessThanOrEqual(heroCore, 0.20 + 1e-12)
@@ -1135,8 +1301,11 @@ final class ThemeMotionTests: XCTestCase {
     /// D-243 (plan test 3): the hero's own rising runes, build.py's seven (j = 3...9) in the mock-up's order, each in an
     /// even lane LEFT of the ᚠ (x is the glyph centre, 0.050 + 0.085 x row). They rise as the page's do on the hero's
     /// height; the still frame holds them at the still layout. On the narrowest hero each rune's ink (0.30 x its size)
-    /// stays inside the inner frame's interior (heroFrameInset + 1) and its em box inside the hero, and no rune's halo
-    /// (0.8 x size) reaches another lane's ink (motion.py 1d). The mock's 0.050 lane cannot hold row 0's whole em box
+    /// stays inside the inner frame's interior (heroFrameInset + 1) and its em box inside the hero. D-246 fix wave (I1, M4;
+    /// amended on purpose: "no rune's glow reaches another lane's ink" took the receiving ink as D-243's 0.30 disc, which
+    /// undercounts the measured ink, 0.4463 x size): with the measured ink no two rows' inks meet at any height, and the
+    /// glow a row's ink takes from the others at their lanes, each at its flare's top, is motion.py 1d's lane bound
+    /// (0.011468), which the floors hold (AppearanceTests). The mock's 0.050 lane cannot hold row 0's whole em box
     /// inside the interior (3.90 from the edge on a 328 wide hero); the clip trims only empty em box there.
     func testTheHeroRunesTable() {
         XCTAssertEqual(HeroRunes.specs, [
@@ -1181,18 +1350,40 @@ final class ThemeMotionTests: XCTestCase {
                 XCTAssertGreaterThanOrEqual(x - 0.30 * s.size, inner, "row \(i)'s ink inside the interior at \(width)")
                 XCTAssertLessThanOrEqual(x + 0.30 * s.size, width - inner, "row \(i)'s ink inside the interior at \(width)")
                 XCTAssertGreaterThanOrEqual(x - s.size / 2, 0, "row \(i)'s em box inside the hero at \(width)")
-                for (j, o) in HeroRunes.specs.enumerated() where j != i {
-                    XCTAssertGreaterThanOrEqual(abs(s.x - o.x) * width, RuneGlow.haloRadius * s.size + 0.30 * o.size,
-                                                "row \(i)'s halo stays off row \(j)'s ink at \(width)")
-                }
             }
         }
+        // The lanes with the measured ink (motion.py 1d, on 328, 343 and 402): row j's glow on row i's ink is
+        // heroGlow x min(peak, Phi(-(r - ink s_j) / (blur s_j))), r the lane distance less row i's ink.
+        func phi(_ x: Double) -> Double { erfc(-x / 2.0.squareRoot()) / 2 }
+        let ink = GlyphGlowGoldens.inkHero
+        var laneGlow = 0.0
+        for width in [328.0, 343.0, 402.0] {
+            for (i, s) in HeroRunes.specs.enumerated() {
+                var glow = 0.0
+                for (j, o) in HeroRunes.specs.enumerated() where j != i {
+                    let gap = abs(s.x - o.x) * width
+                    XCTAssertGreaterThanOrEqual(gap, ink * (s.size + o.size), "rows \(i) and \(j)'s measured inks never meet at \(width)")
+                    let r = max(0, gap - ink * s.size)
+                    glow += RuneGlow.heroGlow * min(GlyphGlowGoldens.hero, phi(-(r - ink * o.size) / (RuneGlow.blur * o.size)))
+                }
+                laneGlow = max(laneGlow, glow)
+            }
+        }
+        near(laneGlow, GlyphGlowGoldens.heroLaneGlow, 1e-5, "motion.py 1d's lane bound (its inks rounded to 4 places)")
+        // Why the rule changed (the negative of the old one): with the measured ink, "the glow stays off another lane's
+        // ink" (gap >= heroReach s_j + ink s_i) is false on the narrowest hero; D-243's 0.30 receiver hid it.
+        let crossing = HeroRunes.specs.indices.flatMap { i in HeroRunes.specs.indices.filter { $0 != i }.map { (i, $0) } }
+            .filter { i, j in
+                abs(HeroRunes.specs[i].x - HeroRunes.specs[j].x) * 328 < RuneGlow.heroReach * HeroRunes.specs[j].size + ink * HeroRunes.specs[i].size
+            }
+        XCTAssertFalse(crossing.isEmpty, "a glow reaches a neighbour's measured ink")
     }
 
-    /// D-243 (plan test 4): the hero runes keep left of the ᚠ and its halo. The ᚠ is measured in the bundled Vardr Runes
+    /// D-243 (plan test 4): the hero runes keep left of the ᚠ and its glow. The ᚠ is measured in the bundled Vardr Runes
     /// Carved at 118 (its advance, 460/1000 em, motion.py 1d); it sits trailing 13 from the hero's edge, so its centre is
-    /// W - 13 - w / 2 and its halo (0.5 x 118) starts 59 left of that. On the narrowest hero (343) every rune's reach
-    /// (centre + 0.71 x size for a turned em box, + its halo 0.8 x size) stays left of that.
+    /// W - 13 - w / 2 and (D-246) its glow is seen to `WatermarkGlow.glowLeft` x 118 (71.41) left of that (D-243's halo:
+    /// 59). On the narrowest hero (343) every rune's reach (centre + the farther of 0.71 x size for a turned em box and
+    /// its glow's RuneGlow.heroReach x size) stays left of that.
     func testTheHeroRunesStayLeftOfTheFehu() throws {
         let url = try XCTUnwrap(Bundle.main.url(forResource: "VardrRunes-CarvedRegular", withExtension: "ttf"), "the rune font is not bundled")
         let descriptors = try XCTUnwrap(CTFontManagerCreateFontDescriptorsFromURL(url as CFURL) as? [CTFontDescriptor])
@@ -1207,33 +1398,34 @@ final class ThemeMotionTests: XCTestCase {
         CTFontGetAdvancesForGlyphs(font, .horizontal, &glyph, &advance, 1)
         XCTAssertEqual(Double(advance.width), 54.28, accuracy: 0.01, "motion.py: 0.460 em at 118")
         let width = 343.0
-        let fehuHaloLeft = width - ThemeArt.m("heroWatermarkTrailing") - Double(advance.width) / 2 - WatermarkGlow.haloRadius * size
-        let reach = HeroRunes.specs.map { width * $0.x + (0.71 + RuneGlow.haloRadius) * $0.size }.max() ?? .infinity
-        XCTAssertLessThan(reach, fehuHaloLeft, "the hero runes keep left of the ᚠ's halo")
-        near(reach, 223.79, 0.01, "motion.py 1d, 343 wide")
-        near(fehuHaloLeft, 243.86, 0.01, "motion.py 1d, 343 wide")
+        XCTAssertEqual(WatermarkGlow.glowLeft, 0.6052)
+        let fehuGlowLeft = width - ThemeArt.m("heroWatermarkTrailing") - Double(advance.width) / 2 - WatermarkGlow.glowLeft * size
+        let reach = HeroRunes.specs.map { width * $0.x + max(0.71, RuneGlow.heroReach) * $0.size }.max() ?? .infinity
+        XCTAssertLessThan(reach, fehuGlowLeft, "the hero runes keep left of the ᚠ's glow")
+        near(reach, 210.07, 0.01, "motion.py 1d, 343 wide")
+        near(fehuGlowLeft, 231.45, 0.01, "motion.py 1d, 343 wide")
     }
 
     /// D-243 (plan test 5): the ᚠ glows now and then: 0.16 at rest, up to 0.208 on a 9 s cycle (rising from 0.55 of it,
-    /// top at 0.70, rest again at 0.88, each half eased in and out), with a halo of 0.10 at the top of the glow (the floor's
-    /// cap is 0.145, motion.py 1c''). Still: 0.16, no halo, at any time (today's ᚠ, pixel for pixel).
+    /// top at 0.70, rest again at 0.88, each half eased in and out), D-246: over its own blurred shape at 0.305 at the top
+    /// of the glow (motion.py 5a: the disc's light over its ink; 1c''s cap 0.625). Still: 0.16, no glow, at any time
+    /// (today's ᚠ, pixel for pixel).
     func testTheWatermarkGlows() {
         XCTAssertEqual(WatermarkGlow.rest, 0.16)
         XCTAssertEqual(WatermarkGlow.peak, 0.208)
         XCTAssertEqual(WatermarkGlow.cycle, 9)
         XCTAssertEqual([WatermarkGlow.rise, WatermarkGlow.top, WatermarkGlow.fall], [0.55, 0.70, 0.88])
-        XCTAssertEqual(WatermarkGlow.halo, 0.10)
-        XCTAssertEqual(WatermarkGlow.haloRadius, 0.5)
-        let want: [(Double, Double, Double, Double)] = [  // t, glow, alpha, halo
-            (0, 0, 0.16, 0), (4.95, 0, 0.16, 0), (5.6, 0.468099, 0.182469, 0.046810), (6.3, 1, 0.208, 0.10),
-            (7.0, 0.615709, 0.189554, 0.061571), (7.92, 0, 0.16, 0), (8.99, 0, 0.16, 0),
+        XCTAssertEqual(WatermarkGlow.glyphGlow, 0.305)
+        let want: [(Double, Double, Double, Double)] = [  // t, glow, alpha, glyph glow
+            (0, 0, 0.16, 0), (4.95, 0, 0.16, 0), (5.6, 0.468099, 0.182469, 0.142770), (6.3, 1, 0.208, 0.305),
+            (7.0, 0.615709, 0.189554, 0.187791), (7.92, 0, 0.16, 0), (8.99, 0, 0.16, 0),
         ]
-        for (t, glow, alpha, halo) in want {
+        for (t, glow, alpha, glyphGlow) in want {
             near(WatermarkGlow.glow(t), glow, 1e-6, "glow at \(t)")
             near(WatermarkGlow.alpha(t, still: false), alpha, 1e-6, "alpha at \(t)")
-            near(WatermarkGlow.haloAlpha(t, still: false), halo, 1e-6, "halo at \(t)")
+            near(WatermarkGlow.glyphGlowAlpha(t, still: false), glyphGlow, 1e-6, "glyph glow at \(t)")
             XCTAssertEqual(WatermarkGlow.alpha(t, still: true), 0.16, "still at \(t)")
-            XCTAssertEqual(WatermarkGlow.haloAlpha(t, still: true), 0, "no halo when still at \(t)")
+            XCTAssertEqual(WatermarkGlow.glyphGlowAlpha(t, still: true), 0, "no glow when still at \(t)")
         }
         for step in 0..<900 {
             let t = Double(step) * 0.02
@@ -1247,8 +1439,7 @@ final class ThemeMotionTests: XCTestCase {
     func testTheRingTurns() {
         XCTAssertEqual(RingTurn.period, 90)
         XCTAssertEqual(RingTurn.still, 0)
-        XCTAssertEqual(RingTurn.litHalo, 0.35)
-        XCTAssertEqual(RingTurn.litHaloRadius, 0.5)
+        XCTAssertEqual(RingTurn.litGlow, 0.995)
         let want: [(Double, Double)] = [(0, 0), (22.5, 90), (45, 180), (89.99, 359.96), (90, 0), (900, 0), (-22.5, 270),
                                         (.nan, 0), (.infinity, 0), (-.infinity, 0)]
         for (s, d) in want { near(RingTurn.degrees(s), d, 1e-6, "ring at \(s)") }
@@ -1262,7 +1453,7 @@ final class ThemeMotionTests: XCTestCase {
     /// D-243 (plan test 6, the renderers' half): You's ring turns inside `ArtTurn` on the art's clock (`MotionClock.artTicks`:
     /// Reduce Motion, Less motion and power saving still it; no read of power saving of its own), from upright each time it
     /// starts, and the picture inside it does not turn. Negative: the done check's ring keeps its own moment's turn and is
-    /// never wrapped in ArtTurn. Every lit rune carries the static halo, in both rings.
+    /// never wrapped in ArtTurn. Every lit rune carries the static glow (D-246: its glyph's, D-243's halo), in both rings.
     func testYouRingTurnsAndTheDoneRingKeepsItsOwnClock() throws {
         let profile = try appSource("Profile.swift")
         let ringed = try XCTUnwrap(profile.components(separatedBy: "private var ringed: some View {").last?.components(separatedBy: "\n    }\n").first)
@@ -1289,12 +1480,16 @@ final class ThemeMotionTests: XCTestCase {
         let done = try appSource("DoneMoments.swift")
         XCTAssertFalse(done.contains("ArtTurn"), "the done ring keeps its own moment's turn")
         XCTAssertTrue(done.contains("RuneRing(done: 1, total: 1)\n                        .rotationEffect(.degrees(pose.degrees))"))
-        // The lit halo: in RuneRing itself, so both rings carry it.
+        // The lit glow: in RuneRing itself, so both rings carry it. D-246: the rune's own blurred glyph, at its size.
         let ring = try XCTUnwrap(try appSource("YouProgress.swift").components(separatedBy: "extension RuneRing: View {").last?
             .components(separatedBy: "\n}\n").first)
-        XCTAssertTrue(ring.contains("if i < lit {"), "lit runes only")
-        XCTAssertTrue(ring.contains("RadialGradient(colors: [Tokens.ring.opacity(RingTurn.litHalo), Tokens.ring.opacity(0)],"))
-        XCTAssertTrue(ring.contains("endRadius: RingTurn.litHaloRadius * size"))
+        XCTAssertTrue(ring.contains("""
+                                if i < lit {
+                                    GlyphGlow.view(rune, size: size, blur: RuneGlow.blur)
+                                        .foregroundStyle(Tokens.ring)
+                                        .opacity(RingTurn.litGlow)
+                                }
+        """), "lit runes only, each its own glyph's glow in the ring's gold")
     }
 }
 

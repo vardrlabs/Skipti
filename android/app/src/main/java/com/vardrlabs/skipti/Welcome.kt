@@ -61,7 +61,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathMeasure
 import androidx.compose.ui.graphics.RectangleShape
-import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.scale
@@ -350,6 +350,13 @@ object WelcomeProgress {
     /** The glow's blur, as a Gaussian sigma (the mock-up's stdDeviation 3.2; iOS's blur radius). */
     const val GLOW_BLUR = 3.2f
 
+    /** D-246 fix wave (M5): a lit rune's glow is [GlyphGlow]'s cached mask (one glow language with the page, the hero,
+     *  the ᚠ and the ring): a Gaussian of [GLOW_BLUR] dp at [RUNE_SIZE], this fraction of the size. */
+    val RUNE_GLOW: Double = GLOW_BLUR.toDouble() / RUNE_SIZE.toDouble()
+
+    /** The five runes' glow masks: GlyphGlow's cache, built once a process (asked again, it builds nothing). */
+    fun glowMasks(raster: GlyphGlow.Raster): List<GlyphGlow.Mask> = runes.map { GlyphGlow.mask(it, RUNE_SIZE.toDouble(), RUNE_GLOW, raster) }
+
     // Aurora and Vardr Labs: a 240 dp line, four marks.
     const val WIDTH = 240f
     const val LINE_MARKS = 4
@@ -634,7 +641,9 @@ private fun VardrBar(pose: WelcomeProgress.Pose, dark: Boolean) {
 
 /** Decision 197: the road (each arch's track in the deep gold, the gold fill running along it by length, round caps,
  *  a small bright spark at its front while it sweeps) and the five runes, each placed by its INK centre; a lit rune is
- *  luminous: the lighter gold over a blurred copy of the glyph itself (the text's own shadow: never a disc). */
+ *  luminous: the lighter gold over a blurred copy of the glyph itself (never a disc). D-246 fix wave (M5): that copy is
+ *  [GlyphGlow]'s cached mask, remembered here and only drawn per frame (it was the text's own blurred shadow, re-blurred
+ *  every frame). */
 @Composable
 private fun NorseRoad(pose: WelcomeProgress.Pose, dark: Boolean) {
     val measurer = rememberTextMeasurer()
@@ -649,6 +658,9 @@ private fun NorseRoad(pose: WelcomeProgress.Pose, dark: Boolean) {
     val ring = Tok.ring(dark)
     val litInk = ThemeArt.color("diamondTop")
     val unlitInk = ThemeArt.color("runeUnlit")
+    val raster = rememberGlyphRaster()
+    val glows = remember(raster) { WelcomeProgress.glowMasks(raster) }
+    val tint = remember(ring) { ColorFilter.tint(ring) }
     Canvas(Modifier.size(WelcomeProgress.NORSE_WIDTH.dp, WelcomeProgress.NORSE_HEIGHT.dp)) {
         val k = 1.dp.toPx()
         val measure = PathMeasure()
@@ -670,19 +682,14 @@ private fun NorseRoad(pose: WelcomeProgress.Pose, dark: Boolean) {
                 drawCircle(litInk, WelcomeProgress.SPARK_RADIUS * k, WelcomeProgress.roadPointByShare(i, share) * k)
             }
         }
-        val blur = glowRadiusPx(density.density)
         for (i in WelcomeProgress.runes.indices) {
             val centre = WelcomeProgress.runeCentre(i) * k
             val ink = inks[i]
             val at = RuneInk.topLeft(ink.left, ink.top, ink.right, ink.bottom, centre)
             val lit = pose.lit[i]
             scale(pose.scale[i].toFloat(), pivot = centre) {
-                drawText(
-                    glyphs[i],
-                    color = if (lit) litInk else unlitInk,
-                    topLeft = at,
-                    shadow = if (lit) Shadow(ring.copy(alpha = pose.glow[i].toFloat()), Offset.Zero, blur) else null,
-                )
+                if (lit) with(ArtDraw) { glyphGlow(glows[i], at.x, at.y + glyphs[i].firstBaseline, pose.glow[i].toFloat(), tint) }
+                drawText(glyphs[i], color = if (lit) litInk else unlitInk, topLeft = at)
             }
         }
     }

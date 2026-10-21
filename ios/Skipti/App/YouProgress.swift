@@ -207,7 +207,8 @@ struct CompletionRing: View {
 }
 
 /// L39: Norse's ring: the 24 runes in order, centred on the radius, 15 degrees apart from 12 o'clock clockwise, each
-/// turned by its angle (tops outward); the first `lit` in the ring's gold over a static halo (D-243), the rest unlit.
+/// turned by its angle (tops outward); the first `lit` in the ring's gold over a static glow (D-246: the rune's own shape
+/// blurred, `GlyphGlow`; D-243's disc halo is gone), the rest unlit.
 /// Decorative. You's ring turns (`ArtTurn` in Profile); the done check's turns on the moment's own clock.
 extension RuneRing: View {
     var body: some View {
@@ -222,14 +223,13 @@ extension RuneRing: View {
                     .font(TypeRole.rune(size))
                     .foregroundStyle(i < lit ? Tokens.ring : ThemeArt.color("runeUnlit"))
                     .fixedSize()
-                    // D-243: a lit rune's static halo, a disc of the ring's gold at RingTurn.litHalo, clear at
-                    // litHaloRadius x the rune's size, centred on the rune (it turns with the ring).
+                    // D-246: a lit rune's static glow, its own shape blurred (GlyphGlow's cached mask, built once) in the
+                    // ring's gold at RingTurn.litGlow, centred on the rune's box (it turns with the rune and the ring).
                     .background {
                         if i < lit {
-                            Circle()
-                                .fill(RadialGradient(colors: [Tokens.ring.opacity(RingTurn.litHalo), Tokens.ring.opacity(0)],
-                                                     center: .center, startRadius: 0, endRadius: RingTurn.litHaloRadius * size))
-                                .frame(width: 2 * RingTurn.litHaloRadius * size, height: 2 * RingTurn.litHaloRadius * size)
+                            GlyphGlow.view(rune, size: size, blur: RuneGlow.blur)
+                                .foregroundStyle(Tokens.ring)
+                                .opacity(RingTurn.litGlow)
                         }
                     }
                     .rotationEffect(angle)
