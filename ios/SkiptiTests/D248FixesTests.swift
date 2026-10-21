@@ -217,7 +217,10 @@ final class D248FixesTests: XCTestCase {
         XCTAssertFalse(AmountFocus.focusesOnOpen(editing: false, already: true), "once (not back from a choice page)")
         let add = try appSource("AddExpenseScreen.swift")
         XCTAssertTrue(add.contains(".focused($amountFocused)"))
-        XCTAssertTrue(add.contains("if AmountFocus.focusesOnOpen(editing: editing != nil, already: focusedOnce) {"))
+        // Sabotage pin (D-248 iOS lane, row R3b): the decision alone survived dropping the line that sets the focus. The
+        // block whole: once decided, it is marked and the field takes the keyboard.
+        XCTAssertTrue(add.contains("if AmountFocus.focusesOnOpen(editing: editing != nil, already: focusedOnce) {\n"
+            + "                focusedOnce = true\n                amountFocused = true\n            }"))
     }
 
     // MARK: - U30.1 tab-proof words
@@ -286,6 +289,11 @@ final class D248FixesTests: XCTestCase {
         XCTAssertTrue(list.contains("ExpenseUndo.offer(expense, store: store, editor: group(of: expense)?.selfId)"))
         XCTAssertFalse(list.contains("undoBar"))
         XCTAssertFalse(list.contains("undoable"))
+        // Sabotage pin (D-248 iOS lane, row R10): a foot Undo row under a new name survived the two names above. The
+        // list's one Undo is the toast's offer: it calls ExpenseUndo once and draws no Undo of its own.
+        XCTAssertEqual(list.components(separatedBy: "ExpenseUndo.").count - 1, 1, "the list's only Undo is the toast")
+        XCTAssertFalse(list.contains("Button(\"Undo\")"), "no Undo button on the list")
+        XCTAssertFalse(list.contains("DoneCopy.undo"), "no Undo label on the list")
     }
 
     // MARK: - U30.6 a new group opens
