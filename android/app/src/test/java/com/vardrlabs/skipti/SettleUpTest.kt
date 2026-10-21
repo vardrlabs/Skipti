@@ -510,6 +510,32 @@ class SettleUpTest {
         assertTrue("the screen shows the you-only words", "SettleAllCopy.youSettled(named.group.name)" in src("SettleAll.kt"))
     }
 
+    /** D-247 sabotage pin (row A9): each settled state draws its own two lines on the branch of core's state: "all
+     *  settled" with "Nobody owes anybody. Nice.", "You're settled in" with "You don't owe anything here." (never the
+     *  all-settled detail under the you-only title). The twin of iOS's testEachSettledStateDrawsItsOwnWords. */
+    @Test
+    fun each_settled_state_draws_its_own_words() {
+        val screen = src("SettleAll.kt").substringAfter("fun SettleAllScreen(").substringBefore("fun OtherAmountSheet(")
+        assertEquals(1, count(screen, "val all = section.state == SettleState.ALL_SETTLED"))
+        assertEquals("the title", 1, count(screen, "if (all) SettleAllCopy.settled(named.group.name) else SettleAllCopy.youSettled(named.group.name),"))
+        assertEquals("the detail", 1, count(screen, "if (all) SettleAllCopy.SETTLED_DETAIL else SettleAllCopy.YOU_SETTLED_DETAIL,"))
+        assertEquals("the all-settled detail only on its own branch", 1, count(screen, "SettleAllCopy.SETTLED_DETAIL"))
+    }
+
+    /** D-247 sabotage pin (row A10): the sheet's Settle stays disabled until the field holds an amount within the debt (the
+     *  verdict settles) and while a tap's refusal stands; a tap settles only a Settles verdict. The twin of iOS's
+     *  testTheSheetsSettleWaitsForAnAmountWithinTheDebt. */
+    @Test
+    fun the_sheets_settle_waits_for_an_amount_within_the_debt() {
+        val sheet = src("SettleAll.kt").substringAfter("fun OtherAmountSheet(")
+        assertEquals(1, count(sheet, "PrimaryAction(SettleAllCopy.SETTLE, inDark, enabled = OtherAmount.settles(verdict) && refused == null) {"))
+        assertEquals("Settle is the sheet's one gated control", 1, count(sheet, "enabled = "))
+        assertEquals(1, count(sheet, "(verdict as? OtherAmount.Verdict.Settles)?.let { refused = onSettle(it.minor) }"))
+        assertFalse("empty, zero, not an amount", OtherAmount.settles(OtherAmount.Verdict.Incomplete))
+        assertFalse("more than owed", OtherAmount.settles(OtherAmount.Verdict.TooMuch(SettleAllCopy.moreThanDebt(false, "Ana"))))
+        assertTrue(OtherAmount.settles(OtherAmount.Verdict.Settles(1)))
+    }
+
     // ---- The creator fall-back (decision 170) ----
 
     /** A group this phone created reads as yours to run until the cloud's roles arrive: the owner's options, never "Ask to

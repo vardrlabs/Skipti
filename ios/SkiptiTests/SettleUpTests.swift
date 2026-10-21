@@ -457,6 +457,33 @@ final class SettleUpTests: XCTestCase {
         XCTAssertTrue(all?.contains("SettleAllCopy.youSettled(named.group.name)") == true, "the screen shows the you-only words")
     }
 
+    /// D-247 sabotage pin (row I11): each settled state draws its own two lines on the branch of core's state: "all
+    /// settled" with "Nobody owes anybody. Nice.", "You're settled in" with "You don't owe anything here." (never the
+    /// all-settled detail under the you-only title). Android's twin is each_settled_state_draws_its_own_words.
+    func testEachSettledStateDrawsItsOwnWords() throws {
+        let all = try appSource("SettleAll.swift")
+        let section = try XCTUnwrap(all.components(separatedBy: "private func sectionView(_ section: SettleSection) -> some View {")
+            .last?.components(separatedBy: "private func debtCard(").first)
+        XCTAssertEqual(count(section, "let all = section.state == .allSettled"), 1)
+        XCTAssertEqual(count(section, "Text(verbatim: all ? SettleAllCopy.settled(named.group.name) : SettleAllCopy.youSettled(named.group.name))"),
+                       1, "the title")
+        XCTAssertEqual(count(section, "Text(verbatim: all ? SettleAllCopy.settledDetail : SettleAllCopy.youSettledDetail)"), 1, "the detail")
+        XCTAssertEqual(count(section, "SettleAllCopy.settledDetail"), 1, "the all-settled detail only on its own branch")
+    }
+
+    /// D-247 sabotage pin (row I3): the sheet's Settle stays disabled until the field holds an amount within the debt (the
+    /// verdict settles) and while a tap's refusal stands; a tap settles only a `.settles` verdict. Android's twin is
+    /// the_sheets_settle_waits_for_an_amount_within_the_debt.
+    func testTheSheetsSettleWaitsForAnAmountWithinTheDebt() throws {
+        let sheet = try XCTUnwrap(try appSource("SettleAll.swift").components(separatedBy: "struct OtherAmountSheet: View {").last)
+        XCTAssertEqual(count(sheet, ".disabled(!OtherAmountSheet.settles(verdict) || refused != nil)"), 1)
+        XCTAssertEqual(count(sheet, ".disabled("), 1, "Settle is the sheet's one disabled control")
+        XCTAssertEqual(count(sheet, "if case .settles(let minor) = verdict { refused = onSettle(minor) }"), 1)
+        XCTAssertFalse(OtherAmountSheet.settles(.incomplete), "empty, zero, not an amount")
+        XCTAssertFalse(OtherAmountSheet.settles(.tooMuch(SettleAllCopy.moreThanDebt(youOwe: false, other: "Ana"))), "more than owed")
+        XCTAssertTrue(OtherAmountSheet.settles(.settles(1)))
+    }
+
     // MARK: - The creator fall-back (decision 170)
 
     /// A group this phone created reads as yours to run until the cloud's roles arrive: the owner's options, never "Ask to
