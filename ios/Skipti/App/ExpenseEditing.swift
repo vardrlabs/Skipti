@@ -184,10 +184,10 @@ enum ExpenseEditing {
 
 /// D-142: an expense opened for editing, with its OWN group (names, and who
 /// "you" are there), which need not be the group selected on Balance, and
-/// the store it lives in.
+/// the store it lives in. D-249: nil for a Just me expense (no group).
 struct ExpenseEditTarget: Identifiable {
     let expense: ProjectedExpenseOut
-    let named: NamedGroupWire
+    let named: NamedGroupWire?
     let store: LedgerStore
     var id: String { expense.id }
 }

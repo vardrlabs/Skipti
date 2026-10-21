@@ -186,6 +186,8 @@ struct ImportConfirmScreen: View {
 
     struct Commit {
         let groupName: String
+        /// D-249: the button after a done import ("Show the group"; "Done" for Just me).
+        var doneLabel: String = ImportCopy.showGroup
         let names: [String: String]
         let save: ([PortExpense]) throws -> Void
         let finish: () -> Void
@@ -288,7 +290,7 @@ struct ImportConfirmScreen: View {
                 .disabled(!model.hasIncludedExpenses)
                 .accessibilityHint("Creates all selected expenses as one unit, or nothing.")
             } else if case .done = model.appliedState, let commit {
-                Button(ImportCopy.showGroup) { commit.finish() }
+                Button(commit.doneLabel) { commit.finish() }
                     .buttonStyle(PrimaryButtonStyle())
             }
         }

@@ -30,6 +30,8 @@ struct ExpenseDetailView: View {
     @State private var actionError: String?
     /// The group's history names (`historyNames`): people removed from it too.
     @State private var history: [String: String] = [:]
+    /// D-249: your ids, so a Just me expense reads "You" (it has no group to name you in).
+    @State private var yourIds: Set<String> = []
 
     var body: some View {
         Group {
@@ -92,7 +94,8 @@ struct ExpenseDetailView: View {
                     .minimumScaleFactor(0.5)
                     .accessibilityLabel(spoken(e.expense))
                 HStack(alignment: .firstTextBaseline) {
-                    micro(String(localized: "Paid by \(name(e.expense.payer))"), ground: true)
+                    // D-249: a Just me expense names its ledger, not a payer (it is always you).
+                    micro(e.expense.group == nil ? SpendingCopy.justMe : String(localized: "Paid by \(name(e.expense.payer))"), ground: true)
                     Spacer()
                     if let ts = e.timestampMs {
                         Text(verbatim: ExpenseListView.dateString(ts, locale: AppLocale.current))
@@ -102,7 +105,12 @@ struct ExpenseDetailView: View {
                 }
             }
 
-            splitCard(e.expense)
+            // D-249: Just me has nothing to split.
+            if e.expense.group != nil {
+                splitCard(e.expense)
+            } else {
+                micro(SpendingCopy.onlyYouNothingToSplit, ground: true)
+            }
 
             VStack(alignment: .leading, spacing: 4) {
                 // Only a creation that names its author says who added it: a
@@ -211,15 +219,19 @@ struct ExpenseDetailView: View {
                     Button("Delete expense", role: .destructive) { delete() }
                     Button("Cancel", role: .cancel) {}
                 } message: {
-                    Text("It leaves your balances. You can undo it right after.")
+                    // D-249: a Just me expense was never in a balance.
+                    Text(verbatim: ExpenseDeleteCopy.message(justMe: e.expense.group == nil))
                 }
                 // D-224 (Design 3): the warning as the question opens.
                 .hapticWarning(when: confirmingDelete)
+            // D-249: a Just me expense edits too (it has no group by design); a group's needs its group here.
             Button("Edit") {
-                if let named { editing = ExpenseEditTarget(expense: e, named: named, store: store) }
+                if ExpenseDeleteCopy.canEdit(group: e.expense.group, named: named) {
+                    editing = ExpenseEditTarget(expense: e, named: named, store: store)
+                }
             }
             .buttonStyle(PrimaryButtonStyle())
-            .disabled(named == nil)
+            .disabled(!ExpenseDeleteCopy.canEdit(group: e.expense.group, named: named))
             .accessibilityHint("Opens this expense in the form, filled in.")
         }
     }
@@ -231,6 +243,8 @@ struct ExpenseDetailView: View {
             let all = try store.projectedExpenses().expenses
             if let found = all.first(where: { $0.id == expenseID && !$0.deleted }) {
                 history = found.expense.group.flatMap { try? store.historyNames(group: $0) } ?? [:]
+                let me = try? store.loadSelf()
+                yourIds = Set([me?.id].compactMap { $0 } + (me?.aliases ?? []))
                 expense = found
                 loadError = nil
             } else {
@@ -270,6 +284,7 @@ struct ExpenseDetailView: View {
     // MARK: - Pieces
 
     private func name(_ id: String) -> String {
+        if expense?.expense.group == nil, yourIds.contains(id) { return ExpenseCopy.you }
         guard let named else { return history[id] ?? String(localized: "Unknown member") }
         return LedgerStore.label(for: id, in: named, history: history)
     }
@@ -395,6 +410,17 @@ struct ExpenseConflictProofScreen: View {
     }
 }
 #endif
+
+/// D-249: the delete confirmation's words and whether Edit is offered, for a group's expense and a Just me one (the
+/// list's long press and the detail page say the same). Android's twin is `ExpenseDeleteCopy`.
+enum ExpenseDeleteCopy {
+    static let groupMessage = "It leaves your balances. You can undo it right after."
+
+    static func message(justMe: Bool) -> String { justMe ? SpendingCopy.deleteMessage : groupMessage }
+
+    /// A Just me expense always; a group's only while this phone holds the group.
+    static func canEdit(group: String?, named: NamedGroupWire?) -> Bool { group == nil || named != nil }
+}
 
 /// D-248 (U30.4): a deleted expense's Undo comes to where the delete happened: the done toast ("Expense deleted", its
 /// description) with Undo, wherever the detail was opened (the group page, Lately, Activity, a notification, the

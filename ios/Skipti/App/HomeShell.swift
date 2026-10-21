@@ -187,12 +187,13 @@ struct HomeShell: View {
         }
         .sheet(isPresented: $adding) {
             NavigationStack {
+                // D-249: the + over Your spending opens on Just me.
                 AddExpenseScreen(onSaved: {
                     adding = false
                     selectedRaw = HomeTab.balance.rawValue
                     // Balance, under the sheet, reads the new expense.
                     SyncStatus.shared.changed()
-                })
+                }, startOnJustMe: SpendingPresence.shared.isShown(on: selection.wrappedValue))
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Cancel") { adding = false }.barButtonText().barTint()

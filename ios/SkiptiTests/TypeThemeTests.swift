@@ -456,7 +456,8 @@ final class TypeThemeTests: XCTestCase {
         try assertSites([
             ("ThemeArt.swift", "size: large ? TypeScale.largeTitle : TypeScale.inlineTitle", 1),
             ("OverviewScreen.swift", "TypeRole.numeric(TypeScale.heroAmount, weight: 700, relativeTo: .largeTitle)", 1),
-            ("OverviewScreen.swift", ".font(TypeRole.body(TypeScale.heroLine))", 3), // D-223: the who-owes line
+            // D-223: the who-owes line. D-249: 4, the no-group hero's dim lines (`heroDim`).
+            ("OverviewScreen.swift", ".font(TypeRole.body(TypeScale.heroLine))", 4),
             // D-223: the old group card's "Settled" went with the scroller; the ledger card says it at the line's size.
             ("OverviewScreen.swift", ".font(TypeRole.body(TypeScale.settledLine))", 0),
             ("HomeParts.swift", ".font(TypeRole.body(TypeScale.detail))", 3), // the ledger line, See all, Lately's meta

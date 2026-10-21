@@ -232,8 +232,9 @@ final class D248FixesTests: XCTestCase {
             sites += text.components(separatedBy: "\"Add your name first.\"").count - 1
             sites += text.components(separatedBy: "\"Create a group first.\"").count - 1
         }
-        // ImportFlow's (older), Settle up's two, Add expense's two.
-        XCTAssertEqual(sites, 5)
+        // ImportFlow's (older), Settle up's two, Add expense's "Create a group first." (D-249: Add expense's "Add your name
+        // first." went: a group waiting on your name no longer stops a Just me expense).
+        XCTAssertEqual(sites, 4)
     }
 
     // MARK: - U30.4 the delete's Undo where it happened
@@ -347,7 +348,7 @@ final class D248FixesTests: XCTestCase {
             InviteCopy.joinTitle, ImportCopy.title, ImportCopy.reviewTitle, "Profile", PeopleCopy.invitations,
             AddPersonCopy.title, PhonesCopy.title, PhonesCopy.deleteTitle, RolesCopy.redistributeTitle, UsernameCopy.title,
             UsernameCopy.change, "Expense", "Sign in", CategoryCopy.category, CategoryCopy.subcategory,
-            AddSheetCopy.splitType, AddSheetCopy.paidBy, AddSheetCopy.group,
+            AddSheetCopy.splitType, AddSheetCopy.paidBy, AddSheetCopy.ledger, SpendingCopy.title,
         ]
     }
 

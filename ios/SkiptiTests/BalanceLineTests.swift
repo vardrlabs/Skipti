@@ -1052,7 +1052,7 @@ final class BalanceLineTests: XCTestCase {
 
         XCTAssertEqual(AddSheetCopy.howMuch, "How much?")
         XCTAssertEqual(AddSheetCopy.whatFor, "What was it for?")
-        XCTAssertEqual(AddSheetCopy.group, "Group")
+        XCTAssertEqual(AddSheetCopy.ledger, "Ledger")
         XCTAssertEqual(AddSheetCopy.summary(effect: 3_200, formatted: "€32.00"), "You\u{2019}ll get back €32.00")
         XCTAssertEqual(AddSheetCopy.summary(effect: -3_200, formatted: "€32.00"), "You\u{2019}ll owe €32.00")
         XCTAssertEqual(AddSheetCopy.summary(effect: 0, formatted: "€0.00"), "Nothing changes for you")

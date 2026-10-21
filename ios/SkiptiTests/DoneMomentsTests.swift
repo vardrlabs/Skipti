@@ -511,7 +511,9 @@ final class DoneMomentsTests: XCTestCase {
     /// string literal; no screen builds a moment of its own.
     func testEverySmallMomentIsPosted() throws {
         let table: [String: (Int, [String])] = [
-            "AddExpenseScreen.swift": (2, ["DoneMoments.expense(edited: false", "DoneMoments.expense(edited: true"]),
+            // D-249: a Just me save posts the same moment (edited or not).
+            "AddExpenseScreen.swift": (3, ["DoneMoments.expense(edited: false", "DoneMoments.expense(edited: true",
+                                           "DoneMoments.expense(edited: editing != nil"]),
             "GroupSheets.swift": (1, ["DoneMoments.groupCreated("]),
             "People.swift": (1, ["AddPersonCopy.done(who, invited: invited)"]),
             "GroupPicker.swift": (1, ["DoneCopy.personRemoved(member.name)"]),
@@ -1090,6 +1092,9 @@ final class DoneMomentsTests: XCTestCase {
         }
         rows.append(SummaryRow(label: "Haptics", parts: [DoneCopy.hapticsSummary], tile: true, trailing: toggle))
         rows.append(SummaryRow(label: "Less motion", parts: [MotionCopy.summary], tile: true, trailing: toggle))
+        // D-249 (decision 163): Spending on Home, the same switch row.
+        // Two lines: the approved words are wider than a 360 dp phone's switch row in every theme.
+        rows.append(SummaryRow(label: "Spending on Home", parts: [SpendingCopy.homeSummary], lines: 2, tile: true, trailing: toggle))
         for lock in LockTimeout.allCases {
             rows.append(SummaryRow(label: "App lock", parts: [SecurityRows.appLockLine(timeout: lock, available: true)], trailing: chevron))
         }

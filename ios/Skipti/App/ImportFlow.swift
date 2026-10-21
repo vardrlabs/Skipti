@@ -33,7 +33,8 @@ enum ImportSource: String, CaseIterable, Identifiable {
         case .splitwise:
             return "One group's spreadsheet export, a .csv file. Everyone in it becomes a person in a new group here."
         case .budgetBakers:
-            return "A records export, a .csv file. Your spending comes in as your own expenses, in a new group with just you."
+            // D-249: Just me or a new group, chosen below.
+            return "A records export, a .csv file. Your spending comes in as your own expenses."
         }
     }
 
@@ -90,6 +91,21 @@ enum ImportCopy {
         case let core as CoreError: return "The group could not be made: \(core)."
         default: return "The import did not work: \(error)."
         }
+    }
+}
+
+/// D-249 (U10): where a Wallet by BudgetBakers file goes: Just me (the personal scope, first) or a new group with just
+/// you. A Splitwise file is always a new group.
+enum ImportTarget: CaseIterable, Identifiable {
+    case justMe
+    case newGroup
+
+    var id: Self { self }
+    var title: String { self == .justMe ? SpendingCopy.importIntoJustMe : SpendingCopy.importAsGroup }
+
+    /// The target a source can take: Splitwise only a group.
+    static func effective(_ chosen: ImportTarget, source: ImportSource) -> ImportTarget {
+        source == .budgetBakers ? chosen : .newGroup
     }
 }
 
@@ -240,17 +256,38 @@ enum ImportSetup {
 
 /// One import from choosing to writing, with the screen kept out of it.
 struct ImportJob {
-    let group: NamedGroupWire
+    /// D-249: nil for an import into Just me (no group is made).
+    let group: NamedGroupWire?
     let plan: ImportPlan
     /// The saved ledger plus the new group: what the plan was checked against.
     let existing: LedgerSnapshot
     /// Your name, when this import is what gives you one.
     let newName: String?
     let selfID: String
+    /// Your name for the review's wording when there is no group (Just me).
+    var selfName: String = ExpenseCopy.you
 
     /// Participant id → name in the new group, for the review's wording.
     var names: [String: String] {
-        Dictionary(group.members.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
+        guard let group else { return [selfID: selfName] }
+        return Dictionary(group.members.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    /// Where the review says it went: the group's name, or Just me.
+    var ledgerName: String { group?.group.name ?? SpendingCopy.justMe }
+
+    /// D-249: a Wallet file into Just me: no group, no name needed; every expense is yours, in the personal scope (core's
+    /// importer with `group: None`).
+    static func prepareJustMe(store: LedgerStore, csv: String) throws -> ImportJob {
+        let me = try store.ensureSelf()
+        let existing = try store.snapshot()
+        let plan = try ffiPlanImport(
+            csvText: csv,
+            profile: ImportSetup.profile(.budgetBakers, bindings: [], groupID: nil, selfID: me.id),
+            existing: existing
+        )
+        return ImportJob(group: nil, plan: plan, existing: existing, newName: nil, selfID: me.id,
+                         selfName: me.name ?? ExpenseCopy.you)
     }
 
     /// Builds the group (not saved) and plans the file against it.
@@ -288,7 +325,7 @@ struct ImportJob {
     /// you one, the group, then the expenses in one vault session.
     func commit(_ expenses: [PortExpense], store: LedgerStore) throws {
         if let newName { try store.setYourName(newName) }
-        try store.adopt(group)
+        if let group { try store.adopt(group) }
         _ = try store.appendExpenses(expenses.map { ImportSetup.dto($0, addedBy: selfID) })
     }
 }
@@ -316,9 +353,13 @@ struct ImportFlowScreen: View {
     @State private var error: String?
     @State private var job: ImportJob?
     @State private var reviewing = false
+    /// D-249: a Wallet file's target, Just me first.
+    @State private var chosenTarget: ImportTarget = .justMe
+    private var target: ImportTarget { ImportTarget.effective(chosenTarget, source: source) }
 
     private var ready: Bool {
-        csv != nil && !groupName.trimmingCharacters(in: .whitespaces).isEmpty
+        if target == .justMe { return csv != nil }
+        return csv != nil && !groupName.trimmingCharacters(in: .whitespaces).isEmpty
             && (source == .budgetBakers || you != nil)
             && (!needsName || source == .splitwise || !typedName.trimmingCharacters(in: .whitespaces).isEmpty)
     }
@@ -350,6 +391,25 @@ struct ImportFlowScreen: View {
                 }
             } header: { header(ImportCopy.from) }
 
+            // D-249 (U10): a Wallet file goes into Just me or a new group.
+            if source == .budgetBakers {
+                Section {
+                    ForEach(ImportTarget.allCases) { option in
+                        Button { chosenTarget = option } label: {
+                            HStack {
+                                Text(verbatim: option.title).font(TypeRole.body()).foregroundStyle(Tokens.text)
+                                Spacer()
+                                if option == chosenTarget {
+                                    Image(systemName: "checkmark").foregroundStyle(Tokens.accent)
+                                        .accessibilityLabel("Selected")
+                                }
+                            }
+                        }
+                        .accessibilityAddTraits(option == chosenTarget ? .isSelected : [])
+                    }
+                }
+            }
+
             Section {
                 if csv != nil {
                     Text(verbatim: fileName).font(TypeRole.body()).foregroundStyle(Tokens.text)
@@ -364,7 +424,7 @@ struct ImportFlowScreen: View {
                     .listRowSeparator(.hidden)
             } header: { header(ImportCopy.file) }
 
-            if csv != nil {
+            if csv != nil && target == .newGroup {
                 Section {
                     TextField(ImportCopy.groupName, text: $groupName).font(TypeRole.body())
                     Picker(ImportCopy.settlesIn, selection: $currency) {
@@ -431,7 +491,8 @@ struct ImportFlowScreen: View {
                     existing: job.existing,
                     plan: job.plan,
                     commit: ImportConfirmScreen.Commit(
-                        groupName: job.group.group.name,
+                        groupName: job.ledgerName,
+                        doneLabel: job.group == nil ? ProfileCopy.done : ImportCopy.showGroup,
                         names: job.names,
                         save: { try job.commit($0, store: LedgerStore.defaultStore()) },
                         finish: {
@@ -490,10 +551,12 @@ struct ImportFlowScreen: View {
         guard let csv else { return }
         error = nil
         do {
-            job = try ImportJob.prepare(
-                store: LedgerStore.defaultStore(), csv: csv, source: source,
-                groupName: groupName, currency: currency, people: people, you: you, typedName: typedName
-            )
+            job = target == .justMe
+                ? try ImportJob.prepareJustMe(store: LedgerStore.defaultStore(), csv: csv)
+                : try ImportJob.prepare(
+                    store: LedgerStore.defaultStore(), csv: csv, source: source,
+                    groupName: groupName, currency: currency, people: people, you: you, typedName: typedName
+                )
             reviewing = true
         } catch {
             self.error = ImportCopy.describe(error)

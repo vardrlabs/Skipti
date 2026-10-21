@@ -96,7 +96,7 @@ final class ImportFlowTests: XCTestCase {
         XCTAssertEqual(job.plan.expenses.count, 2)
         // The plan was checked against the ledger plus the unsaved group. (Core
         // checks only a group id's shape today: BUILD-LOG §4, D-166.)
-        XCTAssertTrue(job.existing.groups.contains { $0.id == job.group.group.id })
+        XCTAssertTrue(job.existing.groups.contains { $0.id == job.group?.group.id })
         _ = try ffiApplyImportPlan(existing: job.existing, plan: job.plan)
         XCTAssertTrue(try store.loadGroups().isEmpty)
         XCTAssertTrue(try store.loadExpenses().isEmpty)

@@ -124,6 +124,8 @@ final class ThemeArtTests: XCTestCase {
             // D-245 (decision 192): the welcome's progress runes, and W1's places in Norse (the bar's own runes).
             ("Welcome.swift", ".font(TypeRole.rune(size))"),
             ("Welcome.swift", #"Text(verbatim: tab.rune).font(TypeRole.rune(ThemeArt.m("seal") * 0.6))"#),
+            // D-249 (decision 164): Just me's ᛁ tile in Norse.
+            ("Spending.swift", ".font(TypeRole.rune(size * 0.62))"),
         ]
         for site in sites {
             let text = try appSource(site.file)
@@ -134,7 +136,7 @@ final class ThemeArtTests: XCTestCase {
             .appendingPathComponent("Skipti/App")
         for file in try FileManager.default.contentsOfDirectory(atPath: dir.path).filter({ $0.hasSuffix(".swift") })
         where !["ThemeArt.swift", "ThemeMotion.swift", "SkiptiTabBar.swift", "TypeSystem.swift", "YouProgress.swift",
-                 "AccountHubScreen.swift", "Welcome.swift"].contains(file) {
+                 "AccountHubScreen.swift", "Welcome.swift", "Spending.swift"].contains(file) {
             XCTAssertFalse(try appSource(file).contains("TypeRole.rune("), "\(file) draws runes itself")
         }
     }
@@ -1867,9 +1869,11 @@ final class ThemeArtTests: XCTestCase {
         func count(_ needle: String) throws -> Int {
             try files.reduce(0) { $0 + (try appSource($1).components(separatedBy: needle).count - 1) }
         }
-        XCTAssertEqual(try count(".sectionLabel("), 39) // D-241: the currency list's Suggested label. D-223: Lately's label, inside its card. D-234: App icon's label went (its header row says it).
+        // D-249: 42, Your spending's total card kicker, its where card and its Expenses label.
+        XCTAssertEqual(try count(".sectionLabel("), 42) // D-241: the currency list's Suggested label. D-223: Lately's label, inside its card. D-234: App icon's label went (its header row says it).
         // D-221: a block's currency when there are several. D-225 Task 6: 21, Add expense's split hint (A6, A8).
-        XCTAssertEqual(try count(".microLabelFont("), 21)
+        // D-249: 23, the spending card's "This month" and the table's column heads.
+        XCTAssertEqual(try count(".microLabelFont("), 23)
     }
 
     /// D-217: the Norse ornament's row holds its rune; Android's twin pins `ROW_HEIGHT`. D-226 (art.py section 46): 20
