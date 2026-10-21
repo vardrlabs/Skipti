@@ -3389,6 +3389,13 @@ pub fn ffi_snapshot_for_group(snapshot: LedgerSnapshot, group: String) -> Ledger
     crate::flutningr::snapshot_for_group(&snapshot, &group)
 }
 
+/// D-248: the Just me slice of a snapshot, for "Export Just me" (see
+/// `flutningr::snapshot_personal`).
+#[uniffi::export]
+pub fn ffi_snapshot_personal(snapshot: LedgerSnapshot) -> LedgerSnapshot {
+    crate::flutningr::snapshot_personal(&snapshot)
+}
+
 #[uniffi::export]
 pub fn ffi_export_ledger_csv(snapshot: LedgerSnapshot) -> Result<String, PortError> {
     crate::flutningr::export_flat_csv(&snapshot)
@@ -4377,6 +4384,45 @@ mod tests {
         assert_eq!(
             ffi_snapshot_for_group(snapshot, "e".repeat(32)),
             LedgerSnapshot::default()
+        );
+    }
+
+    #[test]
+    fn the_personal_snapshot_crosses_the_boundary() {
+        let mine = crate::flutningr::PortExpense {
+            payer: pid(1),
+            paid_minor: 300,
+            currency_code: "INR".into(),
+            group: None,
+            conversion: None,
+            shares: vec![crate::flutningr::ExpenseShare {
+                id: pid(1),
+                amount_minor: 300,
+            }],
+            note: Some("lunch".into()),
+            timestamp_ms: None,
+            category: None,
+        };
+        let theirs = crate::flutningr::PortExpense {
+            group: Some(grp()),
+            ..mine.clone()
+        };
+        let snapshot = LedgerSnapshot {
+            groups: vec![crate::flutningr::PortGroup {
+                id: grp(),
+                name: "Goa".into(),
+                settlement_currency: "INR".into(),
+                members: vec![pid(1), pid(2)],
+            }],
+            expenses: vec![theirs, mine.clone()],
+            ..LedgerSnapshot::default()
+        };
+        assert_eq!(
+            ffi_snapshot_personal(snapshot),
+            LedgerSnapshot {
+                expenses: vec![mine],
+                ..LedgerSnapshot::default()
+            }
         );
     }
 

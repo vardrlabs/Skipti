@@ -229,6 +229,29 @@ pub struct StatsExpenseIn {
     pub category: Option<String>,
 }
 
+/// Gives each slice its whole basis points of the slices' total, summing to
+/// 10,000 (largest remainder: floor every slice, then hand the points left
+/// over to the largest remainders; ties: the earlier slice, which the caller
+/// has sorted larger first). Slices are never negative here (both callers
+/// refuse a negative amount first); a zero total leaves every slice at 0.
+fn basis_points(categories: &mut [CategoryShareOut]) {
+    let total: i128 = categories.iter().map(|c| c.amount_minor as i128).sum();
+    if total > 0 {
+        let mut rema: Vec<(usize, i128)> = Vec::new();
+        let mut given: i128 = 0;
+        for (i, c) in categories.iter_mut().enumerate() {
+            let exact = c.amount_minor as i128 * 10_000;
+            c.basis_points = (exact / total) as u32;
+            given += exact / total;
+            rema.push((i, exact % total));
+        }
+        rema.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        for (i, _) in rema.into_iter().take((10_000 - given) as usize) {
+            categories[i].basis_points += 1;
+        }
+    }
+}
+
 pub fn group_stats(expenses: &[StatsExpenseIn], viewer: &str) -> Result<GroupStatsOut, CoreError> {
     parse_participant(viewer)?;
     let mut spent: Vec<CurrencyAmountOut> = Vec::new();
@@ -276,24 +299,7 @@ pub fn group_stats(expenses: &[StatsExpenseIn], viewer: &str) -> Result<GroupSta
                 .cmp(&a.amount_minor)
                 .then_with(|| a.category.cmp(&b.category))
         });
-        let total: i128 = categories.iter().map(|c| c.amount_minor as i128).sum();
-        if total > 0 {
-            // Largest remainder: floor every slice, then hand the points
-            // left over to the largest remainders (ties: the larger slice,
-            // already first).
-            let mut rema: Vec<(usize, i128)> = Vec::new();
-            let mut given: i128 = 0;
-            for (i, c) in categories.iter_mut().enumerate() {
-                let exact = c.amount_minor as i128 * 10_000;
-                c.basis_points = (exact / total) as u32;
-                given += exact / total;
-                rema.push((i, exact % total));
-            }
-            rema.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-            for (i, _) in rema.into_iter().take((10_000 - given) as usize) {
-                categories[i].basis_points += 1;
-            }
-        }
+        basis_points(&mut categories);
     }
     Ok(GroupStatsOut {
         spent,
@@ -309,6 +315,208 @@ pub fn ffi_group_stats(
     viewer: String,
 ) -> Result<GroupStatsOut, CoreError> {
     group_stats(&expenses, &viewer)
+}
+
+// ---------------------------------------------------------------------------
+// D-248: "Just me" and "All my spending" (U10). One function for both views
+// and both shells, so one golden table (.drafts/d248/goldens.py) pins both.
+// ---------------------------------------------------------------------------
+
+/// Which spending the page shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum SpendingView {
+    /// Your own ledger only: personal expenses (no group), each at its full
+    /// amount.
+    JustMe,
+    /// Just me plus YOUR SHARE of every group expense (what you paid for
+    /// others is a loan, not spending, so it never counts).
+    All,
+}
+
+/// One live (not deleted) expense, as the shells hold it.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct SpendingExpenseIn {
+    /// The projected expense's id (`ProjectedExpenseOut.id`), carried to its row.
+    pub id: String,
+    pub expense: ExpenseInput,
+    pub note: Option<String>,
+    /// The expense's own category (the leaf id, as stored), carried to its row.
+    pub category: Option<String>,
+    /// The category its slice counts under: the shells pass the parent, as
+    /// the group page does for `group_stats`; None is the "No category" slice.
+    pub slice_category: Option<String>,
+    /// When it happened, if set (`ProjectedExpenseOut.timestamp_ms`).
+    pub timestamp_ms: Option<u64>,
+    /// When it was added (`ProjectedExpenseOut.added_at_ms`): the date when
+    /// `timestamp_ms` is absent.
+    pub added_at_ms: u64,
+}
+
+/// What one currency's spending was, and where it went.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct CurrencySpendingOut {
+    pub currency_code: String,
+    pub total_minor: i64,
+    /// This currency's slices, largest first, basis points summing to 10,000.
+    pub categories: Vec<CategoryShareOut>,
+}
+
+/// One expense that counts in the window.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct SpendingRowOut {
+    pub id: String,
+    /// `timestamp_ms`, else `added_at_ms`: the date the window was read on.
+    pub date_ms: u64,
+    pub note: Option<String>,
+    /// The expense's own category (the leaf), as given.
+    pub category: Option<String>,
+    /// The currency it counts in: its converted one, if converted.
+    pub currency_code: String,
+    /// What counts: the full amount for a Just me expense, your share for a
+    /// group one.
+    pub amount_minor: i64,
+    /// The group it belongs to; None for Just me.
+    pub group: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct SpendingOut {
+    /// One per currency, never converted into each other, largest total
+    /// first (ties by code). Empty when nothing counts.
+    pub currencies: Vec<CurrencySpendingOut>,
+    /// Every expense that counts, newest first (ties: the larger id first).
+    /// A Just me expense of 0 is still listed (it was logged); a group
+    /// expense is listed only when your share of it is above 0.
+    pub rows: Vec<SpendingRowOut>,
+}
+
+/// D-248: what you spent in `[from_ms, until_ms)` (the shells pass the
+/// phone's month bounds). Just me counts personal expenses (no group) at
+/// their full amount; All adds your share of every group expense, read as
+/// the sum of the shares held by any of `viewer_ids` (your personal id and
+/// your id in each group), and lists a group expense only when that share is
+/// above zero. Settlements and redistributions are not inputs, so they never
+/// count. A converted expense counts in its converted currency (its shares
+/// are in it), as `group_stats` counts it. No floats (ADR-0002).
+pub fn spending(
+    expenses: &[SpendingExpenseIn],
+    viewer_ids: &[String],
+    from_ms: u64,
+    until_ms: u64,
+    view: SpendingView,
+) -> Result<SpendingOut, CoreError> {
+    for v in viewer_ids {
+        parse_participant(v)?;
+    }
+    if from_ms > until_ms {
+        return Err(CoreError::InvalidInput(
+            "the window ends before it starts".to_string(),
+        ));
+    }
+    // (row, its slice)
+    let mut counted: Vec<(SpendingRowOut, Option<String>)> = Vec::new();
+    for s in expenses {
+        let e = &s.expense;
+        if e.paid_minor < 0 || e.shares.iter().any(|x| x.amount_minor < 0) {
+            return Err(CoreError::InvalidInput("a negative expense".to_string()));
+        }
+        let date_ms = s.timestamp_ms.unwrap_or(s.added_at_ms);
+        if date_ms < from_ms || date_ms >= until_ms {
+            continue;
+        }
+        let (code, full) = match &e.conversion {
+            Some(c) => (c.converted_currency.clone(), c.converted_minor),
+            None => (e.currency_code.clone(), e.paid_minor),
+        };
+        if full < 0 {
+            return Err(CoreError::InvalidInput("a negative expense".to_string()));
+        }
+        let amount = match (&e.group, view) {
+            (None, _) => full,
+            (Some(_), SpendingView::JustMe) => continue,
+            (Some(_), SpendingView::All) => {
+                let mut yours: i64 = 0;
+                for x in e.shares.iter().filter(|x| viewer_ids.contains(&x.id)) {
+                    yours = add(yours, x.amount_minor)?;
+                }
+                if yours == 0 {
+                    continue;
+                }
+                yours
+            }
+        };
+        counted.push((
+            SpendingRowOut {
+                id: s.id.clone(),
+                date_ms,
+                note: s.note.clone(),
+                category: s.category.clone(),
+                currency_code: code,
+                amount_minor: amount,
+                group: e.group.clone(),
+            },
+            s.slice_category.clone(),
+        ));
+    }
+
+    let mut currencies: Vec<CurrencySpendingOut> = Vec::new();
+    for (row, slice) in &counted {
+        let i = match currencies
+            .iter()
+            .position(|c| c.currency_code == row.currency_code)
+        {
+            Some(i) => i,
+            None => {
+                currencies.push(CurrencySpendingOut {
+                    currency_code: row.currency_code.clone(),
+                    total_minor: 0,
+                    categories: Vec::new(),
+                });
+                currencies.len() - 1
+            }
+        };
+        let c = &mut currencies[i];
+        c.total_minor = add(c.total_minor, row.amount_minor)?;
+        match c.categories.iter_mut().find(|x| &x.category == slice) {
+            Some(x) => x.amount_minor = add(x.amount_minor, row.amount_minor)?,
+            None => c.categories.push(CategoryShareOut {
+                category: slice.clone(),
+                amount_minor: row.amount_minor,
+                basis_points: 0,
+            }),
+        }
+    }
+    currencies.retain(|c| c.total_minor != 0);
+    for c in &mut currencies {
+        c.categories.retain(|x| x.amount_minor != 0);
+        c.categories.sort_by(|a, b| {
+            b.amount_minor
+                .cmp(&a.amount_minor)
+                .then_with(|| a.category.cmp(&b.category))
+        });
+        basis_points(&mut c.categories);
+    }
+    currencies.sort_by(|a, b| {
+        b.total_minor
+            .cmp(&a.total_minor)
+            .then_with(|| a.currency_code.cmp(&b.currency_code))
+    });
+
+    let mut rows: Vec<SpendingRowOut> = counted.into_iter().map(|(r, _)| r).collect();
+    rows.sort_by(|a, b| b.date_ms.cmp(&a.date_ms).then_with(|| b.id.cmp(&a.id)));
+    Ok(SpendingOut { currencies, rows })
+}
+
+/// The "Your spending" card and page (D-248).
+#[uniffi::export]
+pub fn ffi_spending(
+    expenses: Vec<SpendingExpenseIn>,
+    viewer_ids: Vec<String>,
+    from_ms: u64,
+    until_ms: u64,
+    view: SpendingView,
+) -> Result<SpendingOut, CoreError> {
+    spending(&expenses, &viewer_ids, from_ms, until_ms, view)
 }
 
 // ---------------------------------------------------------------------------
@@ -861,5 +1069,385 @@ mod tests {
         let c = your_effect(&converted, &me).unwrap();
         assert_eq!((c.currency_code.as_str(), c.amount_minor), ("INR", 45_000));
         assert!(your_effect(&converted, "me").is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // D-248: spending. Every number below is printed by
+    // .drafts/d248/goldens.py (python3 -I), which derives the dates from
+    // zoneinfo (Asia/Kolkata), the slices from exact Fractions and the
+    // category ids from sha256; none is read back out of this code.
+    // -----------------------------------------------------------------------
+
+    const FOOD: &str = "80ed7c35199cb754fe9f4ded5d5eea82";
+    const TRAVEL: &str = "2d07f6758ac067ac266ddb818b931c56";
+    const ENT: &str = "2b3965b02573a0d9da7ca90ff06a50cc";
+    const OCT_FROM: u64 = 1_790_793_000_000; // 2026-10-01 00:00 +05:30
+    const OCT_UNTIL: u64 = 1_793_471_400_000; // 2026-11-01 00:00 +05:30
+    const NOV_UNTIL: u64 = 1_796_063_400_000; // 2026-12-01 00:00 +05:30
+    const J2_AT: u64 = 1_793_469_600_000; // 2026-10-31 23:30 +05:30
+
+    #[allow(clippy::too_many_arguments)]
+    fn spent(
+        id: &str,
+        group: Option<&str>,
+        payer: &str,
+        paid: i64,
+        code: &str,
+        shares: &[(&str, i64)],
+        slice: Option<&str>,
+        at: u64,
+    ) -> SpendingExpenseIn {
+        SpendingExpenseIn {
+            id: id.to_string(),
+            expense: ExpenseInput {
+                payer: payer.to_string(),
+                paid_minor: paid,
+                currency_code: code.to_string(),
+                shares: shares
+                    .iter()
+                    .map(|(id, a)| IdAmount {
+                        id: id.to_string(),
+                        amount_minor: *a,
+                    })
+                    .collect(),
+                group: group.map(str::to_string),
+                conversion: None,
+            },
+            note: Some(format!("note {id}")),
+            category: slice.map(|s| format!("leaf of {s}")),
+            slice_category: slice.map(str::to_string),
+            timestamp_ms: Some(at),
+            // Added long before either window: the date read is the
+            // expense's own (one row below has none and falls back).
+            added_at_ms: 0,
+        }
+    }
+
+    /// goldens.py's world: you are pid(1) in Just me and pid(0x11) in Goa.
+    fn world() -> (Vec<SpendingExpenseIn>, Vec<String>) {
+        let (me, you_goa, rahul, meera) = (pid(1), pid(0x11), pid(0x12), pid(0x13));
+        let goa = pid(0xa0);
+        let g = Some(goa.as_str());
+        let mut j4 = spent(
+            "J4",
+            None,
+            &me,
+            1_200,
+            "USD",
+            &[(&me, 100_200)],
+            None,
+            1_792_467_000_000,
+        );
+        j4.expense.conversion = Some(ConversionInput {
+            converted_minor: 100_200,
+            converted_currency: "INR".into(),
+            rate_num: 8_350,
+            rate_den: 100,
+            rate_timestamp_ms: 0,
+        });
+        let mut j6 = spent("J6", None, &me, 450, "EUR", &[(&me, 450)], Some(FOOD), 0);
+        j6.timestamp_ms = None;
+        j6.added_at_ms = 1_792_031_400_000;
+        let expenses = vec![
+            spent(
+                "J1",
+                None,
+                &me,
+                254_750,
+                "INR",
+                &[(&me, 254_750)],
+                Some(FOOD),
+                1_791_174_600_000,
+            ),
+            spent(
+                "J2",
+                None,
+                &me,
+                45_000,
+                "INR",
+                &[(&me, 45_000)],
+                Some(TRAVEL),
+                J2_AT,
+            ),
+            spent(
+                "J3",
+                None,
+                &me,
+                120_000,
+                "INR",
+                &[(&me, 120_000)],
+                Some(FOOD),
+                OCT_UNTIL,
+            ),
+            j4,
+            spent(
+                "J5",
+                None,
+                &me,
+                1_800,
+                "EUR",
+                &[(&me, 1_800)],
+                Some(ENT),
+                1_791_959_400_000,
+            ),
+            j6,
+            spent(
+                "G1",
+                g,
+                &rahul,
+                300_000,
+                "INR",
+                &[(&you_goa, 100_000), (&rahul, 100_000), (&meera, 100_000)],
+                Some(FOOD),
+                1_791_642_600_000,
+            ),
+            spent(
+                "G2",
+                g,
+                &you_goa,
+                90_000,
+                "INR",
+                &[(&you_goa, 30_000), (&rahul, 30_000), (&meera, 30_000)],
+                Some(TRAVEL),
+                1_791_689_400_000,
+            ),
+            spent(
+                "G3",
+                g,
+                &you_goa,
+                50_000,
+                "INR",
+                &[(&rahul, 50_000)],
+                Some(TRAVEL),
+                1_791_775_800_000,
+            ),
+            spent(
+                "G4",
+                g,
+                &meera,
+                3_000,
+                "EUR",
+                &[(&you_goa, 1_500), (&meera, 1_500)],
+                Some(ENT),
+                1_792_153_800_000,
+            ),
+        ];
+        (expenses, vec![me, you_goa])
+    }
+
+    type Shape = Vec<(String, i64, Vec<(Option<String>, i64, u32)>)>;
+
+    fn shape(out: &SpendingOut) -> (Shape, Vec<(String, String, i64)>) {
+        (
+            out.currencies
+                .iter()
+                .map(|c| {
+                    (
+                        c.currency_code.clone(),
+                        c.total_minor,
+                        c.categories
+                            .iter()
+                            .map(|x| (x.category.clone(), x.amount_minor, x.basis_points))
+                            .collect(),
+                    )
+                })
+                .collect(),
+            out.rows
+                .iter()
+                .map(|r| (r.id.clone(), r.currency_code.clone(), r.amount_minor))
+                .collect(),
+        )
+    }
+
+    fn sl(c: Option<&str>, a: i64, b: u32) -> (Option<String>, i64, u32) {
+        (c.map(str::to_string), a, b)
+    }
+
+    fn rw(id: &str, c: &str, a: i64) -> (String, String, i64) {
+        (id.to_string(), c.to_string(), a)
+    }
+
+    #[test]
+    fn just_me_counts_its_own_expenses_in_full_per_currency() {
+        let (expenses, you) = world();
+        let out = spending(&expenses, &you, OCT_FROM, OCT_UNTIL, SpendingView::JustMe).unwrap();
+        let (currencies, rows) = shape(&out);
+        assert_eq!(
+            currencies,
+            vec![
+                (
+                    "INR".to_string(),
+                    399_950,
+                    vec![
+                        sl(Some(FOOD), 254_750, 6370),
+                        sl(None, 100_200, 2505),
+                        sl(Some(TRAVEL), 45_000, 1125),
+                    ]
+                ),
+                (
+                    "EUR".to_string(),
+                    2_250,
+                    vec![sl(Some(ENT), 1_800, 8000), sl(Some(FOOD), 450, 2000)]
+                ),
+            ]
+        );
+        assert_eq!(
+            rows,
+            vec![
+                rw("J2", "INR", 45_000),
+                rw("J4", "INR", 100_200),
+                rw("J6", "EUR", 450),
+                rw("J5", "EUR", 1_800),
+                rw("J1", "INR", 254_750),
+            ]
+        );
+        // A row carries what the page shows: its date (J6 has no date of its
+        // own: when it was added), note, leaf category, and no group.
+        let j6 = out.rows.iter().find(|r| r.id == "J6").unwrap();
+        assert_eq!(j6.date_ms, 1_792_031_400_000);
+        assert_eq!(j6.note.as_deref(), Some("note J6"));
+        assert_eq!(j6.category, Some(format!("leaf of {FOOD}")));
+        assert!(out.rows.iter().all(|r| r.group.is_none()));
+    }
+
+    #[test]
+    fn all_my_spending_adds_only_your_share_of_group_expenses() {
+        let (expenses, you) = world();
+        let out = spending(&expenses, &you, OCT_FROM, OCT_UNTIL, SpendingView::All).unwrap();
+        let (currencies, rows) = shape(&out);
+        assert_eq!(
+            currencies,
+            vec![
+                (
+                    "INR".to_string(),
+                    529_950,
+                    vec![
+                        sl(Some(FOOD), 354_750, 6694),
+                        sl(None, 100_200, 1891),
+                        sl(Some(TRAVEL), 75_000, 1415),
+                    ]
+                ),
+                (
+                    "EUR".to_string(),
+                    3_750,
+                    vec![sl(Some(ENT), 3_300, 8800), sl(Some(FOOD), 450, 1200)]
+                ),
+            ]
+        );
+        assert_eq!(
+            rows,
+            vec![
+                rw("J2", "INR", 45_000),
+                rw("J4", "INR", 100_200),
+                rw("G4", "EUR", 1_500),
+                rw("J6", "EUR", 450),
+                rw("J5", "EUR", 1_800),
+                rw("G2", "INR", 30_000),
+                rw("G1", "INR", 100_000),
+                rw("J1", "INR", 254_750),
+            ]
+        );
+        // You paid G2's 900.00 for everyone: only your 300.00 is spending.
+        // You paid G3 for Rahul alone: your share is 0, so it is not listed.
+        let g2 = out.rows.iter().find(|r| r.id == "G2").unwrap();
+        assert_eq!(g2.amount_minor, 30_000);
+        assert_eq!(g2.group, Some(pid(0xa0)));
+        assert!(out.rows.iter().all(|r| r.id != "G3"));
+    }
+
+    #[test]
+    fn just_me_never_counts_a_group_expense() {
+        let (expenses, you) = world();
+        let groups: Vec<SpendingExpenseIn> = expenses
+            .into_iter()
+            .filter(|e| e.expense.group.is_some())
+            .collect();
+        let out = spending(&groups, &you, OCT_FROM, OCT_UNTIL, SpendingView::JustMe).unwrap();
+        assert!(out.currencies.is_empty() && out.rows.is_empty());
+        // The same expenses count in All (your shares: 1,000 + 300 INR, 15 EUR).
+        let all = spending(&groups, &you, OCT_FROM, OCT_UNTIL, SpendingView::All).unwrap();
+        assert_eq!(all.rows.len(), 3);
+    }
+
+    /// The month boundary, both ways: 23:30 on the last day is inside
+    /// October and 00:00 on the 1st is not (the window's end is exclusive);
+    /// the same 00:00 expense opens November (its start is inclusive).
+    #[test]
+    fn the_window_includes_its_start_and_excludes_its_end() {
+        let (expenses, you) = world();
+        let oct = spending(&expenses, &you, OCT_FROM, OCT_UNTIL, SpendingView::JustMe).unwrap();
+        assert!(oct.rows.iter().any(|r| r.id == "J2"));
+        assert!(oct.rows.iter().all(|r| r.id != "J3"));
+        let nov = spending(&expenses, &you, OCT_UNTIL, NOV_UNTIL, SpendingView::JustMe).unwrap();
+        let (currencies, rows) = shape(&nov);
+        assert_eq!(
+            currencies,
+            vec![(
+                "INR".to_string(),
+                120_000,
+                vec![sl(Some(FOOD), 120_000, 10_000)]
+            )]
+        );
+        assert_eq!(rows, vec![rw("J3", "INR", 120_000)]);
+        // A window ending exactly at J2 leaves J2 out; one a millisecond
+        // later takes it in.
+        let before = spending(&expenses, &you, J2_AT - 1, J2_AT, SpendingView::JustMe).unwrap();
+        assert!(before.rows.is_empty() && before.currencies.is_empty());
+        let at = spending(&expenses, &you, J2_AT, J2_AT + 1, SpendingView::JustMe).unwrap();
+        assert_eq!(shape(&at).1, vec![rw("J2", "INR", 45_000)]);
+        // An empty window counts nothing.
+        let empty = spending(&expenses, &you, OCT_FROM, OCT_FROM, SpendingView::All).unwrap();
+        assert!(empty.rows.is_empty() && empty.currencies.is_empty());
+    }
+
+    #[test]
+    fn spending_refuses_a_bad_window_a_bad_id_and_a_negative_amount() {
+        let (expenses, you) = world();
+        assert!(spending(&expenses, &you, OCT_UNTIL, OCT_FROM, SpendingView::All).is_err());
+        assert!(spending(
+            &expenses,
+            &["me".to_string()],
+            OCT_FROM,
+            OCT_UNTIL,
+            SpendingView::All
+        )
+        .is_err());
+        let me = pid(1);
+        let neg = spent("N", None, &me, -5, "INR", &[], None, OCT_FROM);
+        assert!(spending(&[neg], &you, OCT_FROM, OCT_UNTIL, SpendingView::JustMe).is_err());
+        let neg_share = spent(
+            "N",
+            Some(&pid(0xa0)),
+            &me,
+            0,
+            "INR",
+            &[(&me, -5), (&pid(2), 5)],
+            None,
+            OCT_FROM,
+        );
+        assert!(spending(&[neg_share], &you, OCT_FROM, OCT_UNTIL, SpendingView::All).is_err());
+        let mut neg_conv = spent("N", None, &me, 5, "USD", &[(&me, 5)], None, OCT_FROM);
+        neg_conv.expense.conversion = Some(ConversionInput {
+            converted_minor: -400,
+            converted_currency: "INR".into(),
+            rate_num: 80,
+            rate_den: 1,
+            rate_timestamp_ms: 0,
+        });
+        assert!(spending(&[neg_conv], &you, OCT_FROM, OCT_UNTIL, SpendingView::JustMe).is_err());
+        // The export is the function itself.
+        assert_eq!(
+            ffi_spending(
+                expenses.clone(),
+                you.clone(),
+                OCT_FROM,
+                OCT_UNTIL,
+                SpendingView::All
+            ),
+            spending(&expenses, &you, OCT_FROM, OCT_UNTIL, SpendingView::All)
+        );
+        // Nothing at all is not an error.
+        let none = spending(&[], &[], OCT_FROM, OCT_UNTIL, SpendingView::All).unwrap();
+        assert!(none.currencies.is_empty() && none.rows.is_empty());
     }
 }
