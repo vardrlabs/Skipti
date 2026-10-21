@@ -398,6 +398,9 @@ extension LedgerStore {
         /// A place claimed in another group is someone else's id here (a group's maker can name any id as a
         /// member), so it is never written as this account's place: `mineIn` leaves it out.
         let claimed: [String: Set<String>]
+        /// D-252: the stored read-only marks (removed, deleted, vanished), by group: a write into one is refused with
+        /// its words (`ReadOnlyCopy`) before anything is written, as a lost place is. Empty for `.none` and `of`.
+        var copies: [String: ReadOnly] = [:]
 
         init(places: [String: String], mine: [String], lost: Set<String> = [], claimed: [String: Set<String>] = [:]) {
             self.places = places
@@ -416,6 +419,15 @@ extension LedgerStore {
         /// message always has; it printed its type name ("PlaceLost()").
         struct PlaceLost: Error, Equatable, CustomStringConvertible, LocalizedError {
             var description: String { RolesCopy.placeLostBanner }
+            var errorDescription: String? { description }
+        }
+
+        /// D-252 (decision 218, point 3): a record for a group that is a read-only copy on this phone (removed,
+        /// deleted, or no longer shared): refused here with the copy's words, never saved, refused by the cloud and
+        /// parked as before ("One change could not sync").
+        struct ReadOnlyCopy: Error, Equatable, CustomStringConvertible, LocalizedError {
+            let mark: ReadOnly
+            var description: String { GroupEndCopy.refused(mark) }
             var errorDescription: String? { description }
         }
 
@@ -448,12 +460,23 @@ extension LedgerStore {
             return PlaceLost()
         }
 
+        /// D-252: the pure rule for a copy: a record in a group with a stored read-only mark is refused.
+        func copyRefusal(group: String?) -> ReadOnlyCopy? {
+            guard let group, let mark = copies[group] else { return nil }
+            return ReadOnlyCopy(mark: mark)
+        }
+
+        /// A stored mark first (it says why, as the banner does: a stored mark wins), then a lost place.
         private func refuseLost(_ group: String?) throws {
+            if let copy = copyRefusal(group: group) { throw copy }
             if let refused = refusal(group: group) { throw refused }
         }
 
+        /// D-252: with the stored marks, strictly (an unreadable list throws: nothing is written on a guess).
         static func load(_ store: LedgerStore) throws -> Placing {
-            of(try Sync.projectGroups(store))
+            var placing = of(try Sync.projectGroups(store))
+            placing.copies = try store.readOnlyMarks()
+            return placing
         }
 
         /// One id as written into `group`: the place when it is the account's
@@ -1442,6 +1465,9 @@ extension LedgerStore {
         /// records each time, so it lifts by itself once the owner fixes People.
         static let placeLostKind = "placeLost"
         static let placeLost = ReadOnly(kind: placeLostKind, by: "", at: Date(timeIntervalSince1970: 0))
+        /// D-252 (decision 218): a group that left the account's listing and the server no longer gives this account
+        /// (`GroupGone`). Stored, like a removal or a deletion; a deletion's notice later says more (`deletedMark`).
+        static let vanishedKind = "vanished"
     }
 
     static let readOnlyKey = "ledger/readonly"

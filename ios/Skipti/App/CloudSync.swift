@@ -493,9 +493,10 @@ final class CloudSync {
         // group this phone just created changes nothing else (GroupListeners.update).
         groupsListener = Cloud.db.collection("groups").whereField("memberUids", arrayContains: uid)
             .addSnapshotListener(includeMetadataChanges: true) { snapshot, _ in
-                guard let docs = snapshot?.documents else { return }
-                let groups = docs.map { ($0.documentID, $0.data(), !$0.metadata.hasPendingWrites) }
-                MainActor.assumeIsolated { CloudSync.shared.listenToGroups(groups, uid: uid, store: store) }
+                guard let snapshot else { return }
+                let groups = snapshot.documents.map { ($0.documentID, $0.data(), !$0.metadata.hasPendingWrites) }
+                let fromCache = snapshot.metadata.isFromCache
+                MainActor.assumeIsolated { CloudSync.shared.listenToGroups(groups, uid: uid, store: store, fromCache: fromCache) }
             }
     }
 
@@ -507,9 +508,12 @@ final class CloudSync {
     /// successful ask, a newer timer or the group leaving the list.
     private var roleRetries: [String: Task<Void, Never>] = [:]
 
-    private func listenToGroups(_ groups: [(String, [String: Any], Bool)], uid: String, store: LedgerStore) {
+    private func listenToGroups(_ groups: [(String, [String: Any], Bool)], uid: String, store: LedgerStore, fromCache: Bool) {
         guard personalListener != nil, let listeners = groupListeners else { return }
         let ids = Set(groups.map(\.0))
+        // D-252: what the server lists now; a group that left it is asked about (never from the cache).
+        listedNow = ids
+        if !fromCache { checkVanished(listed: groups.map { ($0.0, $0.2) }, uid: uid, store: store) }
         // D-210: a group that left this account's list (removed, or deleted):
         // stop listening to its records and nothing else. The notice says why
         // and brings in what was written up to then (`handle`).
@@ -529,6 +533,61 @@ final class CloudSync {
         for (groupId, task) in roleRetries where !ids.contains(groupId) {
             task.cancel()
             roleRetries[groupId] = nil
+        }
+    }
+
+    // MARK: - D-252: a group that left the account's listing
+
+    /// The groups the latest listing holds (`checkVanished` asks again before it marks).
+    private var listedNow = Set<String>()
+    /// Groups asked about this listening session whose answer was `keep`, or whose read is in flight; cleared by
+    /// `stopListening`, and for a group the listing holds again (it is asked again if it leaves again).
+    private var vanishAsked = Set<String>()
+
+    /// D-252 (decision 218): on every listing from the server, a vanished mark lifts from a group listed again, and
+    /// each held group the listing no longer has, with no notice to say why, is asked about once (`GroupGone`): a
+    /// refusal or no document makes the copy read-only ("This group is no longer shared with you."), no answer
+    /// changes nothing (asked again at the next listing or launch). A session's first listing is the sweep: groups
+    /// that ended while this phone was away, 0.5.0's deleted groups on the deleting account's other phones included.
+    /// Nothing local is ever deleted (CLAUDE.md 10).
+    private func checkVanished(listed: [(String, Bool)], uid: String, store: LedgerStore) {
+        let ids = Set(listed.map(\.0))
+        vanishAsked.subtract(ids)
+        guard let marks = try? store.readOnlyChecked() else { return }
+        var lifted = false
+        for (groupId, confirmed) in listed where GroupGone.lifts(marks[groupId], listedConfirmed: confirmed) {
+            if (try? store.clearReadOnly(groupId)) != nil { lifted = true }
+        }
+        if lifted { SyncStatus.shared.changed() }
+        guard let held = try? Set(store.loadGroups().map(\.id)), let up = try? CloudRecords.groupsUp(store) else { return }
+        let noticed = Set(Notices.shared.items.filter(\.kind.endsSync).map(\.groupId))
+        let ask = GroupGone.toCheck(held: held, groupsUp: up, listed: ids, copies: Set(marks.keys), noticed: noticed,
+                                    asked: vanishAsked)
+        for groupId in ask {
+            vanishAsked.insert(groupId)
+            Task { @MainActor in
+                let outcome = GroupGone.decide(GroupGone.read(await Self.groupRead(groupId)))
+                let sync = CloudSync.shared
+                // Signed out, or listening as someone else, while it was asked: what it said does not count.
+                guard sync.groupsListener != nil, Account.shared.uid == uid else { return }
+                switch outcome {
+                case .keep:
+                    return
+                case .retry:
+                    sync.vanishAsked.remove(groupId)
+                    return
+                case .readOnly:
+                    sync.vanishAsked.remove(groupId)
+                    // Listed again meanwhile, or a notice marked it first: the newer word stands.
+                    guard !sync.listedNow.contains(groupId) else { return }
+                    do {
+                        guard GroupGone.marks(over: try store.readOnlyChecked()[groupId]) else { return }
+                        try store.markReadOnly(groupId, GroupGone.mark(at: Date()))
+                    } catch { return }
+                    sync.groupListeners?.remove(groupId)
+                    SyncStatus.shared.changed()
+                }
+            }
         }
     }
 
@@ -598,6 +657,9 @@ final class CloudSync {
         IncomingInvites.shared.stop()
         Notices.shared.stop()
         roleAsking.clear()
+        // D-252: a new session asks again (its first listing is the sweep).
+        vanishAsked = []
+        listedNow = []
         roleRetries.values.forEach { $0.cancel() }
         roleRetries = [:]
         phoneListener?.remove()
@@ -681,9 +743,12 @@ final class CloudSync {
                             kind: "removed", by: item.byName, at: item.removedAt ?? item.at))
                     } catch { return }
                 case .deleted:
+                    // D-252: the deleting account's own notice reaches its other phones ("You deleted"); a phone whose
+                    // copy already says deleted keeps it (the deleting phone's own mark), and a vanished copy says more.
                     do {
-                        try store.markReadOnly(item.groupId, LedgerStore.ReadOnly(
-                            kind: "deleted", by: item.byName, at: item.at))
+                        if let mark = Notices.deletedMark(item, uid: Account.shared.uid, existing: try store.readOnlyChecked()[item.groupId]) {
+                            try store.markReadOnly(item.groupId, mark)
+                        }
                     } catch { return }
                 case .role, .declined:
                     guard await GroupRoles.shared.refresh(item.groupId) else { return }

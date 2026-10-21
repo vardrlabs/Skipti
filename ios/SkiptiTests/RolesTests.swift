@@ -1591,16 +1591,16 @@ final class RolesTests: XCTestCase {
         XCTAssertNil(RolesCopy.reviewBanner("Sam", plan: [:]))
     }
 
-    /// L4: the phone that deleted the group says "You deleted".
+    /// L4: the phone that deleted the group says "You deleted". D-252: "You deleted {group}." (GroupEndCopy), the same
+    /// words on the account's other phones (its notice now reaches them).
     func testTheDeletingPhoneSaysYouDeleted() throws {
         let day = "October 13, 2026", at = Date(timeIntervalSince1970: 1_800_000_000)
-        XCTAssertEqual(RolesCopy.deletedByYou(date: day), "You deleted this group on October 13, 2026")
         var mine = LedgerStore.ReadOnly(kind: "deleted", by: "Prithvi", at: at)
         mine.byYou = true
-        XCTAssertEqual(ReadOnlyBanner.title(mark: mine, date: day), "You deleted this group on October 13, 2026")
-        XCTAssertEqual(ReadOnlyBanner.title(mark: LedgerStore.ReadOnly(kind: "deleted", by: "Asha", at: at), date: day),
+        XCTAssertEqual(ReadOnlyBanner.title(mark: mine, date: day, group: "Goa"), "You deleted Goa.")
+        XCTAssertEqual(ReadOnlyBanner.title(mark: LedgerStore.ReadOnly(kind: "deleted", by: "Asha", at: at), date: day, group: "Goa"),
                        "Asha deleted this group on October 13, 2026", "someone else's delete reads as it did")
-        XCTAssertEqual(ReadOnlyBanner.title(mark: LedgerStore.ReadOnly(kind: "removed", by: "Asha", at: at), date: day),
+        XCTAssertEqual(ReadOnlyBanner.title(mark: LedgerStore.ReadOnly(kind: "removed", by: "Asha", at: at), date: day, group: "Goa"),
                        "Asha removed you on October 13, 2026")
         // A mark stored before the field existed still reads, and a new one round-trips.
         let old = Data(#"{"kind":"deleted","by":"Asha","at":0}"#.utf8)
@@ -2133,5 +2133,235 @@ fileprivate func s2InOrder(_ text: String, _ needles: [String], file: StaticStri
             return
         }
         from = at.upperBound
+    }
+}
+
+// MARK: - D-252: a deleted group ends on every phone (decision 218)
+
+/// D-252: the deleting account's other phones, a group that left the account's listing, and a write into a read-only
+/// copy. Android's twin is GroupEndTest.
+final class GroupEndTests: XCTestCase {
+    private var dir: URL!
+    private let g = String(repeating: "c", count: 32)
+    private let at = Date(timeIntervalSince1970: 1_800_000_000)
+
+    override func setUpWithError() throws {
+        dir = FileManager.default.temporaryDirectory.appendingPathComponent("groupend-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: dir)
+    }
+
+    private func device(_ name: String) -> LedgerStore {
+        LedgerStore(path: dir.appendingPathComponent("\(name).db").path)
+    }
+
+    private func appSource(_ file: String) throws -> String {
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Skipti/App/\(file)")
+        return try String(contentsOf: url, encoding: .utf8)
+    }
+
+    private func notice(byUid: String?, id: String = "d1") -> Notices.Item {
+        Notices.Item(id: id, kind: .deleted, groupId: g, groupName: "Goa", byName: "Prithvi", byUid: byUid, at: at)
+    }
+
+    // MARK: The copy table (Android's GroupEndCopy reads these lines)
+
+    func testTheCopyTableIsTheTwinsWords() {
+        XCTAssertEqual(GroupEndCopy.noLongerShared, "This group is no longer shared with you.")
+        XCTAssertEqual(GroupEndCopy.youDeleted("Goa"), "You deleted Goa.")
+        XCTAssertEqual(GroupEndCopy.refusedVanished, "This group is no longer shared with you. Nothing new can be added.")
+        XCTAssertEqual(GroupEndCopy.refusedYouDeleted, "You deleted this group. Nothing new can be added.")
+        XCTAssertEqual(GroupEndCopy.refusedDeleted, "This group was deleted. Nothing new can be added.")
+        XCTAssertEqual(GroupEndCopy.refusedRemoved, "You were removed from this group. Nothing new can be added.")
+        XCTAssertEqual(LedgerStore.ReadOnly.vanishedKind, "vanished", "stored in the vault: never renamed")
+    }
+
+    /// The banner: a vanished group says it neutrally; a group this account deleted says "You deleted {group}." on every
+    /// one of its phones; someone else's delete and a removal read as they did (D-210).
+    func testABannerSaysHowTheGroupEnded() {
+        let day = "October 13, 2026"
+        let vanished = GroupGone.mark(at: at)
+        XCTAssertEqual(vanished, LedgerStore.ReadOnly(kind: "vanished", by: "", at: at))
+        XCTAssertEqual(ReadOnlyBanner.title(mark: vanished, date: day, group: "Goa"), "This group is no longer shared with you.")
+        XCTAssertEqual(ReadOnlyBanner.body(mark: vanished, group: "Goa"), "This is your copy. Nothing new can be added.")
+        XCTAssertTrue(ReadOnlyActions.offersForget(vanished), "export and remove from this phone stay")
+        let mine = LedgerStore.ReadOnly(kind: "deleted", by: "Prithvi", at: at, byYou: true)
+        XCTAssertEqual(ReadOnlyBanner.title(mark: mine, date: day, group: "Goa"), "You deleted Goa.")
+        XCTAssertEqual(ReadOnlyBanner.title(mark: LedgerStore.ReadOnly(kind: "deleted", by: "Asha", at: at), date: day, group: "Goa"),
+                       "Asha deleted this group on October 13, 2026")
+        XCTAssertEqual(ReadOnlyBanner.title(mark: LedgerStore.ReadOnly(kind: "removed", by: "Asha", at: at), date: day, group: "Goa"),
+                       "Asha removed you on October 13, 2026")
+        XCTAssertEqual(ReadOnlyBanner.title(mark: .placeLost, date: day, group: "Goa"), RolesCopy.placeLostBanner)
+    }
+
+    // MARK: 1. The deleting account's own notice
+
+    func testADeletionNoticeNamesItsDeleter() {
+        let base: [String: Any] = ["kind": "deleted", "groupId": g, "groupName": "Goa", "byName": "Prithvi"]
+        XCTAssertNil(Notices.item(id: "d1", data: base)?.byUid, "a notice written before D-252 names nobody")
+        XCTAssertEqual(Notices.item(id: "d1", data: base.merging(["byUid": "ow"]) { $1 })?.byUid, "ow")
+        XCTAssertNil(Notices.item(id: "d1", data: base.merging(["byUid": 7]) { $1 }), "not text: refused")
+        XCTAssertNil(Notices.item(id: "d1", data: base.merging(["byUid": ""]) { $1 }), "empty: refused")
+    }
+
+    /// The deleting account's other phone reads "You deleted"; another member's reads the deleter's name; the deleting
+    /// phone (already marked) and a phone that handled it once keep their mark; a vanished copy says more.
+    func testADeletionNoticeMarksOnceAndSaysYouDeletedOnTheDeletersOtherPhones() {
+        let fresh = Notices.deletedMark(notice(byUid: "ow"), uid: "ow", existing: nil)
+        XCTAssertEqual(fresh, LedgerStore.ReadOnly(kind: "deleted", by: "Prithvi", at: at, byYou: true))
+        XCTAssertEqual(Notices.deletedMark(notice(byUid: "ow"), uid: "me", existing: nil),
+                       LedgerStore.ReadOnly(kind: "deleted", by: "Prithvi", at: at), "another member: the deleter's name")
+        XCTAssertEqual(Notices.deletedMark(notice(byUid: nil), uid: "ow", existing: nil)?.byYou, nil, "an old notice: never yours")
+        XCTAssertEqual(Notices.deletedMark(notice(byUid: "ow"), uid: nil, existing: nil)?.byYou, nil, "signed out: never yours")
+        XCTAssertEqual(Notices.deletedMark(notice(byUid: ""), uid: "", existing: nil)?.byYou, nil, "an empty id matches nothing")
+        // Idempotent: the deleting phone's own mark (its date, "You deleted") stands; so does a mark a first pass wrote.
+        let own = LedgerStore.ReadOnly(kind: "deleted", by: "Prithvi", at: at.addingTimeInterval(-5), byYou: true)
+        XCTAssertNil(Notices.deletedMark(notice(byUid: "ow"), uid: "ow", existing: own))
+        XCTAssertNil(Notices.deletedMark(notice(byUid: "ow"), uid: "me", existing: LedgerStore.ReadOnly(kind: "deleted", by: "Prithvi", at: at)))
+        // A vanished copy (or a lost place) is told what happened.
+        XCTAssertEqual(Notices.deletedMark(notice(byUid: "ow"), uid: "ow", existing: GroupGone.mark(at: at)), fresh)
+        XCTAssertEqual(Notices.deletedMark(notice(byUid: "ow"), uid: "ow", existing: .placeLost), fresh)
+    }
+
+    // MARK: 2. A group that left the listing
+
+    func testTheOneReadDecides() {
+        XCTAssertEqual(GroupGone.decide(.refused), .readOnly)
+        XCTAssertEqual(GroupGone.decide(.notFound), .readOnly)
+        XCTAssertEqual(GroupGone.decide(.networkError), .retry, "no answer changes nothing")
+        XCTAssertEqual(GroupGone.decide(.exists), .keep)
+        XCTAssertEqual(GroupGone.read(.found([:])), .exists)
+        XCTAssertEqual(GroupGone.read(.missing), .notFound)
+        XCTAssertEqual(GroupGone.read(.refused), .refused)
+        XCTAssertEqual(GroupGone.read(nil), .networkError)
+        // The Firestore codes as the removal read maps them (pinned in RolesTests): only these two are the server's word.
+        XCTAssertEqual(GroupGone.read(Notices.groupRead(forFirestoreCode: .permissionDenied)), .refused)
+        XCTAssertEqual(GroupGone.read(Notices.groupRead(forFirestoreCode: .notFound)), .refused)
+        for code: FirestoreErrorCode.Code in [.unavailable, .deadlineExceeded, .unauthenticated, .cancelled, .internal] {
+            XCTAssertEqual(GroupGone.decide(GroupGone.read(Notices.groupRead(forFirestoreCode: code))), .retry, "\(code)")
+        }
+    }
+
+    /// Which held groups are asked about: the session's first listing sweeps every one in the cloud from this phone that
+    /// the listing lacks (0.5.0's victims); never a group only on this phone (asking would end it wrongly), a listed
+    /// one, a copy, one a notice explains, or one asked already this session.
+    func testWhichHeldGroupsAreAskedAbout() {
+        let a = "a" + String(repeating: "0", count: 31), b = "b" + String(repeating: "0", count: 31)
+        let c = "c" + String(repeating: "0", count: 31), d = "d" + String(repeating: "0", count: 31)
+        let e = "e" + String(repeating: "0", count: 31), f = "f" + String(repeating: "0", count: 31)
+        let held: Set<String> = [a, b, c, d, e, f]
+        let up: Set<String> = [a, b, c, d, e]  // f never left this phone
+        XCTAssertEqual(GroupGone.toCheck(held: held, groupsUp: up, listed: [], copies: [], noticed: [], asked: []), [a, b, c, d, e],
+                       "the sweep: every held group in the cloud that the listing lacks")
+        XCTAssertEqual(GroupGone.toCheck(held: held, groupsUp: up, listed: [a], copies: [b], noticed: [c], asked: [d]), [e])
+        XCTAssertEqual(GroupGone.toCheck(held: [f], groupsUp: [], listed: [], copies: [], noticed: [], asked: []), [],
+                       "a phone-only group is never asked about")
+        XCTAssertEqual(GroupGone.toCheck(held: [], groupsUp: up, listed: [], copies: [], noticed: [], asked: []), [],
+                       "a group no longer held (removed from this phone) is not asked about")
+    }
+
+    func testAVanishedMarkNeverMakesARemovalOrADeletionVaguer() {
+        XCTAssertTrue(GroupGone.marks(over: nil))
+        XCTAssertTrue(GroupGone.marks(over: .placeLost))
+        XCTAssertFalse(GroupGone.marks(over: LedgerStore.ReadOnly(kind: "removed", by: "Asha", at: at)))
+        XCTAssertFalse(GroupGone.marks(over: LedgerStore.ReadOnly(kind: "deleted", by: "Asha", at: at)))
+        XCTAssertFalse(GroupGone.marks(over: GroupGone.mark(at: at)), "already vanished")
+        // Listed again (confirmed by the server): only a vanished mark lifts.
+        XCTAssertTrue(GroupGone.lifts(GroupGone.mark(at: at), listedConfirmed: true))
+        XCTAssertFalse(GroupGone.lifts(GroupGone.mark(at: at), listedConfirmed: false), "a pending write is not the server")
+        XCTAssertFalse(GroupGone.lifts(LedgerStore.ReadOnly(kind: "removed", by: "Asha", at: at), listedConfirmed: true))
+        XCTAssertFalse(GroupGone.lifts(LedgerStore.ReadOnly(kind: "deleted", by: "Asha", at: at), listedConfirmed: true))
+        XCTAssertFalse(GroupGone.lifts(nil, listedConfirmed: true))
+    }
+
+    // MARK: 3. A write into a read-only copy is refused before it is saved
+
+    func testAWriteToAReadOnlyCopyIsRefusedWithWordsBeforeAnythingIsWritten() throws {
+        let store = device("copy")
+        let me = try store.setYourName("Tim")
+        let goa = try store.createGroup(name: "Goa", settlementCurrency: "INR", people: ["Rahul"])
+        let lisbon = try store.createGroup(name: "Lisbon", settlementCurrency: "INR", people: ["Rahul"])
+        let rahul = try XCTUnwrap(goa.members.first { $0.name == "Rahul" }).id
+        func dinner(_ group: NamedGroupWire) throws -> LedgerStore.ExpenseDTO {
+            let r = try XCTUnwrap(group.members.first { $0.name == "Rahul" }).id
+            return LedgerStore.ExpenseDTO(payer: me.id, paidMinor: 1_000, currencyCode: "INR", group: group.group.id, conversion: nil,
+                                          shares: [.init(id: me.id, amountMinor: 500), .init(id: r, amountMinor: 500)],
+                                          note: "Dinner", timestampMs: 5_000, category: nil, addedBy: me.id)
+        }
+        _ = try store.appendExpense(try dinner(goa))
+        let target = try XCTUnwrap(try store.projectedExpenses().expenses.first).id
+        try store.markReadOnly(goa.group.id, GroupGone.mark(at: at))
+        let records = try store.allRecords().count
+        let kv = try store.kvGet(key: LedgerStore.key)
+        let settled = try store.kvGet(key: LedgerStore.settlementsKey)
+        func refused(_ error: Error, _ what: String, _ words: String = GroupEndCopy.refusedVanished) {
+            XCTAssertEqual(error as? LedgerStore.Placing.ReadOnlyCopy, LedgerStore.Placing.ReadOnlyCopy(mark: GroupGone.mark(at: at)), what)
+            XCTAssertEqual("\(error)", words, "\(what): the words a failure line prints")
+        }
+        XCTAssertThrowsError(try store.appendExpense(try dinner(goa))) { refused($0, "an expense") }
+        XCTAssertThrowsError(try store.appendExpenses([try dinner(lisbon), try dinner(goa)])) { refused($0, "an import") }
+        let pay = LedgerStore.SettlementDTO(from: me.id, to: rahul, amountMinor: 100, currencyCode: "INR", group: goa.group.id)
+        XCTAssertThrowsError(try store.checkSettlement(pay)) { refused($0, "a settle's hold") }
+        XCTAssertThrowsError(try store.appendSettlement(pay)) { refused($0, "a payment") }
+        let edit = ExpenseRevisionIn(target: target, seen: [], editor: me.id, money: nil, note: "x", category: nil, deleted: nil)
+        XCTAssertThrowsError(try store.reviseExpense(edit)) { refused($0, "an edit") }
+        XCTAssertThrowsError(try LedgerStore.Sync.appendGroupOps(
+            store, [.renameMember(groupId: goa.group.id, memberId: rahul, name: "R")], placing: try LedgerStore.Placing.load(store))) {
+            refused($0, "an op")
+        }
+        XCTAssertThrowsError(try LedgerStore.Placing.load(store).redistribution(RedistributionInput(
+            group: goa.group.id, from: rahul, currencyCode: "INR", shares: [IdAmount(id: me.id, amountMinor: 1)]))) {
+            refused($0, "a redistribution")
+        }
+        XCTAssertEqual(try store.allRecords().count, records, "nothing written: no record waits to be parked")
+        XCTAssertEqual(try store.kvGet(key: LedgerStore.key), kv)
+        XCTAssertEqual(try store.kvGet(key: LedgerStore.settlementsKey), settled)
+        // Negatives: another group, Just me and the backfills' `.none` write as before.
+        _ = try store.appendExpense(try dinner(lisbon))
+        XCTAssertEqual(try store.allRecords().count, records + 1)
+        XCTAssertNil(try LedgerStore.Placing.load(store).copyRefusal(group: lisbon.group.id))
+        XCTAssertNil(try LedgerStore.Placing.load(store).copyRefusal(group: nil))
+        XCTAssertNil(LedgerStore.Placing.none.copyRefusal(group: goa.group.id), ".none refuses nothing")
+        // Each mark's words.
+        try store.markReadOnly(goa.group.id, LedgerStore.ReadOnly(kind: "deleted", by: "Tim", at: at, byYou: true))
+        XCTAssertThrowsError(try store.appendExpense(try dinner(goa))) { XCTAssertEqual("\($0)", GroupEndCopy.refusedYouDeleted) }
+        try store.markReadOnly(goa.group.id, LedgerStore.ReadOnly(kind: "deleted", by: "Asha", at: at))
+        XCTAssertThrowsError(try store.appendExpense(try dinner(goa))) { XCTAssertEqual($0.localizedDescription, GroupEndCopy.refusedDeleted) }
+        try store.markReadOnly(goa.group.id, LedgerStore.ReadOnly(kind: "removed", by: "Asha", at: at))
+        XCTAssertThrowsError(try store.appendExpense(try dinner(goa))) { XCTAssertEqual("\($0)", GroupEndCopy.refusedRemoved) }
+        // Shared again (an invite accepted clears the mark): it takes records again.
+        try store.clearReadOnly(goa.group.id)
+        _ = try store.appendExpense(try dinner(goa))
+        XCTAssertEqual(try store.allRecords().count, records + 2)
+    }
+
+    // MARK: The sync layer's wiring (pure rules above; these pin where they run)
+
+    func testTheSyncLayerAsksOnlyFromTheServerAndNeverDeletesAnything() throws {
+        let cloud = try appSource("CloudSync.swift")
+        XCTAssertTrue(cloud.contains("let fromCache = snapshot.metadata.isFromCache"))
+        XCTAssertTrue(cloud.contains("if !fromCache { checkVanished(listed: groups.map { ($0.0, $0.2) }, uid: uid, store: store) }"),
+                      "a listing from the cache asks nothing")
+        let check = try XCTUnwrap(cloud.components(separatedBy: "private func checkVanished(").dropFirst().first?
+            .components(separatedBy: "\n    }\n").first)
+        XCTAssertTrue(check.contains("GroupGone.decide(GroupGone.read(await Self.groupRead(groupId)))"), "the one read, the removal's own")
+        XCTAssertTrue(check.contains("guard GroupGone.marks(over: try store.readOnlyChecked()[groupId]) else { return }"))
+        XCTAssertTrue(check.contains("try store.markReadOnly(groupId, GroupGone.mark(at: Date()))"))
+        XCTAssertTrue(check.contains("guard sync.groupsListener != nil, Account.shared.uid == uid else { return }"), "never after sign-out")
+        XCTAssertTrue(check.contains("guard !sync.listedNow.contains(groupId) else { return }"), "listed again meanwhile: nothing")
+        for forbidden in ["forgetGroup", "forgetInVault", "kvSet(", "removeItem"] {
+            XCTAssertFalse(check.contains(forbidden), "the check never deletes local data: \(forbidden)")
+        }
+        // D-235/D-244 style count: the group read is the removal's (`groupRead`); D-252 adds no new server read.
+        XCTAssertEqual(cloud.components(separatedBy: "getDocument(source: .server)").count - 1, 3,
+                       "ensureGroup's existence read, the record existence read, groupRead (removal and D-252 share it)")
+        XCTAssertTrue(cloud.contains("vanishAsked = []\n        listedNow = []"), "a new session sweeps again")
+        let handle = try XCTUnwrap(cloud.components(separatedBy: "                case .deleted:").dropFirst().first?
+            .components(separatedBy: "                case .role, .declined:").first)
+        XCTAssertTrue(handle.contains("if let mark = Notices.deletedMark(item, uid: Account.shared.uid, existing: try store.readOnlyChecked()[item.groupId]) {"))
     }
 }
