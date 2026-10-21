@@ -414,7 +414,7 @@ fun GroupNextCard(
             if (!latch.begin(pick)) return@PrimaryAction
             // D-247 (decision 182): held for Undo, as Settle up's cards are ([SettleHold], the one write path).
             val failure = runCatching {
-                SettleHold.shared.hold(SettleAll.settlement(pick.entry, pick.currencyCode, named), other, vaultPath)
+                SettleHold.shared.hold(SettleAll.settlement(pick.entry, pick.currencyCode, named), other, LedgerStore(vaultPath))
             }.exceptionOrNull()
             if (failure == null) {
                 // The latch keeps "Settling" until the reloaded page picks another payment.

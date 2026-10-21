@@ -50,6 +50,9 @@ struct DoneLine: Equatable {
     let title: String
     let parts: [String]
     var action: String? = nil
+    /// D-247 fix wave (decision 201): how long a line with an action stays (the hold's window: 12 s with a screen
+    /// reader, else `DoneCenter.actionSeconds`).
+    var actionSeconds: Double = DoneCenter.actionSeconds
 }
 
 /// The once-only moments the big check marks.
@@ -111,6 +114,9 @@ enum DoneCopy {
     /// D-247: the held settle's toast action, and the toast that says Undo wrote nothing.
     static let undo = "Undo"
     static let notRecorded = "Not recorded."
+    /// D-247 fix wave (decision 201): what a screen reader hears after a toast that offers an action, so the action is
+    /// named and its time said (`seconds`, whole seconds as digits).
+    static func actionSpoken(_ label: String, seconds: String) -> String { "\(label) is available for \(seconds) seconds." }
     static let groupNameSaved = "Group name saved"
     /// U27 (the founder's words, 2026-10-20): a group deleted, here or for everyone.
     static let groupDeleted = "Group deleted"
@@ -123,9 +129,18 @@ enum DoneCopy {
     /// read.
     static func spoken(title: String, parts: [String]) -> String { SpokenLine.join([title] + parts) }
 
-    static func spoken(_ line: DoneLine) -> String { spoken(title: line.title, parts: line.parts) }
+    /// D-247 fix wave (decision 201): a line with an action ends with the action named (`actionSpoken`).
+    static func spoken(_ line: DoneLine) -> String {
+        let words = spoken(title: line.title, parts: line.parts)
+        guard let action = line.action else { return words }
+        let seconds = String(Int(line.actionSeconds.rounded()))
+        return words + " " + actionSpoken(action, seconds: seconds)
+    }
 
-    static func spoken(_ moment: DoneMoment) -> String { spoken(title: moment.title, parts: moment.parts) }
+    static func spoken(_ moment: DoneMoment) -> String {
+        if case .small(let line) = moment { return spoken(line) }
+        return spoken(title: moment.title, parts: moment.parts)
+    }
 }
 
 /// The spoken form's joining, kept out of `DoneCopy` so that enum holds only words: pieces joined with ", ", and a
@@ -166,15 +181,15 @@ enum DoneMoments {
         }))
     }
 
-    /// D-247: an everyday moment that offers one action (`label`), shown for `DoneCenter.actionSeconds`.
-    static func line(_ title: String, action label: String) -> DoneMoment {
-        .small(DoneLine(title: title, parts: [], action: label))
+    /// D-247: an everyday moment that offers one action (`label`), shown for `seconds` (the hold's window).
+    static func line(_ title: String, action label: String, seconds: Double = DoneCenter.actionSeconds) -> DoneMoment {
+        .small(DoneLine(title: title, parts: [], action: label, actionSeconds: seconds))
     }
 
-    /// The toast's time on screen: `ToastMotion.total`, or, with an action, `DoneCenter.actionSeconds` (the action's
+    /// The toast's time on screen: `ToastMotion.total`, or, with an action, the line's `actionSeconds` (the action's
     /// whole window, so it never goes before what it offers does).
     static func toastSeconds(_ line: DoneLine) -> Double {
-        line.action == nil ? ToastMotion.total : DoneCenter.actionSeconds
+        line.action == nil ? ToastMotion.total : line.actionSeconds
     }
 
     /// An expense added (or, `edited`, saved): its description and core's amount (the new amount on an edit).
@@ -558,14 +573,14 @@ struct DoneToast: View {
         }
         .padding(.vertical, ThemeArt.m("toastPadV"))
         .padding(.horizontal, ThemeArt.m("toastPadH"))
-        .background(Tokens.surface, in: shape)
-        .overlay(shape.stroke(Tokens.hairline, lineWidth: 1))
+        // D-247 fix wave (review M2): the panel itself never takes a touch, so for the whole window what lies under it
+        // still works; only `DoneToastAction` does (Android's twin passes every touch but the button too).
+        .background { shape.fill(Tokens.surface).allowsHitTesting(false) }
+        .overlay { shape.stroke(Tokens.hairline, lineWidth: 1).allowsHitTesting(false) }
         .compositingGroup()
         .shadow(color: .black.opacity(Double(ThemeArt.m("toastShadowAlpha"))), radius: ThemeArt.m("toastShadowRadius"),
                 y: ThemeArt.m("toastShadowY"))
         .padding(.horizontal, ThemeArt.m("toastInset"))
-        // D-247: only a toast that offers an action takes a touch (its action's); every other passes every touch on.
-        .allowsHitTesting(action != nil)
     }
 }
 

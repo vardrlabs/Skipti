@@ -144,7 +144,14 @@ object Haptics {
 /** Design 4: one line of a small moment: its title, then its parts (joined on screen by the theme's separator). D-247:
  *  [action], the label of the one thing the toast offers (a held settle's "Undo"); what it does is the centre's
  *  ([DoneMomentCenter.act]). The twin of iOS's `DoneLine`. */
-data class DoneLine(val title: String, val parts: List<String>, val action: String? = null)
+data class DoneLine(
+    val title: String,
+    val parts: List<String>,
+    val action: String? = null,
+    /** D-247 fix wave (decision 201): how long a line with an action stays (the hold's window: 12 s with a screen reader,
+     *  else [DoneCenter.ACTION_SECONDS]). */
+    val actionSeconds: Double = DoneCenter.ACTION_SECONDS,
+)
 
 /** Design 4: the once-only moments the big check marks. */
 enum class BigKind { FIRST_GROUP, SIGNED_IN, JOINED, ERASED }
@@ -195,13 +202,24 @@ object DoneCopy {
     const val UNDO = "Undo"
     const val NOT_RECORDED = "Not recorded."
 
+    /** D-247 fix wave (decision 201): what a screen reader hears after a toast that offers an action, so the action is
+     *  named and its time said ([seconds], whole seconds as digits). */
+    fun actionSpoken(label: String, seconds: String): String = "$label is available for $seconds seconds."
+
     /** What a screen reader says: the title and the parts joined with a comma ([SpokenLine]). The separator is never
      *  read. */
     fun spoken(title: String, parts: List<String>): String = SpokenLine.join(listOf(title) + parts)
 
-    fun spoken(line: DoneLine): String = spoken(line.title, line.parts)
+    /** D-247 fix wave (decision 201): a line with an action ends with the action named ([actionSpoken]). */
+    fun spoken(line: DoneLine): String {
+        val words = spoken(line.title, line.parts)
+        val action = line.action ?: return words
+        val seconds = Math.round(line.actionSeconds).toString()
+        return words + " " + actionSpoken(action, seconds)
+    }
 
-    fun spoken(moment: DoneMoment): String = spoken(moment.title, moment.parts)
+    fun spoken(moment: DoneMoment): String =
+        if (moment is DoneMoment.Small) spoken(moment.line) else spoken(moment.title, moment.parts)
 }
 
 /** The spoken form's joiner: pieces joined with ", ", and a separator inside a piece (Norse's rune or the middle dot,
@@ -237,14 +255,15 @@ object DoneMoments {
     fun line(title: String, vararg parts: String?): DoneMoment =
         DoneMoment.Small(DoneLine(title, parts.mapNotNull { it?.trim()?.takeIf(String::isNotEmpty) }))
 
-    /** D-247: an everyday moment that offers one action ([action], its label), shown for [DoneCenter.ACTION_SECONDS].
+    /** D-247: an everyday moment that offers one action ([action], its label), shown for [seconds] (the hold's window).
      *  Its own name (never an overload of [line], whose parts a second string would otherwise become). The twin of
-     *  iOS's `line(_:action:)`. */
-    fun lineWithAction(title: String, action: String): DoneMoment = DoneMoment.Small(DoneLine(title, emptyList(), action))
+     *  iOS's `line(_:action:seconds:)`. */
+    fun lineWithAction(title: String, action: String, seconds: Double = DoneCenter.ACTION_SECONDS): DoneMoment =
+        DoneMoment.Small(DoneLine(title, emptyList(), action, seconds))
 
-    /** The toast's time on screen: [ToastMotion.TOTAL], or, with an action, [DoneCenter.ACTION_SECONDS] (the action's
-     *  whole window, so it never goes before what it offers does). The twin of iOS's `toastSeconds`. */
-    fun toastSeconds(line: DoneLine): Double = if (line.action == null) ToastMotion.TOTAL else DoneCenter.ACTION_SECONDS
+    /** The toast's time on screen: [ToastMotion.TOTAL], or, with an action, the line's [DoneLine.actionSeconds] (the
+     *  action's whole window, so it never goes before what it offers does). The twin of iOS's `toastSeconds`. */
+    fun toastSeconds(line: DoneLine): Double = if (line.action == null) ToastMotion.TOTAL else line.actionSeconds
 
     /** Design 7: an expense added (or, [edited], saved): its description and core's amount. */
     fun expense(edited: Boolean, note: String?, paidMinor: Long, currency: String): DoneMoment =

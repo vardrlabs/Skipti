@@ -423,10 +423,10 @@ class SettledTest {
     @Test
     fun the_next_card_records_like_settle_up() {
         val card = body("Settled.kt", "fun GroupNextCard(")
-        assertTrue("holds like Settle up", "SettleHold.shared.hold(SettleAll.settlement(pick.entry, pick.currencyCode, named), other, vaultPath)" in card)
+        assertTrue("holds like Settle up", "SettleHold.shared.hold(SettleAll.settlement(pick.entry, pick.currencyCode, named), other, LedgerStore(vaultPath))" in card)
         assertFalse("the next card writes nothing itself", "SettleAll.record(" in card || "SettleAll.append(" in card)
         val screen = body("SettleAll.kt", "fun SettleAllScreen(")
-        assertTrue("Settle up holds the same way", "hold.hold(SettleAll.settlement(entry, currency, section.named, amount), other, vaultPath)" in screen)
+        assertTrue("Settle up holds the same way", "hold.hold(SettleAll.settlement(entry, currency, section.named, amount), other, LedgerStore(vaultPath))" in screen)
         assertFalse("Settle up writes nothing itself: the hold does", "SettleAll.record(" in screen || "SettleAll.append(" in screen)
         assertEquals("one append, in SettleAll", 1, main("SettleAll.kt").split("appendSettlement(").size - 1)
         for (f in listOf("Settled.kt", "OverviewTab.kt")) assertFalse("$f appends nothing itself", "appendSettlement(" in main(f) || "settlementFor(" in main(f))

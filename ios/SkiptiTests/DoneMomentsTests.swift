@@ -308,7 +308,13 @@ final class DoneMomentsTests: XCTestCase {
             XCTAssertTrue(try declaration(source, head).contains(".allowsHitTesting(false)"), "\(head) takes touches")
         }
         let toast = try declaration(source, "struct DoneToast: View {")
-        XCTAssertTrue(toast.contains(".allowsHitTesting(action != nil)"), "a toast with no action passes every touch on")
+        // D-247 fix wave (review M2): the panel (its fill and edge) never takes a touch, with an action or without; only
+        // the action's button does (Android's twin passes every touch but the button).
+        XCTAssertFalse(toast.contains(".allowsHitTesting(action != nil)"), "the whole panel took touches for the window")
+        XCTAssertTrue(toast.contains(".background { shape.fill(Tokens.surface).allowsHitTesting(false) }"))
+        XCTAssertTrue(toast.contains(".overlay { shape.stroke(Tokens.hairline, lineWidth: 1).allowsHitTesting(false) }"))
+        XCTAssertFalse(toast.contains(".background(Tokens.surface, in: shape)"), "a shape background takes touches")
+        XCTAssertFalse(toast.contains(".contentShape("), "nothing widens the panel's touch")
         XCTAssertTrue(toast.contains("if let action { DoneToastAction(label: action, run: onAction) }"))
         XCTAssertEqual(source.components(separatedBy: "Button(").count, 2, "one control in the file")
         XCTAssertTrue(try declaration(source, "struct DoneToastAction: View {").contains("Button(action: run)"), "the toast's action")
@@ -326,6 +332,10 @@ final class DoneMomentsTests: XCTestCase {
         c.post(DoneMoments.line("Settled with Ana. No money moved.", action: "Undo"), onAction: { ran += 1 })
         let first = c.serial
         XCTAssertEqual(DoneMoments.toastSeconds(DoneLine(title: "x", parts: [], action: "Undo")), DoneCenter.actionSeconds)
+        // D-247 fix wave (decision 201): the line carries its window (12 s with a screen reader).
+        XCTAssertEqual(DoneMoments.toastSeconds(DoneLine(title: "x", parts: [], action: "Undo", actionSeconds: 12)), 12)
+        XCTAssertEqual(DoneMoments.toastSeconds(DoneLine(title: "x", parts: [], actionSeconds: 12)), ToastMotion.total,
+                       "no action: the plain toast's time")
         XCTAssertEqual(DoneMoments.toastSeconds(DoneLine(title: "x", parts: [])), ToastMotion.total)
         XCTAssertEqual(DoneCenter.actionSeconds, 5)
         c.act(first - 1)
@@ -550,7 +560,7 @@ final class DoneMomentsTests: XCTestCase {
         let settle = try appSource("SettleAll.swift")
         let hold = try slice(settle, from: "final class SettleHold {", to: "\n}\n")
         XCTAssertEqual(hold.components(separatedBy: "center.post(").count, 3, "two posts, both the hold's")
-        XCTAssertTrue(hold.contains("center.post(DoneMoments.line(DoneCopy.settledWith(other), action: DoneCopy.undo),"))
+        XCTAssertTrue(hold.contains("center.post(DoneMoments.line(DoneCopy.settledWith(other), action: DoneCopy.undo, seconds: seconds),"))
         XCTAssertTrue(hold.contains("center.post(DoneMoments.line(DoneCopy.notRecorded))"))
         XCTAssertFalse(settle.contains("DoneCenter.shared.post("), "nothing else in Settle up posts")
         XCTAssertTrue(try slice(settle, from: "    private func settle(_ entry: ShareOut,", to: "\n    }\n").contains("historyNames(group:"),

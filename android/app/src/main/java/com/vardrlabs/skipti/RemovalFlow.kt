@@ -120,6 +120,19 @@ object Removal {
     fun canFormat(settlements: List<SettlementDTO>): Boolean =
         settlements.all { RolesMoney.format(it.amountMinor, it.currencyCode) != null }
 
+    /** D-247 fix wave (review I2): every write path other than the hold lands the hold first. Settle first's payments as
+     *  they are recorded: the held settle ([SettleHold]) lands first; when one did (and no payment of this Settle first
+     *  is in yet, [started]), the payments are worked out again from the vault, so the debt it paid is never recorded
+     *  twice. Otherwise the payments the screen showed ([shown]). On the main thread (the hold's). The twin of iOS's
+     *  `Removal.settleFirstLanding`. */
+    fun settleFirstLanding(
+        store: LedgerStore, shown: List<SettlementDTO>, member: String, group: String, started: Boolean,
+        hold: SettleHold = SettleHold.shared,
+    ): List<SettlementDTO> {
+        if (!hold.commit() || started) return shown
+        return settleFirst(lines(store, group, member), member, group)
+    }
+
     /** Core's balance lines for [member] in [group], from what this phone holds. */
     fun lines(store: LedgerStore, group: String, member: String): List<BalanceLineOut> = ffiBalanceLine(
         store.loadExpenses().filter { it.group == group }.map { it.toInput() },
@@ -1252,6 +1265,10 @@ fun RemovalFlowScreen(
     val request = live ?: seen
 
     LaunchedEffect(vaultPath, gid, mid) {
+        // D-247 fix wave (review I2): a settle held for Undo lands before the flow reads anything (on the main thread,
+        // the hold's); the group page under this route has gone already, so this is the twin of iOS's sheet, kept for
+        // parity and for any way in that leaves a hold.
+        SettleHold.shared.commit()
         val result = withContext(Dispatchers.IO) {
             runCatching {
                 val store = LedgerStore(vaultPath)
@@ -1282,6 +1299,8 @@ fun RemovalFlowScreen(
     // showing the payments it recorded.
     LaunchedEffect(c) {
         if (c == null || start != null) return@LaunchedEffect
+        // D-247 fix wave (I2): and again before the balance is read.
+        SettleHold.shared.commit()
         val result = withContext(Dispatchers.IO) {
             runCatching {
                 val store = LedgerStore(vaultPath)
@@ -1419,9 +1438,21 @@ fun RemovalFlowScreen(
                 if (!Removal.canFormat(settlements)) {
                     localError = RolesCopy.CANNOT_WRITE_PAYMENT
                 } else if (!busy) {
+                    // D-247 fix wave (I2): a settle still held for Undo lands first; the payments are worked out again if
+                    // it did (and none of these is in yet).
+                    val pay = runCatching {
+                        Removal.settleFirstLanding(LedgerStore(vaultPath), settlements, mid, gid, started = (held ?: settle)?.started == true)
+                    }.getOrElse {
+                        localError = RemovalContext.message(it)
+                        return@SettleFirst
+                    }
+                    if (pay != settlements) settlements = pay
+                    if (!Removal.canFormat(pay)) {
+                        localError = RolesCopy.CANNOT_WRITE_PAYMENT
+                        return@SettleFirst
+                    }
                     // The job's progress (or this screen's saved copy, after a
                     // process death), kept with the job from now on.
-                    val pay = settlements
                     val progress = GroupJobs.settleProgress(key, pay, settle).also { settle = it }
                     attempt {
                         progress.run(

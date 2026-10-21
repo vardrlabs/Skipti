@@ -1919,6 +1919,16 @@ class LedgerStore(
         }
     }
 
+    /** D-247 fix wave (I1): the whole check a settlement passes before anything is written, and before a settle is held
+     *  for Undo ([SettleHold.hold]): this account's place in the group ([Placing]: [Placing.PlaceLost],
+     *  [Placing.SameEnds]), then core's rules on the record as it would be written (D-235). [appendSettlement] runs the
+     *  same function, so the hold and the write can never disagree. The twin of iOS's `LedgerStore.checkSettlement`. */
+    fun checkSettlement(settlement: SettlementDTO): Placing {
+        val placing = Placing.load(this)
+        uniffi.skipti_core.ffiCheckSettlement(placing.settlement(settlement).toInput())
+        return placing
+    }
+
     /**
      * §5.8: records a settlement the only way the app knows how, as
      * persisted ledger state (kv) AND as a typed straumr record through the
@@ -1938,9 +1948,9 @@ class LedgerStore(
         // JSON (the old placeholder stamped the payer's PARTICIPANT id as the
         // device id and counter 0 always; the device id is now this device's,
         // and the counter makes same-millisecond records distinct).
-        val placing = Placing.load(this)
         // D-235: core's settlement rules (two different people, more than 0, inside the bound), before anything is written.
-        uniffi.skipti_core.ffiCheckSettlement(placing.settlement(settlement).toInput())
+        // D-247 fix wave (I1): the one check the hold runs too.
+        val placing = checkSettlement(settlement)
         val record = Sync.settlementRecord(settlement, Sync.nextHlc(this, nowMs), Sync.deviceId(this), placing)
         var vault = openVault()
         try {

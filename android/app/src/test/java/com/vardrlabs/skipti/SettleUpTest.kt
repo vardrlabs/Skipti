@@ -162,7 +162,7 @@ class SettleUpTest {
         val partial = SettleAll.settlement(entry, "EUR", named, minor)
         assertEquals(1_200L, partial.amountMinor)
         assertEquals("you pay", named.selfId, partial.from)
-        hold.hold(partial, "Ana", store.path)
+        hold.hold(partial, "Ana", store)
         assertEquals("nothing written while held", 0, store.loadSettlements().size)
         val held = hold.counting { SettleAll.sections(store, it) }.first()
         assertEquals("the remainder, 20.00, at once", listOf(ShareOut(ana, -2_000)), held.lines.first().entries)
@@ -185,8 +185,8 @@ class SettleUpTest {
         var written = 0
         val hold = SettleHold(center, 60.0, write = { _, _ -> writes += 1 }, written = { written += 1 }, scope = scope, clock = { 0L })
         val s = SettleAll.settlement(ShareOut(ana, -3_200), "EUR", named)
-        hold.hold(s, "Ana", store.path)
-        assertEquals(DoneMoments.lineWithAction("Settled with Ana. No money moved.", "Undo"), center.current)
+        hold.hold(s, "Ana", store)
+        assertEquals(DoneMoments.lineWithAction("Settled with Ana. No money moved.", "Undo", 60.0), center.current)
         assertEquals("shown as settled at once", SettleState.ALL_SETTLED, hold.counting { SettleAll.sections(store, it) }.first().state)
         center.act(center.serial)
         assertNull(hold.pending)
@@ -207,7 +207,7 @@ class SettleUpTest {
         var writes = 0
         val hold = SettleHold(center, 0.2, write = { _, s -> writes += 1; SettleAll.record(store, s) }, written = {}, scope = scope, clock = { 0L })
         val s = SettleAll.settlement(ShareOut(ana, -3_200), "EUR", named)
-        hold.hold(s, "Ana", store.path)
+        hold.hold(s, "Ana", store)
         val serial = center.serial
         Thread.sleep(800)
         assertEquals("written once, when the window ended", 1, writes)
@@ -229,7 +229,7 @@ class SettleUpTest {
         val writes = mutableListOf<SettlementDTO>()
         val hold = SettleHold(quietCenter(), 60.0, write = { _, s -> writes.add(s) }, written = {}, scope = scope, clock = { 0L })
         val s = SettleAll.settlement(ShareOut(ana, -3_200), "EUR", named)
-        hold.hold(s, "Ana", store.path)
+        hold.hold(s, "Ana", store)
         assertEquals("nothing before", emptyList<SettlementDTO>(), writes)
         hold.commit()
         hold.commit()
@@ -253,8 +253,8 @@ class SettleUpTest {
         val hold = SettleHold(quietCenter(), 60.0, write = { _, s -> writes.add(s) }, written = {}, scope = scope, clock = { 0L })
         val first = SettleAll.settlement(ShareOut(ana, -3_200), "EUR", named, 1_000)
         val second = SettleAll.settlement(ShareOut(ana, -2_200), "EUR", named, 500)
-        hold.hold(first, "Ana", store.path)
-        hold.hold(second, "Ana", store.path)
+        hold.hold(first, "Ana", store)
+        hold.hold(second, "Ana", store)
         assertEquals("the first landed at the second tap", listOf(first), writes)
         assertEquals("one held at a time", listOf(second), hold.held)
         hold.undo(1)
@@ -272,7 +272,7 @@ class SettleUpTest {
         var writes = 0
         val hold = SettleHold(center, 60.0, write = { _, _ -> writes += 1 }, written = {}, scope = scope, clock = { 0L })
         val zero = SettleAll.settlement(ShareOut(ana, -3_200), "EUR", named, 0)
-        assertTrue(runCatching { hold.hold(zero, "Ana", store.path) }.isFailure)
+        assertTrue(runCatching { hold.hold(zero, "Ana", store) }.isFailure)
         assertNull(hold.pending)
         assertNull(center.current)
         hold.commit()
@@ -289,7 +289,7 @@ class SettleUpTest {
             quietCenter(), 60.0, write = { _, _ -> throw uniffi.skipti_core.CoreException.InvalidInput("disk") },
             written = { written += 1 }, scope = scope, clock = { 0L },
         )
-        hold.hold(SettleAll.settlement(ShareOut(ana, -3_200), "EUR", named), "Ana", store.path)
+        hold.hold(SettleAll.settlement(ShareOut(ana, -3_200), "EUR", named), "Ana", store)
         val before = hold.revision
         hold.commit()
         assertNull(hold.pending)
@@ -311,9 +311,185 @@ class SettleUpTest {
         assertTrue("SettleHold.shared.counting { held -> (store.loadSettlements() + held).map { it.toInput() } }" in page)
         assertTrue("LaunchedEffect(vaultPath, groupId, SyncStatus.revision, requestIds, SettleHold.shared.revision)" in page)
         val hold = all.substringAfter("class SettleHold(").substringBefore("\n}\n")
-        assertTrue("checked, then the held one lands", "uniffi.skipti_core.ffiCheckSettlement(settlement.toInput())\n        commit()" in hold)
+        assertTrue(
+            "the write's own check, the old failure cleared, then the held one lands",
+            "store.checkSettlement(settlement)\n        failure = null\n        commit()" in hold,
+        )
         assertTrue("the live write is the one append", "{ path, settlement -> SettleAll.record(LedgerStore(path), settlement) }" in hold)
         assertTrue("written and dropped under the lock", "val failed = synchronized(lock) {\n            pending = null\n            runCatching { write(p.path, p.settlement) }" in hold)
+    }
+
+    // ---- D-247 fix wave: one check, a kept failure, the removal, the live cap, the screen reader's window ----
+
+    /** I1 (a): the landing at the next Settle tap fails: its words stay (the new settle is held, the failure is not wiped
+     *  by the tap that caused it); the person's next tap clears it before its own landing, which succeeds. */
+    @Test
+    fun a_failed_landing_at_the_next_settle_keeps_its_words() {
+        val store = tempStore()
+        val (named, ana) = paris(store)
+        var calls = 0
+        val hold = SettleHold(quietCenter(), 60.0, write = { _, _ ->
+            calls += 1
+            if (calls == 1) throw uniffi.skipti_core.CoreException.InvalidInput("disk")
+        }, written = {}, scope = scope, clock = { 0L })
+        val first = SettleAll.settlement(ShareOut(ana, -3_200), "EUR", named, 1_000)
+        val second = SettleAll.settlement(ShareOut(ana, -3_200), "EUR", named, 500)
+        hold.hold(first, "Ana", store)
+        assertNull(hold.failure)
+        hold.hold(second, "Ana", store)
+        assertEquals("the first landed (and failed) at the second tap", 1, calls)
+        assertEquals("the second is held", listOf(second), hold.held)
+        assertTrue("the first's failure is kept", hold.failure?.startsWith("Could not record the settlement.") == true)
+        hold.hold(first, "Ana", store)
+        assertEquals(2, calls)
+        assertNull("the next tap cleared it; its own landing wrote", hold.failure)
+    }
+
+    /** I1 (c): the hold runs the write's own check ([LedgerStore.checkSettlement]: the place, then core): a group whose
+     *  place this phone lost, and a payment whose two ends become one id, are refused at the tap: nothing held, nothing
+     *  posted, nothing written; core's bare check alone would have let both through. */
+    @Test
+    fun the_hold_runs_the_writes_own_check() {
+        val f = FounderVault
+        val lost = f.lost(tempStore())
+        val paid = SettlementDTO(f.hex(1), f.hex(3), 600, "INR", f.hex(9))
+        uniffi.skipti_core.ffiCheckSettlement(paid.toInput()) // not vacuous: core alone takes it
+        val same = f.p(tempStore(), 2)
+        val toSelf = SettlementDTO(f.hex(1), f.hex(2), 100, "INR", f.hex(9))
+        uniffi.skipti_core.ffiCheckSettlement(toSelf.toInput()) // not vacuous: core alone takes it
+        for ((store, s, refusal) in listOf(Triple(lost, paid, "lost"), Triple(same, toSelf, "same"))) {
+            val center = quietCenter()
+            var writes = 0
+            val hold = SettleHold(center, 60.0, write = { _, _ -> writes += 1 }, written = {}, scope = scope, clock = { 0L })
+            val error = runCatching { hold.hold(s, "Bo", store) }.exceptionOrNull()
+            if (refusal == "lost") assertTrue("$error", error is Placing.PlaceLost) else assertTrue("$error", error is Placing.SameEnds)
+            assertNull(refusal, hold.pending)
+            assertNull("no toast: $refusal", center.current)
+            hold.commit()
+            assertEquals(refusal, 0, writes)
+        }
+        // The append runs the same check (one function, so the hold and the write cannot disagree).
+        val ledger = src("LedgerStore.kt")
+        assertEquals("appendSettlement's check", 1, count(ledger, "val placing = checkSettlement(settlement)"))
+        assertEquals("the check lives in checkSettlement alone", 1, count(ledger, "ffiCheckSettlement(placing.settlement(settlement).toInput())"))
+    }
+
+    /** I1 (b): the group page shows a held settle's failure in words, as Settle up does (source: the page's own error line). */
+    @Test
+    fun the_group_page_says_a_held_settle_failed() {
+        assertEquals(1, count(src("OverviewTab.kt"), "(error ?: SettleHold.shared.failure)?.let {"))
+        assertEquals(1, count(src("SettleAll.kt"), "(error ?: hold.failure)?.let {"))
+    }
+
+    /** I2: a settle held for Undo, then the removal of the same person: the removal lands the hold first, and Settle
+     *  first's payments, worked out before the hold landed, are worked out again: the debt is recorded once. */
+    @Test
+    fun a_held_settle_then_settle_first_records_the_debt_once() {
+        val store = tempStore()
+        val (named, ana) = paris(store)
+        val group = named.group.id
+        val hold = SettleHold(quietCenter(), 60.0, write = { _, s -> SettleAll.record(store, s) }, written = {}, scope = scope, clock = { 0L })
+        // What Settle first showed before the settle was held: you pay Ana 32.00.
+        val shown = Removal.settleFirst(Removal.lines(store, group, ana), ana, group)
+        assertEquals(listOf(SettlementDTO(named.selfId, ana, 3_200, "EUR", group)), shown)
+        val held = SettleAll.settlement(ShareOut(ana, -3_200), "EUR", named)
+        hold.hold(held, "Ana", store)
+        val pay = Removal.settleFirstLanding(store, shown, ana, group, started = false, hold = hold)
+        assertEquals("the held settle landed: nothing left to settle first", emptyList<SettlementDTO>(), pay)
+        pay.forEach { store.appendSettlement(it) }
+        assertEquals("the debt recorded once", listOf(held), store.loadSettlements())
+        assertEquals("Ana is square: never paid twice", emptyMap<String, Long>(), Removal.plan(Removal.lines(store, group, ana), ana))
+        // Nothing held: the payments shown are the payments recorded.
+        assertEquals(shown, Removal.settleFirstLanding(store, shown, ana, group, started = false, hold = hold))
+
+        // The flow's read lands the hold too, before it reads the balance (a partial here).
+        val store2 = tempStore()
+        val (named2, ana2) = paris(store2)
+        val hold2 = SettleHold(quietCenter(), 60.0, write = { _, s -> SettleAll.record(store2, s) }, written = {}, scope = scope, clock = { 0L })
+        hold2.hold(SettleAll.settlement(ShareOut(ana2, -3_200), "EUR", named2, 1_200), "Ana", store2)
+        assertTrue("landed", hold2.commit())
+        val lines = Removal.lines(store2, named2.group.id, ana2)
+        assertEquals("the balance after the held 12.00", mapOf("EUR" to 2_000L), Removal.plan(lines, ana2))
+        assertEquals(listOf(2_000L), Removal.settleFirst(lines, ana2, named2.group.id).map { it.amountMinor })
+        // Both of the flow's reads commit on the main thread before reading, and Settle first's tap goes through the
+        // landing (source: the reads are LaunchedEffects).
+        val flow = src("RemovalFlow.kt").substringAfter("fun RemovalFlowScreen(")
+        assertEquals("the flow's two reads", 2, count(flow, "SettleHold.shared.commit()\n        val result = withContext(Dispatchers.IO) {"))
+        assertEquals("Settle first", 1, count(flow, "Removal.settleFirstLanding(LedgerStore(vaultPath), settlements, mid, gid, started = (held ?: settle)?.started == true)"))
+        assertEquals(1, count(flow, "append = { i -> LedgerStore(vaultPath).appendSettlement(pay[i]) },"))
+    }
+
+    /** Review M3: Settle on the sheet checks the cap against the card's LIVE debt: a payment that arrived meanwhile and
+     *  shrank it refuses in the cap's words; the card gone (or turned the other way) refuses too; within it settles. */
+    @Test
+    fun the_cap_is_checked_against_the_live_debt_at_settle() {
+        val store = tempStore()
+        val (named, ana) = paris(store)
+        val group = named.group.id
+        fun live() = SettleAll.liveEntry(SettleAll.sections(store), group, "EUR", ana, youOwe = true)
+        assertEquals("the sheet opened on 32.00", ShareOut(ana, -3_200), live())
+        assertEquals(
+            "the field, against the debt it opened on",
+            OtherAmount.Verdict.Settles(2_500), OtherAmount.verdict("25.00", 3_200, "EUR", true, "Ana") {},
+        )
+        // A payment of 12.00 arrives (a sync) while the sheet is open.
+        store.appendSettlement(SettleAll.settlement(ShareOut(ana, -3_200), "EUR", named, 1_200))
+        val shrunk = live()
+        assertEquals(ShareOut(ana, -2_000), shrunk)
+        assertEquals(
+            "refused at the tap, in the cap's words",
+            OtherAmount.Verdict.TooMuch("That is more than you owe Ana."), OtherAmount.atSettle(2_500, shrunk, true, "Ana"),
+        )
+        assertEquals(OtherAmount.Verdict.Settles(2_000), OtherAmount.atSettle(2_000, shrunk, true, "Ana"))
+        assertEquals("the card is gone", OtherAmount.Verdict.TooMuch("That is more than Ana owes."), OtherAmount.atSettle(1, null, false, "Ana"))
+        assertNull("the other way round is not the same card", SettleAll.liveEntry(SettleAll.sections(store), group, "EUR", ana, youOwe = false))
+        assertNull(SettleAll.liveEntry(SettleAll.sections(store), group, "INR", ana, youOwe = true))
+        // The sheet shows the tap's refusal as the cap's line; the field's own line comes first.
+        assertEquals("r", OtherAmount.capWords(OtherAmount.Verdict.Settles(1), "r"))
+        assertEquals("t", OtherAmount.capWords(OtherAmount.Verdict.TooMuch("t"), "r"))
+        assertNull(OtherAmount.capWords(OtherAmount.Verdict.Settles(1), null))
+        val all = src("SettleAll.kt")
+        assertEquals(1, count(all, "when (val verdict = OtherAmount.atSettle(minor, live, draft.youOwe, draft.other)) {"))
+        assertEquals(1, count(all, "(verdict as? OtherAmount.Verdict.Settles)?.let { refused = onSettle(it.minor) }"))
+    }
+
+    /** Decision 201: with TalkBack running the hold lasts 12 s instead of 5, the toast stays as long, and the announcement
+     *  names the Undo and its time. */
+    @Test
+    fun the_hold_is_longer_with_a_screen_reader() {
+        assertEquals(5.0, SettleHold.window(false), 0.0)
+        assertEquals(DoneCenter.ACTION_SECONDS, SettleHold.window(false), 0.0)
+        assertEquals(12.0, SettleHold.window(true), 0.0)
+        assertFalse("no app context (a JVM test): no screen reader", ScreenReader.running())
+        val store = tempStore()
+        val (named, ana) = paris(store)
+        val s = SettleAll.settlement(ShareOut(ana, -3_200), "EUR", named)
+        for ((reader, seconds) in listOf(true to 12.0, false to 5.0)) {
+            val center = quietCenter()
+            val hold = SettleHold(center, screenReader = { reader }, write = { _, _ -> }, written = {}, scope = scope, clock = { 0L })
+            hold.hold(s, "Ana", store)
+            val line = (center.current as DoneMoment.Small).line
+            assertEquals(seconds, line.actionSeconds, 0.0)
+            assertEquals("the toast lasts the hold's window", seconds, DoneMoments.toastSeconds(line), 0.0)
+            assertEquals("Settled with Ana. No money moved. Undo is available for ${seconds.toInt()} seconds.", DoneCopy.spoken(line))
+            assertEquals("the host's live region says the same", DoneCopy.spoken(line), DoneCopy.spoken(center.current!!))
+            hold.undo(1)
+        }
+        assertEquals("no action: nothing added", "Name saved", DoneCopy.spoken(DoneLine("Name saved", emptyList())))
+        assertEquals("Undo is available for 12 seconds.", DoneCopy.actionSpoken("Undo", "12"))
+        val all = src("SettleAll.kt")
+        assertEquals(1, count(all, "private val screenReader: () -> Boolean = ScreenReader::running,"))
+        assertEquals(1, count(all, "val seconds = this.seconds ?: window(screenReader())"))
+    }
+
+    /** Review M1: SKIPTI leaving the front lands the held settle at ON_PAUSE too (the twin of iOS's inactive), never on a
+     *  re-creation (source: the activity's callbacks). */
+    @Test
+    fun the_pause_lands_the_held_settle() {
+        val root = src("AppRoot.kt")
+        val pause = root.substringAfter("override fun onPause() {").substringBefore("\n    }\n")
+        assertTrue("onPause lands it", "if (!isChangingConfigurations) SettleHold.shared.commit()" in pause)
+        assertTrue("before super.onPause()", pause.indexOf("SettleHold.shared.commit()") < pause.indexOf("super.onPause()"))
     }
 
     // ---- The settled words and the count (decision 168) ----

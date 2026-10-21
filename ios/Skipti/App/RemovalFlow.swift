@@ -65,6 +65,27 @@ enum Removal {
             removed: try store.removedIds(group: group), viewer: member, group: group)
     }
 
+    /// D-247 fix wave (review I2): every write path other than the hold lands the hold first. The removal's balance,
+    /// read after a settle held for Undo (`SettleHold`) has landed, so Settle first never records that debt again.
+    /// Android's twin is the flow's load (`SettleHold.shared.commit()` before its read).
+    @MainActor
+    static func linesLandingHeld(store: LedgerStore, group: String, member: String,
+                                 hold: SettleHold? = nil) throws -> [BalanceLineOut] {
+        (hold ?? .shared).commit()
+        return try lines(store: store, group: group, member: member)
+    }
+
+    /// D-247 fix wave (review I2): Settle first's payments as they are recorded: the held settle lands first; when one
+    /// did (and no payment of this Settle first is in yet, `started`), the payments are worked out again from the
+    /// vault, so the debt it paid is never recorded twice. Otherwise the payments the screen showed. Android's twin is
+    /// `Removal.settleFirstLanding`.
+    @MainActor
+    static func settleFirstLanding(store: LedgerStore, shown: [LedgerStore.SettlementDTO], member: String, group: String,
+                                   started: Bool, hold: SettleHold? = nil) throws -> [LedgerStore.SettlementDTO] {
+        guard (hold ?? .shared).commit(), !started else { return shown }
+        return settleFirst(lines: try lines(store: store, group: group, member: member), member: member, group: group)
+    }
+
     /// Every participant's net per currency in the group (core's): old
     /// balances for the redistribution's rows.
     static func nets(store: LedgerStore, group: String) throws -> [String: [String: Int64]] {
@@ -1053,7 +1074,8 @@ private struct ReviewRemovalView: View {
     /// true. A read that fails leaves the banner out and the safe wording.
     private func load() {
         let group = context.named.group.id, member = context.member.id
-        if let lines = try? Removal.lines(store: context.store, group: group, member: member) {
+        // D-247 fix wave (I2): a settle held for Undo lands before the balance is read.
+        if let lines = try? Removal.linesLandingHeld(store: context.store, group: group, member: member) {
             plan = Removal.plan(lines: lines, member: member)
         }
         noHistory = (try? context.store.removalRefusal(groupID: group, memberID: member) == nil) ?? false
@@ -1107,7 +1129,8 @@ private struct RemovalStartView: View {
     private func load() {
         do {
             let group = context.named.group.id, member = context.member.id
-            lines = try Removal.lines(store: context.store, group: group, member: member)
+            // D-247 fix wave (I2): a settle held for Undo lands before the balance is read.
+            lines = try Removal.linesLandingHeld(store: context.store, group: group, member: member)
             plan = Removal.plan(lines: lines, member: member)
             nets = try Removal.nets(store: context.store, group: group)
             // D-186's wording is true only for someone who never joined and is
@@ -1301,15 +1324,26 @@ private struct SettleFirstView: View {
     private func record(_ settlements: [LedgerStore.SettlementDTO]) {
         // Never record a payment the screen could not have shown.
         guard Removal.canFormat(settlements) else { error = RolesCopy.cannotWritePayment; return }
+        // D-247 fix wave (I2): a settle still held for Undo lands first; the payments are worked out again if it did.
+        let pay: [LedgerStore.SettlementDTO]
+        do {
+            pay = try Removal.settleFirstLanding(
+                store: context.store, shown: settlements, member: context.member.id, group: context.named.group.id,
+                started: settle?.started == true || settle?.removed == true)
+        } catch {
+            self.error = RemovalContext.message(error)
+            return
+        }
+        guard Removal.canFormat(pay) else { error = RolesCopy.cannotWritePayment; return }
         busy = true
         Task {
             defer { busy = false }
-            var progress = settle ?? SettleFirstProgress(total: settlements.count)
+            var progress = (pay == settlements ? settle : nil) ?? SettleFirstProgress(total: pay.count)
             defer { settle = progress }
             do {
                 try await SettleFirstProgress.run(
                     &progress,
-                    append: { i in _ = try context.store.appendSettlement(settlements[i]) },
+                    append: { i in _ = try context.store.appendSettlement(pay[i]) },
                     // The payments reach the cloud before the removal does.
                     sync: {
                         guard context.shared else { return true }

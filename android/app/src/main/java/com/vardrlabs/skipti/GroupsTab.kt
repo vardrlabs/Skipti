@@ -421,7 +421,7 @@ object SettleLook {
                 val s = sections.firstOrNull { it.named.group.name == "Goa trip" } ?: return flat
                 val line = s.lines.firstOrNull() ?: return flat
                 val sam = line.entries.firstOrNull { LedgerStore.label(it.id, s.named) == "Sam" } ?: return flat
-                SettleHold.shared.hold(SettleAll.settlement(sam, line.currencyCode, s.named, 120_000), "Sam", vaultPath)
+                SettleHold.shared.hold(SettleAll.settlement(sam, line.currencyCode, s.named, 120_000), "Sam", LedgerStore(vaultPath))
                 if (step == "undo") SettleHold.shared.pending?.let { SettleHold.shared.undo(it.id) }
             }
         }

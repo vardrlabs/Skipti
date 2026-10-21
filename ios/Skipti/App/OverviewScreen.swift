@@ -642,7 +642,9 @@ struct GroupPageScreen: View {
                             .buttonStyle(SecondaryButtonStyle())
                     }
                 }
-                if let error {
+                // D-247 fix wave (I1): a held settle whose write failed (its window ended, the page went, SKIPTI left
+                // the front) says so here too, as on Settle up.
+                if let error = error ?? SettleHold.shared.failure {
                     Text(verbatim: error).font(TypeRole.body()).foregroundStyle(Tokens.owed).glassCard()
                 }
             }

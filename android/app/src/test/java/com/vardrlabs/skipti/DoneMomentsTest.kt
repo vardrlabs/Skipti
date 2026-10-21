@@ -194,7 +194,7 @@ class DoneMomentsTest {
         val consts = DoneCopy::class.java.declaredFields
             .filter { java.lang.reflect.Modifier.isStatic(it.modifiers) && it.type == String::class.java }
             .map { it.isAccessible = true; it.get(null) as String }
-        return consts + listOf(DoneCopy.personRemoved("{}"), DoneCopy.settledWith("{}"))
+        return consts + listOf(DoneCopy.personRemoved("{}"), DoneCopy.settledWith("{}"), DoneCopy.actionSpoken("{}", "{}"))
     }
 
     /** Parity: every string of iOS's `enum DoneCopy` (DoneMoments.swift; interpolations read as `{}`; literals with no
@@ -789,7 +789,7 @@ class DoneMomentsTest {
         val settle = kt("SettleAll.kt")
         val hold = settle.substringAfter("class SettleHold(").substringBefore("\n}\n")
         assertEquals("two posts, both the hold's", 2, hold.split("center.post(").size - 1)
-        assertTrue("center.post(DoneMoments.lineWithAction(DoneCopy.settledWith(other), DoneCopy.UNDO), clock(), onAction = { undo(id) })" in hold)
+        assertTrue("center.post(DoneMoments.lineWithAction(DoneCopy.settledWith(other), DoneCopy.UNDO, seconds), clock(), onAction = { undo(id) })" in hold)
         assertTrue("center.post(DoneMoments.line(DoneCopy.NOT_RECORDED), clock())" in hold)
         assertFalse("nothing else in Settle up posts", "DoneCenter.post(" in settle)
         assertTrue("a removed person keeps their name", "LedgerStore.label(entry.id, section.named, section.history)" in settle)
@@ -975,6 +975,9 @@ class DoneMomentsTest {
         assertEquals(DoneCenter.ACTION_SECONDS, DoneMoments.toastSeconds(DoneLine("x", emptyList(), "Undo")), 0.0)
         assertEquals(ToastMotion.TOTAL, DoneMoments.toastSeconds(DoneLine("x", emptyList())), 0.0)
         assertEquals(5.0, DoneCenter.ACTION_SECONDS, 0.0)
+        // D-247 fix wave (decision 201): the line carries its window (12 s with a screen reader).
+        assertEquals(12.0, DoneMoments.toastSeconds(DoneLine("x", emptyList(), "Undo", actionSeconds = 12.0)), 0.0)
+        assertEquals("no action: the plain toast's time", ToastMotion.TOTAL, DoneMoments.toastSeconds(DoneLine("x", emptyList(), actionSeconds = 12.0)), 0.0)
         c.act(first - 1)
         assertEquals("an old serial does nothing", 0, ran)
         c.giveWay()

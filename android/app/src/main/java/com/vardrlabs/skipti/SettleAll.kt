@@ -184,6 +184,13 @@ object SettleAll {
         val whole = SettleUi.settlementFor(entry, currency, named.group.id, named.selfId)
         return if (amount == null) whole else whole.copy(amountMinor = amount)
     }
+
+    /** D-247 fix wave (review M3): the card a sheet's other amount is for, as the screen reads it NOW: the same group,
+     *  currency and person, owing the same way. Null when that card is gone (settled meanwhile, or the debt turned the
+     *  other way). The twin of iOS's `SettleAll.liveEntry`. */
+    fun liveEntry(sections: List<SettleSection>, group: String, currency: String, person: String, youOwe: Boolean): ShareOut? =
+        sections.firstOrNull { it.named.group.id == group }?.lines?.firstOrNull { it.currencyCode == currency }
+            ?.entries?.firstOrNull { it.id == person && (it.minorUnits < 0) == youOwe && it.minorUnits != 0L }
 }
 
 /** D-247 (decisions 167, 183): a card's "Another amount": what the field starts with and what it may hold. Every amount
@@ -204,6 +211,16 @@ object OtherAmount {
 
     /** The whole debt as the field takes it back (core's entry form: "450.00", no symbol, no grouping). */
     fun prefill(debt: Long, currency: String): String = runCatching { ffiMoneyInputDigits(debt, currency) }.getOrDefault("")
+
+    /** D-247 fix wave (review M3): the cap again at the Settle tap, against the card's LIVE debt ([live], from
+     *  [SettleAll.liveEntry]; null, the card has gone): a sync that shrank the debt while the sheet was open refuses in
+     *  the cap's words, so a partial never flips who owes whom (decision 183). The twin of iOS's `OtherAmount.atSettle`. */
+    fun atSettle(minor: Long, live: ShareOut?, youOwe: Boolean, other: String): Verdict =
+        if (live == null || minor > abs(live.minorUnits)) Verdict.TooMuch(SettleAllCopy.moreThanDebt(youOwe, other))
+        else Verdict.Settles(minor)
+
+    /** The sheet's cap line: the field's own (more than the debt the sheet opened on), else the tap's refusal. */
+    fun capWords(verdict: Verdict, refused: String?): String? = (verdict as? Verdict.TooMuch)?.words ?: refused
 
     /** [text] against the debt ([debt], the card's amount, always above 0). [check] is core's settlement check of the
      *  amount (`SettleAll.settlement(..., amount)`); a refusal reads as incomplete. */
@@ -243,7 +260,10 @@ data class OtherAmountDraft(
  */
 class SettleHold(
     private val center: DoneMomentCenter = DoneCenter,
-    private val seconds: Double = DoneCenter.ACTION_SECONDS,
+    /** The window in seconds; null (the app) reads it per hold from [window]. */
+    private val seconds: Double? = null,
+    /** Whether a screen reader (TalkBack) runs now (decision 201). */
+    private val screenReader: () -> Boolean = ScreenReader::running,
     private val write: (String, SettlementDTO) -> Unit = { path, settlement -> SettleAll.record(LedgerStore(path), settlement) },
     private val written: (String) -> Unit = ::liveWritten,
     /** The window's clock (the main thread's, in the app). */
@@ -263,7 +283,9 @@ class SettleHold(
     var revision by mutableIntStateOf(0)
         private set
 
-    /** The last write that failed, in words (the screens show it). */
+    /** The last write that failed, in words (both screens show it: Settle up's error line and the group page's). D-247 fix
+     *  wave (I1): only the person's next Settle tap clears it, BEFORE that tap lands the settle already held, so a failure
+     *  of that landing is kept and shown; a write that succeeds never clears it. */
     var failure by mutableStateOf<String?>(null)
         private set
 
@@ -278,17 +300,20 @@ class SettleHold(
      *  one is never split by a write landing between them. */
     fun <T> counting(read: (List<SettlementDTO>) -> T): T = synchronized(lock) { read(held) }
 
-    /** Holds [settlement] (to [other], by name) for the window: core checks it first (CLAUDE.md 10: every write path; a
-     *  refusal throws and nothing is held), a settle already held lands first, then the toast offers Undo. */
-    fun hold(settlement: SettlementDTO, other: String, vaultPath: String) {
-        uniffi.skipti_core.ffiCheckSettlement(settlement.toInput())
+    /** Holds [settlement] (to [other], by name) for the window: the write's own check runs first
+     *  ([LedgerStore.checkSettlement]: this account's place, then core's rules; CLAUDE.md 10: every write path; a refusal
+     *  throws and nothing is held, nothing is landed), a settle already held lands first, then the toast offers Undo. D-247
+     *  fix wave (I1): the old failure clears before that landing, so the landing's own failure stays. */
+    fun hold(settlement: SettlementDTO, other: String, store: LedgerStore) {
+        store.checkSettlement(settlement)
+        failure = null
         commit()
         nextId += 1
         val id = nextId
-        synchronized(lock) { pending = Pending(id, settlement, other, vaultPath) }
-        failure = null
+        synchronized(lock) { pending = Pending(id, settlement, other, store.path) }
         revision += 1
-        center.post(DoneMoments.lineWithAction(DoneCopy.settledWith(other), DoneCopy.UNDO), clock(), onAction = { undo(id) })
+        val seconds = this.seconds ?: window(screenReader())
+        center.post(DoneMoments.lineWithAction(DoneCopy.settledWith(other), DoneCopy.UNDO, seconds), clock(), onAction = { undo(id) })
         toastSerial = center.serial
         timer?.cancel()
         timer = scope.launch {
@@ -313,9 +338,10 @@ class SettleHold(
         if (pending?.id == ifStill) commit()
     }
 
-    /** The held settle lands now (written once), and its Undo goes with the toast. Nothing held: nothing happens. */
-    fun commit() {
-        val p = pending ?: return
+    /** The held settle lands now (written once), and its Undo goes with the toast. Nothing held: nothing happens.
+     *  True when a held settle was written now (the removal's Settle first works its payments out again then). */
+    fun commit(): Boolean {
+        val p = pending ?: return false
         timer?.cancel()
         timer = null
         toastSerial?.let { center.clear(ifStill = it) }
@@ -324,13 +350,14 @@ class SettleHold(
             pending = null
             runCatching { write(p.path, p.settlement) }.exceptionOrNull()
         }
-        if (failed == null) {
-            failure = null
+        return if (failed == null) {
             revision += 1
             written(p.path)
+            true
         } else {
             failure = "Could not record the settlement. ${failed.message ?: failed}"
             revision += 1
+            false
         }
     }
 
@@ -338,12 +365,30 @@ class SettleHold(
         /** The app's one hold: Settle up's cards and the group page's next card share it. */
         val shared: SettleHold by lazy { SettleHold() }
 
+        /** D-247 fix wave (decision 201): the window with TalkBack running, long enough to hear the toast and reach its
+         *  Undo (WCAG 2.2.1's "enough time"). */
+        const val SCREEN_READER_SECONDS = 12.0
+
+        /** D-247 fix wave (decision 201): how long a settle is held, and its Undo toast shown: [DoneCenter.ACTION_SECONDS]
+         *  (5), or [SCREEN_READER_SECONDS] (12) while a screen reader runs. The twin of iOS's `SettleHold.window`. */
+        fun window(screenReader: Boolean): Double = if (screenReader) SCREEN_READER_SECONDS else DoneCenter.ACTION_SECONDS
+
         /** Section 10.3: saved locally first, then the push (fire and forget), and every screen reads again. */
         fun liveWritten(path: String) {
             CloudSync.ledgerChanged(path)
             SyncStatus.changed()
         }
     }
+}
+
+/** D-247 fix wave (decision 201): whether a screen reader runs now: TalkBack's touch exploration (the twin of iOS's
+ *  `UIAccessibility.isVoiceOverRunning`). False before the app has a context (a JVM test). */
+object ScreenReader {
+    fun running(): Boolean = runCatching {
+        val manager = VaultGate.appContextRef.getSystemService(android.content.Context.ACCESSIBILITY_SERVICE)
+            as android.view.accessibility.AccessibilityManager
+        manager.isEnabled && manager.isTouchExplorationEnabled
+    }.getOrDefault(false)
 }
 
 /** D-247: a screen that shows held settles (Settle up, a group's page) lands the held one when it goes away: popped,
@@ -425,7 +470,7 @@ fun SettleAllScreen(
         // A removed person keeps their name (the history's).
         val other = LedgerStore.label(entry.id, section.named, section.history)
         val failure = runCatching {
-            hold.hold(SettleAll.settlement(entry, currency, section.named, amount), other, vaultPath)
+            hold.hold(SettleAll.settlement(entry, currency, section.named, amount), other, LedgerStore(vaultPath))
         }.exceptionOrNull()
         if (failure == null) {
             error = null
@@ -447,7 +492,8 @@ fun SettleAllScreen(
             // §11.6, verbatim: the sentence that keeps SKIPTI a notebook.
             Text(SettleAllCopy.EXPLAINER, style = Type.bodyDim(dark).copy(fontSize = TypeScale.settleIntro.sp))
         }
-        // D-247: the toast says a settle is done (with its Undo); a write that failed says so here.
+        // D-247: the toast says a settle is done (with its Undo); a write that failed says so here (the group page shows
+        // the same line).
         (error ?: hold.failure)?.let { Text(it, style = Type.body(dark).copy(color = Tok.owed(dark))) }
         if (loaded && sections.isEmpty() && error == null) {
             Text(SettleAllCopy.empty(groupCount), style = Type.bodyDim(dark), modifier = Modifier.glassCard(dark))
@@ -545,9 +591,19 @@ fun SettleAllScreen(
         OtherAmountSheet(
             draft,
             onSettle = { minor ->
-                otherAmount = null
-                sections.firstOrNull { it.named.group.id == draft.named.group.id }?.let { section ->
-                    settle(draft.entry, draft.currency, section, draft.key, minor)
+                // D-247 fix wave (review M3): the cap against the live card, not the one the sheet opened on.
+                val live = SettleAll.liveEntry(sections, draft.named.group.id, draft.currency, draft.entry.id, draft.youOwe)
+                when (val verdict = OtherAmount.atSettle(minor, live, draft.youOwe, draft.other)) {
+                    is OtherAmount.Verdict.Settles -> {
+                        otherAmount = null
+                        val section = sections.firstOrNull { it.named.group.id == draft.named.group.id }
+                        if (section != null && live != null) {
+                            settle(live, draft.currency, section, SettleKey(draft.named.group.id, draft.currency, live), verdict.minor)
+                        }
+                        null
+                    }
+                    is OtherAmount.Verdict.TooMuch -> verdict.words
+                    OtherAmount.Verdict.Incomplete -> null
                 }
             },
             onCancel = { otherAmount = null },
@@ -577,7 +633,13 @@ internal fun CardLink(label: String, dark: Boolean, enabled: Boolean = true, onC
  *  holds it like any settle. The twin of iOS's `OtherAmountSheet`. */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-fun OtherAmountSheet(draft: OtherAmountDraft, onSettle: (Long) -> Unit, onCancel: () -> Unit) {
+fun OtherAmountSheet(
+    draft: OtherAmountDraft,
+    /** Settle with this many minor units: null, taken (the sheet closes); words, refused at the tap (the card's live debt
+     *  is less now, D-247 fix wave): shown as the cap's line, the sheet stays. */
+    onSettle: (Long) -> String?,
+    onCancel: () -> Unit,
+) {
     val dark = isSystemInDarkTheme()
     androidx.compose.material3.ModalBottomSheet(
         onDismissRequest = onCancel,
@@ -591,6 +653,8 @@ fun OtherAmountSheet(draft: OtherAmountDraft, onSettle: (Long) -> Unit, onCancel
             var text by remember(draft.key) {
                 mutableStateOf(SettleLook.typed() ?: OtherAmount.prefill(draft.debt, draft.currency))
             }
+            // A refusal at the tap is about what the field said then: an edit clears it.
+            var refused by remember(draft.key) { mutableStateOf<String?>(null) }
             val verdict = OtherAmount.verdict(text, draft.debt, draft.currency, draft.youOwe, draft.other) { minor ->
                 ffiCheckSettlement(SettleAll.settlement(draft.entry, draft.currency, draft.named, minor).toInput())
             }
@@ -612,7 +676,10 @@ fun OtherAmountSheet(draft: OtherAmountDraft, onSettle: (Long) -> Unit, onCancel
                         val big = Type.numeric(40, FontWeight.Bold, inDark).copy(textAlign = TextAlign.Center, color = Tok.text(inDark))
                         BasicTextField(
                             value = text,
-                            onValueChange = { text = it },
+                            onValueChange = {
+                                text = it
+                                refused = null
+                            },
                             singleLine = true,
                             textStyle = big,
                             cursorBrush = SolidColor(Tok.accent(inDark)),
@@ -635,8 +702,8 @@ fun OtherAmountSheet(draft: OtherAmountDraft, onSettle: (Long) -> Unit, onCancel
                                 .themePill(PillTone.ACCENT, inDark, onPage = false)
                                 .padding(horizontal = 12.dp, vertical = 4.dp),
                         )
-                        if (verdict is OtherAmount.Verdict.TooMuch) {
-                            Text(verdict.words, style = Type.body(inDark).copy(fontSize = TypeScale.detail.sp, color = Tok.owed(inDark)))
+                        OtherAmount.capWords(verdict, refused)?.let { words ->
+                            Text(words, style = Type.body(inDark).copy(fontSize = TypeScale.detail.sp, color = Tok.owed(inDark)))
                         }
                         // Section 11.6, verbatim.
                         Text(
@@ -645,8 +712,8 @@ fun OtherAmountSheet(draft: OtherAmountDraft, onSettle: (Long) -> Unit, onCancel
                         )
                     }
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        PrimaryAction(SettleAllCopy.SETTLE, inDark, enabled = OtherAmount.settles(verdict)) {
-                            (verdict as? OtherAmount.Verdict.Settles)?.let { onSettle(it.minor) }
+                        PrimaryAction(SettleAllCopy.SETTLE, inDark, enabled = OtherAmount.settles(verdict) && refused == null) {
+                            (verdict as? OtherAmount.Verdict.Settles)?.let { refused = onSettle(it.minor) }
                         }
                         SecondaryAction(SettleAllCopy.CANCEL, inDark, onClick = onCancel)
                     }

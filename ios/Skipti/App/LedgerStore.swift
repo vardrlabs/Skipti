@@ -120,6 +120,17 @@ struct LedgerStore {
 }
 
 extension LedgerStore {
+    /// D-247 fix wave (I1): the whole check a settlement passes before anything is written, and before a settle is held
+    /// for Undo (`SettleHold.hold`): this account's place in the group (`Placing`: `PlaceLost`, `SameEnds`), then core's
+    /// rules on the record as it would be written (decision 103). `appendSettlement` runs the same function, so the hold
+    /// and the write can never disagree. Android's twin is `LedgerStore.checkSettlement`.
+    @discardableResult
+    func checkSettlement(_ settlement: SettlementDTO) throws -> Placing {
+        let placing = try Placing.load(self)
+        try ffiCheckSettlement(settlement: try placing.settlement(settlement).asInput)
+        return placing
+    }
+
     /// Records a settlement the only way the app knows how: as persisted
     /// ledger state (kv) AND as an ADR-0034 sync record through the vault's
     /// record path: record_type = settlement, authored by THIS device,
@@ -132,10 +143,9 @@ extension LedgerStore {
     ) throws -> [SettlementDTO] {
         // D-229: the record is built first, so one that cannot be written as
         // this account's place in the group leaves the vault untouched.
-        let placing = try Placing.load(self)
         // D-235 (decision 103): never write what every phone (this one included) refuses at ingest: core's rules on
-        // the record as written, before anything is.
-        try ffiCheckSettlement(settlement: try placing.settlement(settlement).asInput)
+        // the record as written, before anything is. D-247 fix wave (I1): the one check the hold runs too.
+        let placing = try checkSettlement(settlement)
         var vault = try VaultGate.open(path: path, keystore: KeychainKeystore())
 
         var list = (try vault.kvGet(key: Self.settlementsKey))

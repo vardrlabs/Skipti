@@ -834,7 +834,11 @@ fun GroupPage(
                     SecondaryAction(RolesCopy.GROUP_SETTINGS_TITLE, dark) { onSettings(n.group.id) }
                 }
             }
-            error?.let { Text(it, style = Type.body(dark).copy(color = Tok.owed(dark)), modifier = Modifier.glassCard(dark)) }
+            // D-247 fix wave (I1): a held settle whose write failed (its window ended, the page went, SKIPTI left the
+            // front) says so here too, as on Settle up.
+            (error ?: SettleHold.shared.failure)?.let {
+                Text(it, style = Type.body(dark).copy(color = Tok.owed(dark)), modifier = Modifier.glassCard(dark))
+            }
             Spacer(Modifier.height(8.dp))
         }
         // GUARANTEES #2: over the content, under the bar, never taking a touch.

@@ -244,6 +244,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onPause() {
         CloudSync.appIsActive(false)
+        // D-247 fix wave (review M1): a settle held for Undo lands as SKIPTI stops being the one in front (Recents, a
+        // split screen), the twin of iOS's inactive phase: a task removed from Recents may get no onStop. Not for a
+        // re-creation: the person is still here.
+        if (!isChangingConfigurations) SettleHold.shared.commit()
         super.onPause()
     }
 

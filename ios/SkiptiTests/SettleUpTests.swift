@@ -132,7 +132,7 @@ final class SettleUpTests: XCTestCase {
         let hold = SettleHold(center: center, seconds: 60, write: { _, _ in writes += 1 }, written: { written += 1 })
         let s = SettleAll.settlement(for: ShareOut(id: ana, minorUnits: -3_200), currency: "EUR", in: named)
         try hold.hold(s, other: "Ana", store: store)
-        XCTAssertEqual(center.current, DoneMoments.line("Settled with Ana. No money moved.", action: "Undo"))
+        XCTAssertEqual(center.current, DoneMoments.line("Settled with Ana. No money moved.", action: "Undo", seconds: 60))
         XCTAssertEqual(try SettleAll.sections(store, held: hold.held).first?.state, .allSettled, "shown as settled at once")
         center.act(center.serial)
         XCTAssertNil(hold.pending)
@@ -255,8 +255,185 @@ final class SettleUpTests: XCTestCase {
         XCTAssertTrue(page.contains("let settlements = try store.loadSettlements().map(\\.asInput) + SettleHold.shared.held.map(\\.asInput)"))
         XCTAssertTrue(page.contains(".onChange(of: SettleHold.shared.revision) { load() }"))
         let hold = try XCTUnwrap(all.components(separatedBy: "final class SettleHold {").last)
-        XCTAssertTrue(hold.contains("try ffiCheckSettlement(settlement: settlement.asInput)\n        commit()"), "checked, then the held one lands")
+        XCTAssertTrue(hold.contains("try store.checkSettlement(settlement)\n        failure = nil\n        commit()"),
+                      "the write's own check, the old failure cleared, then the held one lands")
         XCTAssertTrue(all.contains("{ try SettleAll.record(store: $0, settlement: $1) }"), "the live write is the one append")
+    }
+
+    // MARK: - D-247 fix wave: one check, a kept failure, the removal, the live cap, the screen reader's window
+
+    /// I1 (a): the landing at the next Settle tap fails: its words stay (the new settle is held, the failure is not wiped
+    /// by the tap that caused it); the person's next tap clears it before its own landing, which succeeds.
+    func testAFailedLandingAtTheNextSettleKeepsItsWords() throws {
+        let (store, dir) = try tempStore("settle-kept")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let (named, ana) = try paris(store)
+        var calls = 0
+        let hold = SettleHold(center: quietCenter(), seconds: 60, write: { _, _ in
+            calls += 1
+            if calls == 1 { throw CoreError.InvalidInput("disk") }
+        }, written: {})
+        let first = SettleAll.settlement(for: ShareOut(id: ana, minorUnits: -3_200), currency: "EUR", in: named, amount: 1_000)
+        let second = SettleAll.settlement(for: ShareOut(id: ana, minorUnits: -3_200), currency: "EUR", in: named, amount: 500)
+        try hold.hold(first, other: "Ana", store: store)
+        XCTAssertNil(hold.failure)
+        try hold.hold(second, other: "Ana", store: store)
+        XCTAssertEqual(calls, 1, "the first landed (and failed) at the second tap")
+        XCTAssertEqual(hold.held, [second], "the second is held")
+        XCTAssertTrue(hold.failure?.hasPrefix("Could not record the settlement.") == true, "the first's failure is kept")
+        try hold.hold(first, other: "Ana", store: store)
+        XCTAssertEqual(calls, 2)
+        XCTAssertNil(hold.failure, "the next tap cleared it; its own landing wrote")
+    }
+
+    /// I1 (c): the hold runs the write's own check (`LedgerStore.checkSettlement`: the place, then core): a group whose
+    /// place this phone lost, and a payment whose two ends become one id, are refused at the tap: nothing held, nothing
+    /// posted, nothing written; core's bare check alone would have let both through.
+    func testTheHoldRunsTheWritesOwnCheck() throws {
+        typealias F = FounderVault
+        let (lostStore, lostDir) = try tempStore("settle-lost")
+        defer { try? FileManager.default.removeItem(at: lostDir) }
+        let lost = try F.holdOld(F.make(lostStore, pClaim: nil))
+        let paid = LedgerStore.SettlementDTO(from: F.y, to: F.c, amountMinor: 600, currencyCode: "INR", group: F.old)
+        XCTAssertNoThrow(try ffiCheckSettlement(settlement: paid.asInput), "not vacuous: core alone takes it")
+        let (sameStore, sameDir) = try tempStore("settle-same")
+        defer { try? FileManager.default.removeItem(at: sameDir) }
+        let same = try F.make(sameStore, pClaim: F.x)
+        let toSelf = LedgerStore.SettlementDTO(from: F.y, to: F.x, amountMinor: 100, currencyCode: "INR", group: F.old)
+        XCTAssertNoThrow(try ffiCheckSettlement(settlement: toSelf.asInput), "not vacuous: core alone takes it")
+        for (store, s, refusal) in [(lost, paid, "lost"), (same, toSelf, "same")] {
+            let center = quietCenter()
+            var writes = 0
+            let hold = SettleHold(center: center, seconds: 60, write: { _, _ in writes += 1 }, written: {})
+            XCTAssertThrowsError(try hold.hold(s, other: "Bo", store: store)) { error in
+                if refusal == "lost" {
+                    XCTAssertEqual(error as? LedgerStore.Placing.PlaceLost, LedgerStore.Placing.PlaceLost())
+                } else {
+                    XCTAssertEqual(error as? LedgerStore.Placing.SameEnds, LedgerStore.Placing.SameEnds())
+                }
+            }
+            XCTAssertNil(hold.pending, refusal)
+            XCTAssertNil(center.current, "no toast: \(refusal)")
+            hold.commit()
+            XCTAssertEqual(writes, 0, refusal)
+        }
+        // The append runs the same check (one function, so the hold and the write cannot disagree).
+        let ledger = try appSource("LedgerStore.swift")
+        XCTAssertEqual(count(ledger, "let placing = try checkSettlement(settlement)"), 1, "appendSettlement's check")
+        XCTAssertEqual(count(ledger, "try ffiCheckSettlement(settlement: try placing.settlement(settlement).asInput)"), 1,
+                       "the check lives in checkSettlement alone")
+    }
+
+    /// I1 (b): the group page shows a held settle's failure in words, as Settle up does (source: the line is the page's
+    /// own error line).
+    func testTheGroupPageSaysAHeldSettleFailed() throws {
+        XCTAssertEqual(count(try appSource("OverviewScreen.swift"), "if let error = error ?? SettleHold.shared.failure {"), 1)
+        XCTAssertEqual(count(try appSource("SettleAll.swift"), "if let error = error ?? SettleHold.shared.failure {"), 1)
+    }
+
+    /// I2: a settle held for Undo, then the removal of the same person: the removal's read lands the hold first, and
+    /// Settle first's payments, worked out before the hold landed, are worked out again: the debt is recorded once.
+    func testAHeldSettleThenSettleFirstRecordsTheDebtOnce() throws {
+        let (store, dir) = try tempStore("settle-removal")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let (named, ana) = try paris(store)
+        let group = named.group.id
+        let hold = SettleHold(center: quietCenter(), seconds: 60, written: {})
+        // What Settle first showed before the settle was held: you pay Ana 32.00.
+        let shown = Removal.settleFirst(lines: try Removal.lines(store: store, group: group, member: ana), member: ana, group: group)
+        XCTAssertEqual(shown, [LedgerStore.SettlementDTO(from: named.selfId, to: ana, amountMinor: 3_200, currencyCode: "EUR", group: group)])
+        let held = SettleAll.settlement(for: ShareOut(id: ana, minorUnits: -3_200), currency: "EUR", in: named)
+        try hold.hold(held, other: "Ana", store: store)
+        let pay = try Removal.settleFirstLanding(store: store, shown: shown, member: ana, group: group, started: false, hold: hold)
+        XCTAssertEqual(pay, [], "the held settle landed: nothing left to settle first")
+        for s in pay { _ = try store.appendSettlement(s) }
+        XCTAssertEqual(try store.loadSettlements(), [held], "the debt recorded once")
+        XCTAssertEqual(Removal.plan(lines: try Removal.lines(store: store, group: group, member: ana), member: ana), [:],
+                       "Ana is square: never paid twice")
+        // Nothing held: the payments shown are the payments recorded.
+        XCTAssertEqual(try Removal.settleFirstLanding(store: store, shown: shown, member: ana, group: group, started: false,
+                                                     hold: hold), shown)
+
+        // The flow's read lands the hold too, before it reads the balance.
+        let (store2, dir2) = try tempStore("settle-removal-load")
+        defer { try? FileManager.default.removeItem(at: dir2) }
+        let (named2, ana2) = try paris(store2)
+        let hold2 = SettleHold(center: quietCenter(), seconds: 60, written: {})
+        try hold2.hold(SettleAll.settlement(for: ShareOut(id: ana2, minorUnits: -3_200), currency: "EUR", in: named2, amount: 1_200),
+                       other: "Ana", store: store2)
+        let lines = try Removal.linesLandingHeld(store: store2, group: named2.group.id, member: ana2, hold: hold2)
+        XCTAssertNil(hold2.pending, "landed")
+        XCTAssertEqual(Removal.plan(lines: lines, member: ana2), ["EUR": 2_000], "the balance after the held 12.00")
+        XCTAssertEqual(Removal.settleFirst(lines: lines, member: ana2, group: named2.group.id).map(\.amountMinor), [2_000])
+        // Both of the flow's reads, and Settle first's tap, go through them.
+        let flow = try appSource("RemovalFlow.swift")
+        XCTAssertEqual(count(flow, "try? Removal.linesLandingHeld(store: context.store, group: group, member: member)"), 1, "the review")
+        XCTAssertEqual(count(flow, "lines = try Removal.linesLandingHeld(store: context.store, group: group, member: member)"), 1, "the start")
+        XCTAssertEqual(count(flow, "pay = try Removal.settleFirstLanding("), 1, "Settle first")
+        XCTAssertEqual(count(flow, "append: { i in _ = try context.store.appendSettlement(pay[i]) }"), 1)
+    }
+
+    /// Review M3: Settle on the sheet checks the cap against the card's LIVE debt: a payment that arrived meanwhile and
+    /// shrank it refuses in the cap's words; the card gone (or turned the other way) refuses too; within it settles.
+    func testTheCapIsCheckedAgainstTheLiveDebtAtSettle() throws {
+        let (store, dir) = try tempStore("settle-live-cap")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let (named, ana) = try paris(store)
+        let group = named.group.id
+        func live() throws -> ShareOut? {
+            SettleAll.liveEntry(try SettleAll.sections(store), group: group, currency: "EUR", person: ana, youOwe: true)
+        }
+        XCTAssertEqual(try live(), ShareOut(id: ana, minorUnits: -3_200), "the sheet opened on 32.00")
+        XCTAssertEqual(OtherAmount.verdict("25.00", debt: 3_200, currency: "EUR", youOwe: true, other: "Ana", check: { _ in }),
+                       .settles(2_500), "the field, against the debt it opened on")
+        // A payment of 12.00 arrives (a sync) while the sheet is open.
+        _ = try store.appendSettlement(SettleAll.settlement(for: ShareOut(id: ana, minorUnits: -3_200), currency: "EUR",
+                                                            in: named, amount: 1_200))
+        let shrunk = try live()
+        XCTAssertEqual(shrunk, ShareOut(id: ana, minorUnits: -2_000))
+        XCTAssertEqual(OtherAmount.atSettle(2_500, live: shrunk, youOwe: true, other: "Ana"),
+                       .tooMuch("That is more than you owe Ana."), "refused at the tap, in the cap's words")
+        XCTAssertEqual(OtherAmount.atSettle(2_000, live: shrunk, youOwe: true, other: "Ana"), .settles(2_000))
+        XCTAssertEqual(OtherAmount.atSettle(1, live: nil, youOwe: false, other: "Ana"), .tooMuch("That is more than Ana owes."),
+                       "the card is gone")
+        XCTAssertNil(SettleAll.liveEntry(try SettleAll.sections(store), group: group, currency: "EUR", person: ana, youOwe: false),
+                     "the other way round is not the same card")
+        XCTAssertNil(SettleAll.liveEntry(try SettleAll.sections(store), group: group, currency: "INR", person: ana, youOwe: true))
+        // The sheet shows the tap's refusal as the cap's line; the field's own line comes first.
+        XCTAssertEqual(OtherAmountSheet.capWords(.settles(1), refused: "r"), "r")
+        XCTAssertEqual(OtherAmountSheet.capWords(.tooMuch("t"), refused: "r"), "t")
+        XCTAssertNil(OtherAmountSheet.capWords(.settles(1), refused: nil))
+        let all = try appSource("SettleAll.swift")
+        XCTAssertEqual(count(all, "switch OtherAmount.atSettle(minor, live: live, youOwe: draft.youOwe, other: draft.other) {"), 1)
+        XCTAssertEqual(count(all, "if case .settles(let minor) = verdict { refused = onSettle(minor) }"), 1)
+    }
+
+    /// Decision 201: with VoiceOver running the hold lasts 12 s instead of 5, the toast stays as long, and the
+    /// announcement names the Undo and its time.
+    func testTheHoldIsLongerWithAScreenReader() throws {
+        XCTAssertEqual(SettleHold.window(screenReader: false), 5)
+        XCTAssertEqual(SettleHold.window(screenReader: false), DoneCenter.actionSeconds)
+        XCTAssertEqual(SettleHold.window(screenReader: true), 12)
+        let (store, dir) = try tempStore("settle-reader")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let (named, ana) = try paris(store)
+        let s = SettleAll.settlement(for: ShareOut(id: ana, minorUnits: -3_200), currency: "EUR", in: named)
+        for (reader, seconds) in [(true, 12.0), (false, 5.0)] {
+            var said: [String] = []
+            let center = DoneCenter(gate: SuccessGate(), haptic: { _, _ in }, announce: { said.append($0) })
+            let hold = SettleHold(center: center, screenReader: { reader }, write: { _, _ in }, written: {})
+            try hold.hold(s, other: "Ana", store: store)
+            guard case .small(let line) = center.current else { return XCTFail("a toast") }
+            XCTAssertEqual(line.actionSeconds, seconds)
+            XCTAssertEqual(DoneMoments.toastSeconds(line), seconds, "the toast lasts the hold's window")
+            XCTAssertEqual(said, ["Settled with Ana. No money moved. Undo is available for \(Int(seconds)) seconds."])
+            hold.undo(1)
+        }
+        XCTAssertEqual(DoneCopy.spoken(DoneLine(title: "Name saved", parts: [])), "Name saved", "no action: nothing added")
+        XCTAssertEqual(DoneCopy.actionSpoken("Undo", seconds: "12"), "Undo is available for 12 seconds.")
+        let all = try appSource("SettleAll.swift")
+        XCTAssertEqual(count(all, "screenReader: @escaping @MainActor () -> Bool = { UIAccessibility.isVoiceOverRunning }"), 1)
+        XCTAssertEqual(count(all, "let seconds = self.seconds ?? SettleHold.window(screenReader: screenReader())"), 1)
     }
 
     // MARK: - The settled words and the count (decision 168)

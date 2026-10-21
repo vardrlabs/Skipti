@@ -130,6 +130,15 @@ enum SettleAll {
             group: named.group.id
         )
     }
+
+    /// D-247 fix wave (review M3): the card a sheet's other amount is for, as the screen reads it NOW: the same group,
+    /// currency and person, owing the same way. Nil when that card is gone (settled meanwhile, or the debt turned the
+    /// other way). Android's twin is `SettleAll.liveEntry`.
+    static func liveEntry(_ sections: [SettleSection], group: String, currency: String, person: String,
+                          youOwe: Bool) -> ShareOut? {
+        sections.first { $0.named.group.id == group }?.lines.first { $0.currencyCode == currency }?
+            .entries.first { $0.id == person && ($0.minorUnits < 0) == youOwe && $0.minorUnits != 0 }
+    }
 }
 
 /// D-247 (decisions 167, 183): a card's "Another amount": what the field starts with and what it may hold. Every amount
@@ -149,6 +158,16 @@ enum OtherAmount {
     /// The whole debt as the field takes it back (core's entry form: "450.00", no symbol, no grouping).
     static func prefill(debt: Int64, currency: String) -> String {
         (try? ffiMoneyInputDigits(minorUnits: debt, currencyCode: currency)) ?? ""
+    }
+
+    /// D-247 fix wave (review M3): the cap again at the Settle tap, against the card's LIVE debt (`live`, from
+    /// `SettleAll.liveEntry`; nil, the card has gone): a sync that shrank the debt while the sheet was open refuses in
+    /// the cap's words, so a partial never flips who owes whom (decision 183). Android's twin is `OtherAmount.atSettle`.
+    static func atSettle(_ minor: Int64, live: ShareOut?, youOwe: Bool, other: String) -> Verdict {
+        guard let live, minor <= abs(live.minorUnits) else {
+            return .tooMuch(SettleAllCopy.moreThanDebt(youOwe: youOwe, other: other))
+        }
+        return .settles(minor)
     }
 
     /// `text` against the debt (`debt`, the card's amount, always above 0). `check` is core's settlement check of the
@@ -198,24 +217,40 @@ final class SettleHold {
     private(set) var pending: Pending?
     /// Goes up whenever what the screens count changes (held, undone, written, failed): they read again.
     private(set) var revision = 0
-    /// The last write that failed, in words (the screens show it).
+    /// The last write that failed, in words (both screens show it: Settle up's error line and the group page's).
+    /// D-247 fix wave (I1): only the person's next Settle tap clears it, BEFORE that tap lands the settle already held,
+    /// so a failure of that landing is kept and shown; a write that succeeds never clears it.
     private(set) var failure: String?
 
     @ObservationIgnored private let center: DoneCenter
-    @ObservationIgnored private let seconds: Double
+    /// The window in seconds; nil (the app) reads it per hold from `window(screenReader:)`.
+    @ObservationIgnored private let seconds: Double?
+    @ObservationIgnored private let screenReader: @MainActor () -> Bool
     @ObservationIgnored private let write: (LedgerStore, LedgerStore.SettlementDTO) throws -> Void
     @ObservationIgnored private let written: @MainActor () -> Void
     @ObservationIgnored private var nextId = 0
     @ObservationIgnored private var timer: Task<Void, Never>?
     @ObservationIgnored private var toastSerial: Int?
 
-    init(center: DoneCenter? = nil, seconds: Double = DoneCenter.actionSeconds,
+    init(center: DoneCenter? = nil, seconds: Double? = nil,
+         screenReader: @escaping @MainActor () -> Bool = { UIAccessibility.isVoiceOverRunning },
          write: @escaping (LedgerStore, LedgerStore.SettlementDTO) throws -> Void = { try SettleAll.record(store: $0, settlement: $1) },
          written: @escaping @MainActor () -> Void = SettleHold.liveWritten) {
         self.center = center ?? .shared
         self.seconds = seconds
+        self.screenReader = screenReader
         self.write = write
         self.written = written
+    }
+
+    /// D-247 fix wave (decision 201): the window with VoiceOver running, long enough to hear the toast and reach its
+    /// Undo (WCAG 2.2.1's "enough time").
+    nonisolated static let screenReaderSeconds = 12.0
+
+    /// D-247 fix wave (decision 201): how long a settle is held, and its Undo toast shown: `DoneCenter.actionSeconds`
+    /// (5), or `screenReaderSeconds` (12) while a screen reader runs. Android's twin is `SettleHold.window`.
+    nonisolated static func window(screenReader: Bool) -> Double {
+        screenReader ? screenReaderSeconds : DoneCenter.actionSeconds
     }
 
     /// Section 10.3: saved locally first, then the push (fire and forget), and every screen reads again.
@@ -227,21 +262,23 @@ final class SettleHold {
     /// What the screens add to the ledger's settlements while a settle is held.
     var held: [LedgerStore.SettlementDTO] { pending.map { [$0.settlement] } ?? [] }
 
-    /// Holds `settlement` (to `other`, by name) for the window: core checks it first (CLAUDE.md 10: every write path;
-    /// a refusal throws and nothing is held), a settle already held lands first, then the toast offers Undo.
+    /// Holds `settlement` (to `other`, by name) for the window: the write's own check runs first
+    /// (`LedgerStore.checkSettlement`: this account's place, then core's rules; CLAUDE.md 10: every write path; a
+    /// refusal throws and nothing is held, nothing is landed), a settle already held lands first, then the toast offers
+    /// Undo. D-247 fix wave (I1): the old failure clears before that landing, so the landing's own failure stays.
     func hold(_ settlement: LedgerStore.SettlementDTO, other: String, store: LedgerStore) throws {
-        try ffiCheckSettlement(settlement: settlement.asInput)
+        try store.checkSettlement(settlement)
+        failure = nil
         commit()
         nextId += 1
         let id = nextId
         pending = Pending(id: id, settlement: settlement, other: other, path: store.path)
-        failure = nil
         revision += 1
-        center.post(DoneMoments.line(DoneCopy.settledWith(other), action: DoneCopy.undo),
+        let seconds = self.seconds ?? SettleHold.window(screenReader: screenReader())
+        center.post(DoneMoments.line(DoneCopy.settledWith(other), action: DoneCopy.undo, seconds: seconds),
                     onAction: { [weak self] in self?.undo(id) })
         toastSerial = center.serial
         timer?.cancel()
-        let seconds = self.seconds
         timer = Task { [weak self] in
             try? await Task.sleep(for: .seconds(seconds))
             guard !Task.isCancelled else { return }
@@ -267,8 +304,10 @@ final class SettleHold {
     }
 
     /// The held settle lands now (written once), and its Undo goes with the toast. Nothing held: nothing happens.
-    func commit() {
-        guard let p = pending else { return }
+    /// True when a held settle was written now (the removal's Settle first works its payments out again then).
+    @discardableResult
+    func commit() -> Bool {
+        guard let p = pending else { return false }
         timer?.cancel()
         timer = nil
         pending = nil
@@ -276,12 +315,13 @@ final class SettleHold {
         toastSerial = nil
         do {
             try write(LedgerStore(path: p.path), p.settlement)
-            failure = nil
             revision += 1
             written()
+            return true
         } catch {
             failure = "Could not record the settlement. \(String(describing: error))"
             revision += 1
+            return false
         }
     }
 }
@@ -327,7 +367,8 @@ struct SettleAllScreen: View {
                 }
                 .font(TypeRole.body(TypeScale.settleIntro))
                 .foregroundStyle(Tokens.textDim)
-                // D-247: the toast says a settle is done (with its Undo); a write that failed says so here.
+                // D-247: the toast says a settle is done (with its Undo); a write that failed says so here (the group page
+                // shows the same line).
                 if let error = error ?? SettleHold.shared.failure {
                     Text(verbatim: error).font(TypeRole.body()).foregroundStyle(Tokens.owed)
                 }
@@ -350,8 +391,19 @@ struct SettleAllScreen: View {
         .landsHeldSettle(visible: artVisible)
         .sheet(item: $otherAmount) { draft in
             OtherAmountSheet(draft: draft, onSettle: { minor in
-                otherAmount = nil
-                settle(draft.entry, currency: draft.currency, named: draft.named, key: draft.key, amount: minor)
+                // D-247 fix wave (review M3): the cap against the live card, not the one the sheet opened on.
+                let live = SettleAll.liveEntry(sections, group: draft.named.group.id, currency: draft.currency,
+                                               person: draft.entry.id, youOwe: draft.youOwe)
+                switch OtherAmount.atSettle(minor, live: live, youOwe: draft.youOwe, other: draft.other) {
+                case .settles(let amount):
+                    guard let live else { return nil }
+                    otherAmount = nil
+                    settle(live, currency: draft.currency, named: draft.named,
+                           key: SettleAll.key(named: draft.named, currency: draft.currency, entry: live), amount: amount)
+                    return nil
+                case .tooMuch(let words): return words
+                case .incomplete: return nil
+                }
             }, onCancel: { otherAmount = nil })
         }
     }
@@ -509,12 +561,15 @@ struct SettleAllScreen: View {
 /// Settle hands the amount back to the card, which holds it like any settle. Android's twin is `OtherAmountSheet`.
 struct OtherAmountSheet: View {
     let draft: OtherAmountDraft
-    let onSettle: (Int64) -> Void
+    /// Settle with this many minor units: nil, taken (the sheet closes); words, refused at the tap (the card's live
+    /// debt is less now, D-247 fix wave): shown as the cap's line, the sheet stays.
+    let onSettle: (Int64) -> String?
     let onCancel: () -> Void
     @State private var text: String
+    @State private var refused: String?
     @FocusState private var focused: Bool
 
-    init(draft: OtherAmountDraft, onSettle: @escaping (Int64) -> Void, onCancel: @escaping () -> Void) {
+    init(draft: OtherAmountDraft, onSettle: @escaping (Int64) -> String?, onCancel: @escaping () -> Void) {
         self.draft = draft
         self.onSettle = onSettle
         self.onCancel = onCancel
@@ -555,7 +610,7 @@ struct OtherAmountSheet: View {
                         .padding(.horizontal, 12)
                         .padding(.vertical, 4)
                         .themePill(.accent, onPage: false)
-                    if case .tooMuch(let words) = verdict {
+                    if let words = OtherAmountSheet.capWords(verdict, refused: refused) {
                         Text(verbatim: words).font(TypeRole.body(TypeScale.detail)).foregroundStyle(Tokens.owed)
                     }
                     // Section 11.6, verbatim.
@@ -569,10 +624,10 @@ struct OtherAmountSheet: View {
                 .glassCard()
                 VStack(spacing: 10) {
                     Button {
-                        if case .settles(let minor) = verdict { onSettle(minor) }
+                        if case .settles(let minor) = verdict { refused = onSettle(minor) }
                     } label: { Text(verbatim: SettleAllCopy.settle) }
                         .buttonStyle(PrimaryButtonStyle())
-                        .disabled(!OtherAmountSheet.settles(verdict))
+                        .disabled(!OtherAmountSheet.settles(verdict) || refused != nil)
                     Button(action: onCancel) { Text(verbatim: SettleAllCopy.cancel) }
                         .buttonStyle(SecondaryButtonStyle())
                 }
@@ -585,6 +640,14 @@ struct OtherAmountSheet: View {
             .navigationBarTitleDisplayMode(.inline)
         }
         .onAppear { focused = true }
+        // A refusal at the tap was about what the field said then.
+        .onChange(of: text) { refused = nil }
+    }
+
+    /// The cap's line: the field's own (more than the debt the sheet opened on), else the tap's refusal.
+    static func capWords(_ verdict: OtherAmount.Verdict, refused: String?) -> String? {
+        if case .tooMuch(let words) = verdict { return words }
+        return refused
     }
 
     static func settles(_ verdict: OtherAmount.Verdict) -> Bool {
