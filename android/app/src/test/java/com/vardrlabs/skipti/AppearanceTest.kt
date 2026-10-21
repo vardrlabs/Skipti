@@ -1200,7 +1200,11 @@ class AppearanceTest {
         val root = java.io.File(dir, "AppRoot.kt").readText()
         val create = root.substringAfter("override fun onCreate(savedInstanceState: Bundle?) {").substringBefore("\n    }\n")
         val launch = create.lines().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("//") }
-        assertEquals("told at launch, right after the default is settled", "Appearance.tellNightMode(applicationContext)", launch[2])
+        // D-251, amended on purpose: the store-shots seed (debuggable builds only) writes the theme and mode it asks for
+        // between the two, so the mode told is the shot's; nothing else may sit there.
+        assertEquals("the store-shots write, before the night mode is told",
+            "StoreShots.prepare(applicationContext, intent?.getStringExtra(\"args\"), debuggable())", launch[2])
+        assertEquals("told at launch, right after the default is settled", "Appearance.tellNightMode(applicationContext)", launch[3])
     }
 
     /** Norse is always dark; the person's own choice is kept for later. */

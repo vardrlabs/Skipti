@@ -86,25 +86,26 @@ extension LedgerStore {
     /// This device's self, created on first need. A vault that the old
     /// fixture seeding populated adopts the fixture Ada's id: its expenses
     /// already name that id as payer, so migrating rewrites no record.
-    func ensureSelf() throws -> SelfDTO {
+    /// D-251: `nowMs` stamps the record (the store-shots seed writes a ledger with a past; every other caller: now).
+    func ensureSelf(nowMs: UInt64 = UInt64(Date().timeIntervalSince1970 * 1000)) throws -> SelfDTO {
         if let existing = try loadSelf() { return existing }
         let legacy = try loadGroups().contains { $0.members.contains(LegacyFixture.ada) }
         let created = SelfDTO(id: legacy ? LegacyFixture.ada : ffiNewParticipantId(), name: nil)
         try write(created, key: Self.selfKey)
         // D-153: "you" is a record, so the account's other devices know it.
-        try Sync.appendGroupOps(self, [.you(id: created.id, name: nil)], placing: .none)
+        try Sync.appendGroupOps(self, [.you(id: created.id, name: nil)], placing: .none, nowMs: nowMs)
         return created
     }
 
     /// Sets your name (trimmed and validated by core) and carries it into
     /// every group you are in, so others see the new name too.
     @discardableResult
-    func setYourName(_ raw: String) throws -> SelfDTO {
+    func setYourName(_ raw: String, nowMs: UInt64 = UInt64(Date().timeIntervalSince1970 * 1000)) throws -> SelfDTO {
         let name = try ffiMemberName(raw: raw)
-        var me = try ensureSelf()
+        var me = try ensureSelf(nowMs: nowMs)
         me.name = name
         try write(me, key: Self.selfKey)
-        try Sync.appendGroupOps(self, [.you(id: me.id, name: name)], placing: .none)
+        try Sync.appendGroupOps(self, [.you(id: me.id, name: name)], placing: .none, nowMs: nowMs)
         // D-229 decision 45: a group where this account lost its place keeps its names (nothing is written there).
         let lost = try Placing.load(self).lost
         let renamed = try namedGroups().map { named -> NamedGroupWire in
@@ -112,7 +113,7 @@ extension LedgerStore {
                 ? try ffiRenameMember(named: named, memberId: me.id, name: name)
                 : named
         }
-        try save(renamed)
+        try save(renamed, nowMs: nowMs)
         return me
     }
 
@@ -193,8 +194,9 @@ extension LedgerStore {
     /// Creates a group with you in it plus the people named, selects it, and
     /// returns it. Needs your name first.
     @discardableResult
-    func createGroup(name: String, settlementCurrency: String, people: [String]) throws -> NamedGroupWire {
-        let me = try ensureSelf()
+    func createGroup(name: String, settlementCurrency: String, people: [String],
+                     nowMs: UInt64 = UInt64(Date().timeIntervalSince1970 * 1000)) throws -> NamedGroupWire {
+        let me = try ensureSelf(nowMs: nowMs)
         guard let myName = me.name else { throw GroupStoreError.needsYourName }
         let created = try ffiCreateNamedGroup(
             name: name,
@@ -206,7 +208,7 @@ extension LedgerStore {
         // save. `try? … ?? []` would write ONLY the new group and silently
         // erase every existing one (D-127's `try?` lesson, found in this draft).
         let existing = try namedGroups()
-        try save(existing + [created])
+        try save(existing + [created], nowMs: nowMs)
         try selectGroup(id: created.group.id)
         return created
     }
@@ -346,12 +348,12 @@ extension LedgerStore {
     /// groups. The operations are the difference between the groups as they
     /// were and as they are now. A group with no create record yet (kept only
     /// in kv) is written whole, as a create, so no change to it is lost.
-    private func save(_ groups: [NamedGroupWire]) throws {
+    private func save(_ groups: [NamedGroupWire], nowMs: UInt64 = UInt64(Date().timeIntervalSince1970 * 1000)) throws {
         let before = try namedGroups()
         let created = Set(try Sync.projectGroups(self).groups.map { $0.group.id })
         // D-229: a rename of yourself (`setYourName`) names the group's place for you.
         try Sync.appendGroupOps(
-            self, Self.operations(from: before, to: groups, created: created), placing: try Placing.load(self))
+            self, Self.operations(from: before, to: groups, created: created), placing: try Placing.load(self), nowMs: nowMs)
         try Sync.rebuildGroups(self)
     }
 

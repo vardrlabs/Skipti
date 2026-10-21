@@ -113,6 +113,9 @@ class MainActivity : ComponentActivity() {
         // D-232 (decision 74): the appearance default is settled first of all, before anything can read the mode or
         // open (and so create) the vault: the `--emulator-as` sign-in below opens it on an IO thread.
         Appearance.settleDefault(applicationContext)
+        // D-251: `--store-shots` (a store page's seed, debuggable builds only): the theme and mode it asks for, before the
+        // night mode is told and the appearance read; the vault is set aside and seeded by StoreShotsProof.
+        StoreShots.prepare(applicationContext, intent?.getStringExtra("args"), debuggable())
         // D-232 (decision 78): Android 12+ is told the app's own night mode, so the window theme, the selection
         // toolbar and the next launch's splash follow it. Changing it makes this activity again, once.
         Appearance.tellNightMode(applicationContext)
@@ -437,6 +440,11 @@ fun AppRoot(
             }
             return
         }
+        "store-shots" -> {
+            // D-251: the store pages' seed (a proof launch: no lock, no welcome, no cloud), then the ordinary tabs on Home.
+            StoreShotsProof(vaultPath) { HomeShell(vaultPath = vaultPath, startOn = HomeTab.BALANCE) }
+            return
+        }
         "balance" -> {
             BalanceScreen(BalanceSource.FIXTURE, version = skiptiCoreVersion(), vaultPath = vaultPath)
             return
@@ -625,7 +633,7 @@ fun AppRoot(
 
 /** The vault flag "this phone has opened SKIPTI before" (D-175's
  *  `app/launched`; it lived on KitGate until D-192). */
-private const val LAUNCHED_KEY = "app/launched"
+internal const val LAUNCHED_KEY = "app/launched"
 
 /** D-224 (Design 5, `ToastPlace.bottom(barShown)`): whether the shell's tab bar is composed, so the toast sits clear of
  *  it (and of the +) or near the bottom of a route without it. Memory only. */
