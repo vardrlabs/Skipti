@@ -47,27 +47,34 @@ class D248FixesTest {
 
     // ---- U30.2 the typed-amount parser (decision 184) ----
 
-    /** Core's typed parser through the bindings: the same subset of `.drafts/d248/typed_goldens.py`'s table iOS pins
-     *  (derived there with exact Fractions, never read out of core). */
+    /** Core's typed parser through the bindings, given the phone's mark (decision 203): the same subset of
+     *  `.drafts/d248/typed_goldens.py`'s table iOS pins (derived there with exact Fractions, never read out of core).
+     *  [AmountEntry] passes the mark of the locale it is given. */
     @Test
-    fun typed_amounts_read_one_comma_as_the_decimal_mark() {
+    fun typed_amounts_read_a_comma_only_on_a_comma_phone() {
+        data class Row(val text: String, val code: String, val mark: String, val want: Long?)
         val goldens = listOf(
-            Triple("12,50", "EUR", 1_250L), Triple(",5", "EUR", 50L), Triple("1,005", "KWD", 1_005L), Triple(" 7,10 ", "USD", 710L),
-            Triple("12.50", "EUR", 1_250L), Triple("1005", "JPY", 1_005L),
-            Triple("1,234,567", "INR", null), Triple("1,234.56", "USD", null), Triple("1.234,56", "EUR", null),
-            Triple("12,505", "EUR", null), Triple("1,0005", "KWD", null), Triple("10,5", "JPY", null), Triple("1,234", "INR", null),
-            Triple(",", "EUR", null), Triple("", "EUR", null),
+            Row("12,50", "EUR", ",", 1_250), Row(",5", "EUR", ",", 50), Row("1,005", "KWD", ",", 1_005), Row("1,234", "KWD", ",", 1_234),
+            Row("12.50", "EUR", ",", 1_250), Row("1.05", "KWD", ",", 1_050), Row("1234", "JPY", ",", 1_234),
+            Row("1.234", "KWD", ",", null), Row("1.234", "EUR", ",", null), Row("10,5", "JPY", ",", null), Row("1,234", "INR", ",", null),
+            Row("1.234,56", "EUR", ",", null), Row("1,0005", "KWD", ",", null), Row(",", "EUR", ",", null),
+            Row("12.50", "EUR", ".", 1_250), Row("1.234", "KWD", ".", 1_234), Row("1005", "JPY", ".", 1_005), Row(" 7.10 ", "USD", ".", 710),
+            Row("1,500", "KWD", ".", null), Row("1,234", "KWD", ".", null), Row("12,50", "EUR", ".", null), Row("1,234,567", "INR", ".", null),
+            Row("1,234.56", "USD", ".", null), Row("2,00,000", "INR", ".", null), Row("", "EUR", ".", null),
         )
-        for ((text, code, want) in goldens) {
-            assertEquals("$code '$text'", want, runCatching { ffiMoneyParseTyped(text, code) }.getOrNull())
-            assertEquals("$code '$text'", want, AmountEntry.minor(text, code))
+        for ((text, code, mark, want) in goldens) {
+            assertEquals("$code '$text' $mark", want, runCatching { ffiMoneyParseTyped(text, code, mark) }.getOrNull())
+            assertEquals("$code '$text' $mark", want, AmountEntry.minor(text, code, if (mark == ",") de else en))
         }
+        // A mark that is neither is refused, never guessed.
+        assertTrue(runCatching { ffiMoneyParseTyped("12.50", "EUR", "\u066B") }.isFailure)
         // Import's strict parser is untouched: a comma never reads there.
         assertTrue(runCatching { ffiMoneyParseMinor("12,50", "EUR") }.isFailure)
     }
 
-    /** "Enter an amount like {example}.": the example in the currency's own decimals (core's entry form of 1,250 minor
-     *  units) and the phone's decimal mark. */
+    /** "Enter an amount like {example}.": the example in the currency's own decimals and the phone's decimal mark, both
+     *  from core (`ffiMoneyTypedDigits`, review M3); every field starts from core's entry form in that mark (review M6),
+     *  which the parser reads back on that phone. */
     @Test
     fun a_non_amount_is_refused_in_words_with_the_locales_mark() {
         assertEquals(".", AmountEntry.mark(en))
@@ -78,15 +85,45 @@ class D248FixesTest {
         assertEquals("Enter an amount like 12,50.", AmountEntry.likeWords("EUR", de))
         assertEquals("no decimals in yen", "1250", AmountEntry.example("JPY", de))
         assertEquals("three in dinars", "1,250", AmountEntry.example("KWD", de))
+        assertEquals("1.250", AmountEntry.example("KWD", en))
         assertNull("no example is made up", AmountEntry.example("XYZ", en))
         assertEquals("Enter an amount.", AmountEntry.likeWords("XYZ", en))
         assertEquals(1_250L, AmountEntry.parse("12,50", "EUR", de))
         assertEquals(AmountEntry.Refusal("Enter an amount like 12,50."), runCatching { AmountEntry.parse("12,5,0", "EUR", de) }.exceptionOrNull())
         assertEquals(AmountEntry.Refusal("Enter an amount like 1250."), runCatching { AmountEntry.parse("10,5", "JPY", en) }.exceptionOrNull())
+        // I1: an English "1,500" in dinars is refused in words, never saved as 1.500 KD.
+        assertEquals(AmountEntry.Refusal("Enter an amount like 1.250."), runCatching { AmountEntry.parse("1,500", "KWD", en) }.exceptionOrNull())
         // Too large keeps core's own error, which SplitWords says ("That amount is too large.").
         val big = runCatching { AmountEntry.parse("99999999999999999999", "INR", en) }.exceptionOrNull()
         assertTrue("$big", big is CoreException.Overflow)
         assertEquals("That amount is too large.", SplitWords.message(big as CoreException, "INR"))
+        // The prefills: in the phone's mark, and read back on that phone (a KWD "1.005" on a ',' phone would be refused).
+        for ((locale, want) in listOf(de to "1,005", en to "1.005")) {
+            assertEquals(want, AmountEntry.digits(1_005, "KWD", locale))
+            assertEquals(want, OtherAmount.prefill(1_005, "KWD", locale))
+            assertEquals(1_005L, AmountEntry.minor(want, "KWD", locale))
+        }
+        val keystore = MemoryKeystore()
+        val path = Files.createTempDirectory("d248-prefill").resolve("ledger-vault.db").toString()
+        val store = LedgerStore(path) { SkiptiVault.open(path, keystore) }
+        store.appendExpense(
+            ExpenseDTO(
+                payer = me, paidMinor = 1_005, currencyCode = "KWD", group = group,
+                shares = listOf(ExpenseDTO.ShareDTO(me, 1_000), ExpenseDTO.ShareDTO(rahul, 5)),
+                note = "Tea", timestampMs = 1_000, addedBy = me,
+            ),
+            nowMs = 5_000,
+        )
+        val tea = store.projectedExpenses().expenses.first()
+        val edit = ExpenseEditingUi.prefill(tea, de)
+        assertEquals("1,005", edit.amountText)
+        assertEquals(AddExpenseUi.SplitDraft.Exact(mapOf(me to "1,000", rahul to "0,005")), edit.draft)
+        assertEquals("Edit saves what it opened with", 1_005L, AmountEntry.parse(edit.amountText, "KWD", de))
+        assertEquals("1.005", ExpenseEditingUi.prefill(tea, en).amountText)
+        // The example and the prefills are core's strings: nothing in the shell swaps a mark into an amount.
+        val entry = src("AddExpenseScreen.kt").substringAfter("object AmountEntry {").substringBefore("\n}\n")
+        assertFalse(".replace(" in entry)
+        assertTrue("runCatching { ffiMoneyTypedDigits(minor, currency, mark(locale)) }.getOrNull()" in entry)
     }
 
     /** Every typed-amount site reads through the typed parser; the strict one is left to import and the fixed sample. */
@@ -98,7 +135,7 @@ class D248FixesTest {
         assertTrue("the fixed \"48\", not a typed field", "ffiMoneyParseMinor(WHOLE_AMOUNT, CURRENCY)" in src("AccountHubScreen.kt"))
         val add = src("AddExpenseScreen.kt")
         assertTrue("Save and the live lines", "val total = AmountEntry.parse(amountText, currency)" in add)
-        assertTrue("SettleAll", "val minor = AmountEntry.minor(text, currency) ?: return Verdict.NotAnAmount(" in src("SettleAll.kt"))
+        assertTrue("SettleAll", "val minor = AmountEntry.minor(text, currency, locale) ?: return Verdict.NotAnAmount(" in src("SettleAll.kt"))
         assertTrue("RemovalFlow", "val minor = AmountEntry.minor(typed[id] ?: \"\", currency)" in src("RemovalFlow.kt"))
     }
 
@@ -106,15 +143,30 @@ class D248FixesTest {
     @Test
     fun another_amount_says_what_is_not_an_amount() {
         fun verdict(text: String, locale: Locale = en) = OtherAmount.verdict(text, 45_000, "INR", false, "Ana", locale) {}
-        assertEquals("a decimal comma", OtherAmount.Verdict.Settles(20_050), verdict("200,50"))
-        for (text in listOf("", "  ", "0", "0.00", "0,00", "-5")) assertEquals("'$text'", OtherAmount.Verdict.Incomplete, verdict(text))
-        for (text in listOf("abc", "1.2.3", "₹10", "1,000.00", "2,00,000")) {
+        assertEquals("a decimal comma", OtherAmount.Verdict.Settles(20_050), verdict("200,50", de))
+        assertEquals(OtherAmount.Verdict.Incomplete, verdict("0,00", de))
+        for (text in listOf("", "  ", "0", "0.00", "-5")) assertEquals("'$text'", OtherAmount.Verdict.Incomplete, verdict(text))
+        // Decision 203: on a '.' phone a comma is never the decimal mark.
+        for (text in listOf("abc", "1.2.3", "₹10", "1,000.00", "2,00,000", "200,50", "0,00", "1,500")) {
             assertEquals("'$text'", OtherAmount.Verdict.NotAnAmount("Enter an amount like 12.50."), verdict(text))
         }
         assertEquals(OtherAmount.Verdict.NotAnAmount("Enter an amount like 12,50."), verdict("abc", de))
-        assertEquals("w", OtherAmount.capWords(OtherAmount.Verdict.NotAnAmount("w"), null))
+        assertEquals("ambiguous on a ',' phone", OtherAmount.Verdict.NotAnAmount("Enter an amount like 12,50."), verdict("1.234", de))
+        // Review M1: the words wait for the field to rest (or a Settle tap), never on the first keystroke.
+        assertEquals("w", OtherAmount.capWords(OtherAmount.Verdict.NotAnAmount("w"), null, rested = true))
+        assertNull(OtherAmount.capWords(OtherAmount.Verdict.NotAnAmount("w"), null, rested = false))
+        assertEquals("a real amount over the debt says so at once", "t", OtherAmount.capWords(OtherAmount.Verdict.TooMuch("t"), null, rested = false))
         assertFalse(OtherAmount.settles(OtherAmount.Verdict.NotAnAmount("w")))
-        assertTrue("the sheet's tap", "is OtherAmount.Verdict.NotAnAmount -> verdict.words" in src("SettleAll.kt"))
+        assertTrue("a tap says why", OtherAmount.tappable(OtherAmount.Verdict.NotAnAmount("w")))
+        assertFalse(OtherAmount.tappable(OtherAmount.Verdict.Incomplete))
+        assertFalse(OtherAmount.tappable(OtherAmount.Verdict.TooMuch("t")))
+        assertEquals(1_000L, OtherAmount.WORDS_PAUSE_MS)
+        val sheet = src("SettleAll.kt")
+        assertTrue("the sheet's line", "verdict is Verdict.NotAnAmount && rested -> verdict.words" in sheet)
+        assertTrue("OtherAmount.capWords(verdict, refused, rested)?.let { words ->" in sheet)
+        assertTrue("PrimaryAction(SettleAllCopy.SETTLE, inDark, enabled = OtherAmount.tappable(verdict) && refused == null) {" in sheet)
+        assertTrue("if (verdict is OtherAmount.Verdict.NotAnAmount) rested = true" in sheet)
+        assertTrue("LaunchedEffect(text) {\n                rested = false\n                kotlinx.coroutines.delay(OtherAmount.WORDS_PAUSE_MS)\n                rested = true\n            }" in sheet)
     }
 
     // ---- U30.3 blanks ----
@@ -134,7 +186,7 @@ class D248FixesTest {
         assertEquals(90_000L, ffiSplitCompute(90_000, "INR", listOf(me, rahul), itemised).sumOf { it.minorUnits })
         assertEquals(
             SplitSpecInput.Itemised(listOf(LineInput(90_000, listOf(me))), 1_050, 500),
-            spec(AddExpenseUi.SplitDraft.Itemised(listOf(AddExpenseUi.SplitDraft.LineDraft("900", setOf(me))), tax = "10,50", tip = "5")),
+            spec(AddExpenseUi.SplitDraft.Itemised(listOf(AddExpenseUi.SplitDraft.LineDraft("900", setOf(me))), tax = "10,50", tip = "5"), de),
         )
         // A blank exact row: named at Save; the live line counts it as nothing (liveDraft).
         assertEquals(
@@ -147,7 +199,7 @@ class D248FixesTest {
         )
         assertEquals(
             SplitSpecInput.Exact(listOf(IdAmount(me, 50_025), IdAmount(rahul, 150))),
-            spec(AddExpenseUi.SplitDraft.Exact(mapOf(me to "500,25", rahul to "1.5"))),
+            spec(AddExpenseUi.SplitDraft.Exact(mapOf(me to "500,25", rahul to "1.5")), de),
         )
         // What is typed and not an amount: AmountEntry's words, never core's raw error.
         assertEquals(
@@ -158,10 +210,15 @@ class D248FixesTest {
             AmountEntry.Refusal("Enter an amount like 12.50."),
             runCatching { spec(AddExpenseUi.SplitDraft.Itemised(listOf(AddExpenseUi.SplitDraft.LineDraft("900", setOf(me))), tax = "1,2,3")) }.exceptionOrNull(),
         )
+        // Decision 203: on a '.' phone the same comma is refused in words, never read.
+        assertEquals(
+            AmountEntry.Refusal("Enter an amount like 12.50."),
+            runCatching { spec(AddExpenseUi.SplitDraft.Itemised(listOf(AddExpenseUi.SplitDraft.LineDraft("900", setOf(me))), tax = "10,50")) }.exceptionOrNull(),
+        )
         // An adjustment left blank is none; an item left blank is 0, and core says so in words.
         assertEquals(
             SplitSpecInput.Adjustment(listOf(IdAmount(me, -250), IdAmount(rahul, 0))),
-            spec(AddExpenseUi.SplitDraft.Adjustment(mapOf(me to "-2,50"))),
+            spec(AddExpenseUi.SplitDraft.Adjustment(mapOf(me to "-2,50")), de),
         )
         val blankLine = spec(AddExpenseUi.SplitDraft.Itemised(listOf(AddExpenseUi.SplitDraft.LineDraft("", setOf(me)))))
         val refused = runCatching { ffiSplitCompute(100, "INR", listOf(me, rahul), blankLine) }.exceptionOrNull()
@@ -252,12 +309,13 @@ class D248FixesTest {
         store.appendExpense(
             ExpenseDTO(
                 payer = me, paidMinor = 120_000, currencyCode = "INR", group = group,
-                shares = listOf(ExpenseDTO.ShareDTO(me, 60_000), ExpenseDTO.ShareDTO(rahul, 60_000)),
-                note = "Dinner", timestampMs = 1_000, addedBy = me,
+                shares = listOf(ExpenseDTO.ShareDTO(me, 70_000), ExpenseDTO.ShareDTO(rahul, 50_000)),
+                note = "Dinner", timestampMs = 1_000, category = "food.dining", addedBy = me,
             ),
             nowMs = 5_000,
         )
         val dinner = store.projectedExpenses().expenses.first()
+        assertEquals("food.dining", dinner.category)
         store.reviseExpense(ExpenseEditingUi.delete(dinner, me), nowMs = 6_000)
         assertEquals(emptyList<ExpenseDTO>(), store.loadExpenses())
 
@@ -269,8 +327,33 @@ class D248FixesTest {
         )
         assertEquals(DoneMoment.Small(DoneLine("Expense deleted", listOf("Dinner"), "Undo", 5.0)), center.current)
         center.act(center.serial)
-        assertEquals("Undo restored it", listOf("Dinner"), store.loadExpenses().map { it.note })
+        // Review M5: the whole expense comes back as it was (amount, payer, shares, category, date, note), not only its note.
+        val restored = store.projectedExpenses().expenses.firstOrNull { it.id == dinner.id }
+        assertTrue("Undo restored it", restored != null && !restored.deleted)
+        assertEquals(dinner.expense.paidMinor, restored!!.expense.paidMinor)
+        assertEquals(dinner.expense.currencyCode, restored.expense.currencyCode)
+        assertEquals(dinner.expense.payer, restored.expense.payer)
+        assertEquals(dinner.expense.shares, restored.expense.shares)
+        assertEquals(dinner.expense.group, restored.expense.group)
+        assertEquals(dinner.timestampMs, restored.timestampMs)
+        assertEquals(dinner.category, restored.category)
+        assertEquals(dinner.note, restored.note)
+        assertEquals(1, store.loadExpenses().size)
         assertEquals("every screen reads again", 1, written)
+        assertTrue("a written Undo says nothing more", (center.current as? DoneMoment.Small)?.line?.title != DoneCopy.NOT_RESTORED)
+        // Review M2: an Undo that cannot write says so ("Not restored."), on the main thread, as a settle's Undo says
+        // "Not recorded.". Here the expense is not in this vault, so the store refuses the revision.
+        val elsewherePath = Files.createTempDirectory("d248-undo-other").resolve("ledger-vault.db").toString()
+        val elsewhere = LedgerStore(elsewherePath) { SkiptiVault.open(elsewherePath, keystore) }
+        var onMain = 0
+        ExpenseUndo.offer(
+            dinner, elsewherePath, me, center = center, screenReader = false, store = { elsewhere }, written = {},
+            run = { it() }, clock = { 1_500L }, onMain = { onMain += 1; it() },
+        )
+        center.act(center.serial)
+        assertEquals(1, onMain)
+        assertEquals(DoneMoment.Small(DoneLine("Not restored.", emptyList())), center.current)
+        assertEquals("Not restored.", DoneCopy.NOT_RESTORED)
         // A screen reader gets the hold's longer window; a note-less expense shows the title alone.
         assertEquals(12.0, (ExpenseUndo.moment(dinner, SettleHold.window(true)) as DoneMoment.Small).line.actionSeconds, 0.0)
         assertEquals(emptyList<String>(), (ExpenseUndo.moment(dinner.copy(note = null), 5.0) as DoneMoment.Small).line.parts)
@@ -389,16 +472,84 @@ class D248FixesTest {
         assertTrue("BarDecisions.inlineTitleDp(BarDecisions.titleSize(form, collapsed = true).sp.toDp().value).dp.toSp().value" in bar)
         assertTrue("style = Type.title(dark, size)," in bar)
         assertTrue(".padding(start = BarDecisions.controlShift(BarDecisions.BACK_CENTRE_FROM_EDGE).dp)\n            .size(BarDecisions.TOUCH_TARGET.dp)" in bar)
-        // iOS's twin caps at 23 on its 375 pt phone.
+        // Decision 202 (review I2): iOS's twin caps at the same 22 (stage 1 had 23 there).
         val ios = java.io.File("../../ios/Skipti/App/ThemeArt.swift").readText()
-        assertTrue("static func inlineCap(_ theme: AppTheme) -> CGFloat { 23 }" in ios)
+        assertTrue("static func inlineCap(_ theme: AppTheme) -> CGFloat { 22 }" in ios)
+        assertEquals(22, BarDecisions.INLINE_TITLE_CAP)
+    }
+
+    // ---- Review I3: sheet titles beside their pill ----
+
+    /** Every fixed title a sheet's bar draws, with the pill in its corner (null: no pill, the title has the bar): the
+     *  twin of iOS's `sheetTitles`. Left out, as the person's own data the ellipsis is for: a group's, a person's or an
+     *  expense's name ("Remove {name}"). */
+    private val sheetTitles: List<Pair<String, String?>> = listOf(
+        "Your name" to "Cancel", "New group" to "Cancel", "Add expense" to "Cancel", "Edit expense" to "Cancel",
+        UsernameCopy.TITLE to "Cancel", UsernameCopy.CHANGE to "Cancel", AddPersonCopy.TITLE to BarDecisions.DONE_LABEL,
+        "Expense" to "Cancel", "Expense" to BarDecisions.CLOSE_LABEL, InviteCopy.JOIN_TITLE to "Cancel",
+        PeopleCopy.INVITATIONS to BarDecisions.CLOSE_LABEL, PhonesCopy.TITLE to BarDecisions.CLOSE_LABEL,
+        GroupPictures.TITLE to "Cancel", SettleAllCopy.HOW_MUCH_PAID to null,
+    )
+
+    /** [label]'s width in dp drawn at [size] dp in [theme]'s body face (the pill's), from the bundled TTFs. */
+    private fun labelWidth(label: String, theme: AppTheme, size: Float): Double {
+        val face = Type.face(Role.BODY, theme)
+        val file = if (face == Face.GROTESK) "spacegrotesk.ttf" else "ibmplexsans_regular.ttf"
+        val attributes = mapOf<java.text.AttributedCharacterIterator.Attribute, Any>(
+            java.awt.font.TextAttribute.SIZE to size,
+            java.awt.font.TextAttribute.KERNING to java.awt.font.TextAttribute.KERNING_ON,
+        )
+        val font = java.awt.Font.createFont(java.awt.Font.TRUETYPE_FONT, java.io.File(fonts, file)).deriveFont(attributes)
+        val styled = java.text.AttributedString(label)
+        styled.addAttribute(java.awt.font.TextAttribute.FONT, font)
+        val drawn = java.awt.font.TextLayout(styled.iterator, java.awt.font.FontRenderContext(null, true, true)).advance.toDouble()
+        return if (face == Face.GROTESK) drawn * displayWeightBound else drawn
+    }
+
+    /** Each sheet title fits beside its pill on a 360 dp phone ([BarDecisions.sheetTitleRoom360], the pill as wide as its
+     *  label makes it at that scale) in every theme at every font scale the app can reach (0.75 to 2.0, the system's
+     *  scale times SKIPTI's step), with the slack in hand. The negatives: with the pill's label uncapped, or with D-217's
+     *  rule (clear of the wider control on BOTH sides), "Pick your username" is cut at the largest scale. */
+    @Test
+    fun every_sheet_title_clears_its_pill_at_any_font_scale() {
+        val scales = listOf(0.75f, 0.85f, 1.0f, 1.12f, 1.24f, 1.3f, 1.5f, 1.75f, 2.0f)
+        var measured = 0
+        for (theme in AppTheme.entries) for (scale in scales) for ((title, pill) in sheetTitles) {
+            val titleSize = BarDecisions.inlineTitleDp(TypeScale.inlineTitle * scale)
+            val pillSize = BarDecisions.pillTextDp(BarDecisions.BAR_BUTTON_SIZE * scale)
+            val room = pill?.let { BarDecisions.sheetTitleRoom360(labelWidth(it, theme, pillSize).toFloat()).toDouble() }
+                ?: (360.0 - 2 * BarDecisions.BAR_SIDE_MARGIN - 2 * BarDecisions.TITLE_GAP)
+            val drawn = titleWidth(title, theme, titleSize)
+            assertTrue("$theme x$scale '$title' is $drawn wide in $room", drawn <= room - slack)
+            measured++
+        }
+        assertEquals(AppTheme.entries.size * scales.size * sheetTitles.size, measured)
+        // The room is the bar's own geometry: 360 - 2 x 8 margins - the pill's node (label + 2 x 16 + 2 x 2) - 2 x 8 gaps.
+        assertEquals(360f - 16f - (60f + 36f) - 16f, BarDecisions.sheetTitleRoom360(60f), 0f)
+        assertEquals(20f, BarDecisions.pillTextDp(17f * 2f), 0f)
+        assertEquals(17f, BarDecisions.pillTextDp(17f), 0f)
+        val longest = UsernameCopy.TITLE
+        val atCap = titleWidth(longest, AppTheme.NORSE, BarDecisions.INLINE_TITLE_CAP.toFloat())
+        val uncappedPill = labelWidth("Cancel", AppTheme.NORSE, 17f * 2f).toFloat()
+        assertTrue("uncapped pill", atCap > BarDecisions.sheetTitleRoom360(uncappedPill) - slack)
+        val cappedPill = labelWidth("Cancel", AppTheme.NORSE, BarDecisions.PILL_TEXT_CAP).toFloat()
+        val bothSides = (360 - 2 * BarDecisions.BAR_SIDE_MARGIN) - 2 * BarDecisions.pillNodeWidth(cappedPill) - 2 * BarDecisions.TITLE_GAP
+        assertTrue("D-217's both-sides rule", atCap > bothSides - slack)
+        // The bar draws the capped pill label, and places the title by the measured rule.
+        val bar = src("SkiptiBar.kt")
+        assertTrue("BarDecisions.pillTextDp(BarDecisions.BAR_BUTTON_SIZE.sp.toDp().value).dp.toSp()" in bar)
+        assertTrue(".padding(horizontal = BarDecisions.PILL_TARGET_INSET.dp)" in bar)
+        assertTrue("t?.placeRelative(BarDecisions.titleLeft(width, t.width, s?.width ?: 0, e?.width ?: 0, gap)" in bar)
+        // iOS's bar buttons stop at the same 20.
+        val ios = java.io.File("../../ios/Skipti/App/ThemeArt.swift").readText()
+        assertTrue("static let barButtonCap: CGFloat = 20" in ios)
     }
 
     @Test
     fun the_typed_parser_is_never_float_math() {
-        // ADR-0002 in the shell: AmountEntry hands text to core and only swaps a mark in an example.
+        // ADR-0002 in the shell: AmountEntry hands text and the phone's mark to core, and takes core's strings back.
         val entry = src("AddExpenseScreen.kt").substringAfter("object AmountEntry {").substringBefore("\n}\n")
         for (bad in listOf("toDouble", "toFloat", "BigDecimal", "Double(", "Float(")) assertFalse(bad, bad in entry)
-        if ("ffiMoneyParseTyped(text, currency)" !in entry) fail("core reads the text")
+        if ("ffiMoneyParseTyped(text, currency, mark(locale))" !in entry) fail("core reads the text")
     }
 }

@@ -83,19 +83,29 @@ final class SettleUpTests: XCTestCase {
         XCTAssertEqual(verdict("451", youOwe: true), .tooMuch("That is more than you owe Ana."))
         XCTAssertEqual(verdict("99999999"), .tooMuch("That is more than Ana owes."))
         // Settle disabled, nothing said.
-        for text in ["", "  ", "0", "0.00", "0,00", "-5"] {
+        for text in ["", "  ", "0", "0.00", "-5"] {
             XCTAssertEqual(verdict(text), .incomplete, "'\(text)'")
         }
-        // D-248 (U30.2): a decimal comma reads; what is not an amount is said, with an example in the phone's mark.
-        XCTAssertEqual(verdict("200,50"), .settles(20_050), "a decimal comma")
-        for text in ["abc", "1.2.3", "₹10", "1,000.00", "2,00,000"] {
+        // D-248 (U30.2, decision 203): a decimal comma reads on a ',' phone; what is not an amount is said, with an
+        // example in the phone's mark. On a '.' phone a comma is never the decimal mark.
+        func german(_ text: String) -> OtherAmount.Verdict {
+            OtherAmount.verdict(text, debt: 45_000, currency: "INR", youOwe: false, other: "Ana",
+                                locale: Locale(identifier: "de_DE"), check: ok)
+        }
+        XCTAssertEqual(german("200,50"), .settles(20_050), "a decimal comma")
+        XCTAssertEqual(german("0,00"), .incomplete)
+        XCTAssertEqual(german("abc"), .notAnAmount("Enter an amount like 12,50."))
+        XCTAssertEqual(german("1.234"), .notAnAmount("Enter an amount like 12,50."), "ambiguous on a ',' phone")
+        for text in ["abc", "1.2.3", "₹10", "1,000.00", "2,00,000", "200,50", "0,00", "1,500"] {
             XCTAssertEqual(verdict(text), .notAnAmount("Enter an amount like 12.50."), "'\(text)'")
         }
-        XCTAssertEqual(OtherAmount.verdict("abc", debt: 45_000, currency: "INR", youOwe: false, other: "Ana",
-                                           locale: Locale(identifier: "de_DE"), check: ok),
-                       .notAnAmount("Enter an amount like 12,50."))
-        XCTAssertEqual(OtherAmountSheet.capWords(.notAnAmount("w"), refused: nil), "w")
+        // Review M1: the words wait for the field to rest (or a Settle tap), never on the first keystroke.
+        XCTAssertEqual(OtherAmountSheet.capWords(.notAnAmount("w"), refused: nil, rested: true), "w")
+        XCTAssertNil(OtherAmountSheet.capWords(.notAnAmount("w"), refused: nil, rested: false))
+        XCTAssertEqual(OtherAmountSheet.capWords(.tooMuch("t"), refused: nil, rested: false), "t", "a real amount over the debt says so at once")
         XCTAssertFalse(OtherAmountSheet.settles(.notAnAmount("w")))
+        XCTAssertTrue(OtherAmountSheet.tappable(.notAnAmount("w")), "a tap says why")
+        XCTAssertEqual(OtherAmount.wordsPause, .seconds(1))
         // Core's check refusing reads as incomplete (never settles).
         XCTAssertEqual(OtherAmount.verdict("10", debt: 45_000, currency: "INR", youOwe: false, other: "Ana") { _ in
             throw CoreError.InvalidInput("no")
@@ -411,9 +421,9 @@ final class SettleUpTests: XCTestCase {
                      "the other way round is not the same card")
         XCTAssertNil(SettleAll.liveEntry(try SettleAll.sections(store), group: group, currency: "INR", person: ana, youOwe: true))
         // The sheet shows the tap's refusal as the cap's line; the field's own line comes first.
-        XCTAssertEqual(OtherAmountSheet.capWords(.settles(1), refused: "r"), "r")
-        XCTAssertEqual(OtherAmountSheet.capWords(.tooMuch("t"), refused: "r"), "t")
-        XCTAssertNil(OtherAmountSheet.capWords(.settles(1), refused: nil))
+        XCTAssertEqual(OtherAmountSheet.capWords(.settles(1), refused: "r", rested: false), "r")
+        XCTAssertEqual(OtherAmountSheet.capWords(.tooMuch("t"), refused: "r", rested: false), "t")
+        XCTAssertNil(OtherAmountSheet.capWords(.settles(1), refused: nil, rested: true))
         let all = try appSource("SettleAll.swift")
         XCTAssertEqual(count(all, "switch OtherAmount.atSettle(minor, live: live, youOwe: draft.youOwe, other: draft.other) {"), 1)
         XCTAssertEqual(count(all, "if case .settles(let minor) = verdict { refused = onSettle(minor) }"), 1)
@@ -487,10 +497,15 @@ final class SettleUpTests: XCTestCase {
     /// the_sheets_settle_waits_for_an_amount_within_the_debt.
     func testTheSheetsSettleWaitsForAnAmountWithinTheDebt() throws {
         let sheet = try XCTUnwrap(try appSource("SettleAll.swift").components(separatedBy: "struct OtherAmountSheet: View {").last)
-        XCTAssertEqual(count(sheet, ".disabled(!OtherAmountSheet.settles(verdict) || refused != nil)"), 1)
+        XCTAssertEqual(count(sheet, ".disabled(!OtherAmountSheet.tappable(verdict) || refused != nil)"), 1)
         XCTAssertEqual(count(sheet, ".disabled("), 1, "Settle is the sheet's one disabled control")
         XCTAssertEqual(count(sheet, "if case .settles(let minor) = verdict { refused = onSettle(minor) }"), 1)
-        XCTAssertFalse(OtherAmountSheet.settles(.incomplete), "empty, zero, not an amount")
+        // D-248 fix wave (review M1): a tap on what is not an amount records nothing and says why at once.
+        XCTAssertEqual(count(sheet, "if case .notAnAmount = verdict { rested = true }"), 1)
+        XCTAssertEqual(count(sheet, "OtherAmountSheet.capWords(verdict, refused: refused, rested: rested)"), 1)
+        XCTAssertFalse(OtherAmountSheet.settles(.incomplete), "empty, zero")
+        XCTAssertFalse(OtherAmountSheet.tappable(.incomplete))
+        XCTAssertFalse(OtherAmountSheet.tappable(.tooMuch("x")))
         XCTAssertFalse(OtherAmountSheet.settles(.tooMuch(SettleAllCopy.moreThanDebt(youOwe: false, other: "Ana"))), "more than owed")
         XCTAssertTrue(OtherAmountSheet.settles(.settles(1)))
     }

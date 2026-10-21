@@ -48,7 +48,7 @@ import uniffi.skipti_core.NamedGroupWire
 import uniffi.skipti_core.ProjectedExpenseOut
 import uniffi.skipti_core.SplitSpecInput
 import uniffi.skipti_core.ffiCategoryTreeDefault
-import uniffi.skipti_core.ffiMoneyInputDigits
+import uniffi.skipti_core.ffiMoneyTypedDigits
 import uniffi.skipti_core.ffiMoneyParseTyped
 import uniffi.skipti_core.ffiSplitCompute
 
@@ -96,9 +96,12 @@ object AddSheetCopy {
         }.getOrNull()
 }
 
-/** D-248 (U30.2, decision 184): every amount a person types is read by core's typed parser (`ffiMoneyParseTyped`: one
- *  ',' and no '.' is the decimal mark, so a decimal-comma keyboard can enter an amount), and a field that still holds no
- *  amount says so in words, with an example in the phone's own decimal mark. The twin of iOS's `AmountEntry`. */
+/** D-248 (U30.2, decisions 184 and 203): every amount a person types is read by core's typed parser
+ *  (`ffiMoneyParseTyped`), given the phone's decimal mark: on a ',' phone one ',' and no '.' is the decimal mark (a
+ *  decimal-comma keyboard can enter an amount) and "1.234" is refused as ambiguous; on a '.' phone any ',' is refused
+ *  (an English "1,500" is never 1.500 KD). A field that still holds no amount says so in words, with an example in the
+ *  phone's own mark, and every field starts from core's entry form in that mark ([digits]). The twin of iOS's
+ *  `AmountEntry`. */
 object AmountEntry {
     /** A typed amount refused in words (the save-error line shows [words]). */
     class Refusal(val words: String) : IllegalArgumentException(words) {
@@ -113,11 +116,17 @@ object AmountEntry {
     fun mark(locale: java.util.Locale = java.util.Locale.getDefault()): String =
         if (java.text.DecimalFormatSymbols.getInstance(locale).decimalSeparator == ',') "," else "."
 
-    /** An example amount in [currency]'s own decimals: core's entry form of 1,250 minor units ("12.50"; "1250" in JPY,
-     *  "1.250" in KWD), in the phone's mark. Nothing here does money arithmetic. Null for a currency core does not know
-     *  (no example is made up). */
+    /** [minor] as a person types it on this phone: core's entry form in the phone's mark ("12,50" on a ',' phone,
+     *  "1.005" KWD on a '.' one), which the typed parser reads back exactly. What Edit, Settle up's Another amount and
+     *  Redistribute start from. Null for a currency core does not know. */
+    fun digits(minor: Long, currency: String, locale: java.util.Locale = java.util.Locale.getDefault()): String? =
+        runCatching { ffiMoneyTypedDigits(minor, currency, mark(locale)) }.getOrNull()
+
+    /** An example amount in [currency]'s own decimals: core's entry form of 1,250 minor units in the phone's mark
+     *  ("12.50"; "1250" in JPY; "1,250" in KWD on a ',' phone), built by core (review M3: never a mark swapped into a
+     *  formatted string). Null for a currency core does not know (no example is made up). */
     fun example(currency: String, locale: java.util.Locale = java.util.Locale.getDefault()): String? =
-        runCatching { ffiMoneyInputDigits(1_250, currency) }.getOrNull()?.replace(".", mark(locale))
+        digits(1_250, currency, locale)
 
     fun likeWords(currency: String, locale: java.util.Locale = java.util.Locale.getDefault()): String =
         example(currency, locale)?.let { "Enter an amount like $it." } ?: "Enter an amount."
@@ -125,13 +134,14 @@ object AmountEntry {
     /** U30.3: an exact row left blank at Save. */
     fun forPerson(name: String): String = "Enter an amount for $name."
 
-    /** Core's minor units for [text], or null while it is not an amount (the live lines). */
-    fun minor(text: String, currency: String): Long? = runCatching { ffiMoneyParseTyped(text, currency) }.getOrNull()
+    /** Core's minor units for [text] typed on this phone, or null while it is not an amount (the live lines). */
+    fun minor(text: String, currency: String, locale: java.util.Locale = java.util.Locale.getDefault()): Long? =
+        runCatching { ffiMoneyParseTyped(text, currency, mark(locale)) }.getOrNull()
 
     /** Save's read: core's minor units, or a [Refusal] in words. Too large keeps core's own error (SplitWords' words). */
     fun parse(text: String, currency: String, locale: java.util.Locale = java.util.Locale.getDefault()): Long =
         try {
-            ffiMoneyParseTyped(text, currency)
+            ffiMoneyParseTyped(text, currency, mark(locale))
         } catch (e: CoreException.Overflow) {
             throw e
         } catch (e: CoreException) {

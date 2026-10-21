@@ -422,7 +422,8 @@ object ExpenseUndo {
     fun moment(deleted: ProjectedExpenseOut, seconds: Double): DoneMoment =
         DoneMoments.lineWithAction(DoneCopy.EXPENSE_DELETED, DoneCopy.UNDO, seconds, listOf(deleted.note))
 
-    /** Posts the toast; its Undo writes [undo] off the main thread ([run]). On the main thread (the centre's rule). */
+    /** Posts the toast; its Undo writes [undo] off the main thread ([run]), and a write that fails says "Not restored."
+     *  back on the main thread ([onMain]; review M2). On the main thread (the centre's rule). */
     fun offer(
         deleted: ProjectedExpenseOut,
         vaultPath: String,
@@ -434,14 +435,17 @@ object ExpenseUndo {
         run: (() -> Unit) -> Unit = { work -> kotlinx.coroutines.MainScope().launch(Dispatchers.IO) { work() } },
         /** When the toast is posted (uptime ms, in the app). */
         clock: () -> Long = { android.os.SystemClock.uptimeMillis() },
+        onMain: (() -> Unit) -> Unit = { work -> android.os.Handler(android.os.Looper.getMainLooper()).post(work) },
     ) {
         center.post(moment(deleted, SettleHold.window(screenReader)), clock(), onAction = {
-            run { undo(deleted, store(), editor, written) }
+            run {
+                if (!undo(deleted, store(), editor, written)) onMain { center.post(DoneMoments.line(DoneCopy.NOT_RESTORED), clock()) }
+            }
         })
     }
 
     /** Written from the projection that HOLDS the delete, so the Undo has seen it; then every screen reads again
-     *  ([written]). False when it could not be written (a local vault write: rare, and nothing is said, as iOS). */
+     *  ([written]). False when it could not be written ([offer] then says "Not restored.", as iOS). */
     fun undo(deleted: ProjectedExpenseOut, store: LedgerStore, editor: String?, written: (String) -> Unit = SettleHold::liveWritten): Boolean =
         runCatching {
             val current = store.projectedExpenses().expenses.firstOrNull { it.id == deleted.id } ?: deleted

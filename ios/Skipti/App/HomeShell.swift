@@ -104,7 +104,7 @@ struct HomeShell: View {
         ZStack {
             NavigationStack {
                 // D-180: every group at once; a group opens its page.
-                OverviewScreen { selectedRaw = HomeTab.settle.rawValue }
+                OverviewScreen(root: roots[.balance, default: 0]) { selectedRaw = HomeTab.settle.rawValue }
                     .shellRoot(.balance, chrome)
                     .safeAreaInset(edge: .top, spacing: 0) { banner }
                     // D-178: pull to sync (the founder, 2026-09-29).
@@ -124,8 +124,8 @@ struct HomeShell: View {
                     // D-248 (U30.6): the new group's page on Home's stack, from Home's root (Back lands on Home).
                     selectedRaw = HomeTab.balance.rawValue
                     roots[.balance, default: 0] += 1
-                    // On the next turn: Home's stack is rebuilt first, and the new Home opens it (the old one is gone).
-                    DispatchQueue.main.async { GroupOpening.shared.request(id) }
+                    // For the rebuilt Home alone (review M7): the old one, still on screen this turn, leaves it.
+                    GroupOpening.shared.request(id, root: roots[.balance, default: 0])
                 })
                 .shellRoot(.groups, chrome)
                 .safeAreaInset(edge: .top, spacing: 0) { banner }
@@ -203,7 +203,7 @@ struct HomeShell: View {
         // D-245 (U9): New group from the welcome's last screen, over Balance at its root.
         .sheet(isPresented: $startingGroup, onDismiss: {
             // D-248 (U30.6): the new group's page, once the sheet has gone.
-            if let id = startedGroupID { startedGroupID = nil; GroupOpening.shared.request(id) }
+            if let id = startedGroupID { startedGroupID = nil; GroupOpening.shared.request(id, root: roots[.balance, default: 0]) }
         }) {
             NavigationStack {
                 let store = LedgerStore.defaultStore()

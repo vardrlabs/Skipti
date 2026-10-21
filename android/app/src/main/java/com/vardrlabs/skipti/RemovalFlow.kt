@@ -71,7 +71,6 @@ import uniffi.skipti_core.RedistributionTally
 import uniffi.skipti_core.ffiBalanceLine
 import uniffi.skipti_core.ffiBalancesCompute
 import uniffi.skipti_core.ffiEncodeRedistribution
-import uniffi.skipti_core.ffiMoneyInputDigits
 import uniffi.skipti_core.ffiRedistributeEqual
 import uniffi.skipti_core.ffiRedistributionTally
 import kotlin.math.abs
@@ -327,7 +326,7 @@ data class RedistributeModel(
     /** "Edit amounts": the fields start at the equal split. */
     fun startEditing(): RedistributeModel {
         val digits = equalShares().associate { share ->
-            share.id to runCatching { ffiMoneyInputDigits(magnitude(share.amountMinor), currency) }.getOrDefault("")
+            share.id to (AmountEntry.digits(magnitude(share.amountMinor), currency) ?: "")
         }
         return copy(custom = true, typed = digits)
     }

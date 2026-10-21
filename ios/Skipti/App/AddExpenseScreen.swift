@@ -99,10 +99,12 @@ enum AddExpenseRows {
     }
 }
 
-/// D-248 (U30.2, decision 184): every amount a person types is read by core's typed parser (`ffiMoneyParseTyped`: one ','
-/// and no '.' is the decimal mark, so a decimal-comma keyboard can enter an amount), and a field that still holds no
-/// amount says so in words, with an example in the phone's own decimal mark. Android's twin is `AmountEntry` in
-/// AddExpenseScreen.kt.
+/// D-248 (U30.2, decisions 184 and 203): every amount a person types is read by core's typed parser
+/// (`ffiMoneyParseTyped`), given the phone's decimal mark: on a ',' phone one ',' and no '.' is the decimal mark (a
+/// decimal-comma keyboard can enter an amount) and "1.234" is refused as ambiguous; on a '.' phone any ',' is refused
+/// (an English "1,500" is never 1.500 KD). A field that still holds no amount says so in words, with an example in the
+/// phone's own mark, and every field starts from core's entry form in that mark (`digits`). Android's twin is
+/// `AmountEntry` in AddExpenseScreen.kt.
 enum AmountEntry {
     /// A typed amount refused in words (the save-error state shows `words`).
     struct Refusal: Error, Equatable {
@@ -117,12 +119,18 @@ enum AmountEntry {
         locale.decimalSeparator == "," ? "," : "."
     }
 
-    /// An example amount in `currency`'s own decimals: core's entry form of 1,250 minor units ("12.50"; "1250" in JPY,
-    /// "1.250" in KWD), in the phone's mark. Nothing here does money arithmetic.
-    /// Nil for a currency core does not know (no example is made up).
+    /// `minor` as a person types it on this phone: core's entry form in the phone's mark ("12,50" on a ',' phone,
+    /// "1.005" KWD on a '.' one), which the typed parser reads back exactly. What Edit, Settle up's Another amount and
+    /// Redistribute start from. Nil for a currency core does not know.
+    static func digits(_ minor: Int64, currency: String, locale: Locale = .autoupdatingCurrent) -> String? {
+        try? ffiMoneyTypedDigits(minorUnits: minor, currencyCode: currency, decimalMark: mark(locale))
+    }
+
+    /// An example amount in `currency`'s own decimals: core's entry form of 1,250 minor units in the phone's mark
+    /// ("12.50"; "1250" in JPY; "1,250" in KWD on a ',' phone), built by core (review M3: never a mark swapped into a
+    /// formatted string). Nil for a currency core does not know (no example is made up).
     static func example(currency: String, locale: Locale = .autoupdatingCurrent) -> String? {
-        guard let digits = try? ffiMoneyInputDigits(minorUnits: 1_250, currencyCode: currency) else { return nil }
-        return digits.replacingOccurrences(of: ".", with: mark(locale))
+        digits(1_250, currency: currency, locale: locale)
     }
 
     static func likeWords(currency: String, locale: Locale = .autoupdatingCurrent) -> String {
@@ -133,15 +141,15 @@ enum AmountEntry {
     /// U30.3: an exact row left blank at Save.
     static func forPerson(_ name: String) -> String { "Enter an amount for \(name)." }
 
-    /// Core's minor units for `text`, or nil while it is not an amount (the live lines).
-    static func minor(_ text: String, currency: String) -> Int64? {
-        try? ffiMoneyParseTyped(text: text, currencyCode: currency)
+    /// Core's minor units for `text` typed on this phone, or nil while it is not an amount (the live lines).
+    static func minor(_ text: String, currency: String, locale: Locale = .autoupdatingCurrent) -> Int64? {
+        try? ffiMoneyParseTyped(text: text, currencyCode: currency, decimalMark: mark(locale))
     }
 
     /// Save's read: core's minor units, or a `Refusal` in words. Too large keeps core's own error (SplitWords' words).
     static func parse(_ text: String, currency: String, locale: Locale = .autoupdatingCurrent) throws -> Int64 {
         do {
-            return try ffiMoneyParseTyped(text: text, currencyCode: currency)
+            return try ffiMoneyParseTyped(text: text, currencyCode: currency, decimalMark: mark(locale))
         } catch CoreError.Overflow {
             throw CoreError.Overflow
         } catch {

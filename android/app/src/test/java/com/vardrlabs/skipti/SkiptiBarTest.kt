@@ -306,20 +306,30 @@ class SkiptiBarTest {
         assertEquals(3, src.split("    BarFrame(").size - 1)
     }
 
-    /** D-217 final fix (I6): the centred title is measured against the bar's controls, not a fixed reserve: at a large
-     *  text size a Cancel pill is far wider than any reserve, and the title drew under it. Centred on the bar, the
-     *  title may be as wide as the bar less the WIDER control on both sides and a gap each side. */
+    /** D-217 final fix (I6): the title is measured against the bar's controls, not a fixed reserve: at a large text
+     *  size a Cancel pill is far wider than any reserve, and the title drew under it. D-248 fix wave (review I3, UIKit's
+     *  rule measured on iOS 27): the title may be as wide as the room between the controls less a gap beside each; it
+     *  is centred on the bar when that clears both, and moved just clear of the one it would run into otherwise. */
     @Test
-    fun the_title_clears_the_wider_control_on_both_sides() {
-        // A 396 px bar, a 48 px back button and nothing at the end, an 8 px gap: 396 - 2 * 48 - 16.
-        assertEquals(284, BarDecisions.titleMaxWidth(396, leading = 48, trailing = 0, gap = 8))
-        // Symmetric whichever side is wide: a 140 px Cancel at the start, or a 140 px Done at the end.
-        assertEquals(100, BarDecisions.titleMaxWidth(396, leading = 140, trailing = 0, gap = 8))
-        assertEquals(100, BarDecisions.titleMaxWidth(396, leading = 48, trailing = 140, gap = 8))
+    fun the_title_clears_both_controls_centred_where_it_can_be() {
+        // A 396 px bar, a 48 px back button and nothing at the end, an 8 px gap: 396 - 48 - 16.
+        assertEquals(332, BarDecisions.titleMaxWidth(396, leading = 48, trailing = 0, gap = 8))
+        // A 140 px Cancel at the start, or a 140 px Done at the end beside a back button.
+        assertEquals(240, BarDecisions.titleMaxWidth(396, leading = 140, trailing = 0, gap = 8))
+        assertEquals(192, BarDecisions.titleMaxWidth(396, leading = 48, trailing = 140, gap = 8))
         // No controls: the bar less the two gaps.
         assertEquals(380, BarDecisions.titleMaxWidth(396, leading = 0, trailing = 0, gap = 8))
         // Controls wider than the bar can share: no room, never negative.
-        assertEquals(0, BarDecisions.titleMaxWidth(396, leading = 200, trailing = 10, gap = 8))
+        assertEquals(0, BarDecisions.titleMaxWidth(396, leading = 300, trailing = 100, gap = 8))
+        // Where it goes: centred when that clears both controls; moved clear of the pill when it would run into it
+        // (UIKit's own, as iOS 27 draws "Pick your username" beside Cancel); never past the far control.
+        assertEquals("centred", 158, BarDecisions.titleLeft(width = 396, titleWidth = 80, leading = 140, trailing = 0, gap = 8))
+        assertEquals("clear of the pill", 148, BarDecisions.titleLeft(width = 396, titleWidth = 240, leading = 140, trailing = 0, gap = 8))
+        assertEquals("centred", 78, BarDecisions.titleLeft(width = 396, titleWidth = 240, leading = 48, trailing = 0, gap = 8))
+        assertEquals("clear of the back button", 56, BarDecisions.titleLeft(width = 396, titleWidth = 300, leading = 48, trailing = 0, gap = 8))
+        assertEquals("clear of the end", 8, BarDecisions.titleLeft(width = 396, titleWidth = 240, leading = 0, trailing = 140, gap = 8))
+        assertEquals("as wide as it may be", 56, BarDecisions.titleLeft(width = 396, titleWidth = 284, leading = 48, trailing = 48, gap = 8))
+        assertEquals(98, BarDecisions.titleLeft(width = 396, titleWidth = 200, leading = 0, trailing = 0, gap = 8))
         assertEquals(8, BarDecisions.TITLE_GAP)
         // Vertical places: a control or title shorter than the 44 px bar is centred on it; the 48 px targets sit at the top.
         assertEquals(5, BarDecisions.centredTop(height = 34, barPx = 44))
@@ -338,15 +348,15 @@ class SkiptiBarTest {
         assertEquals(3, laneRow.split("BarDecisions.centredTop(").size - 1)
         assertEquals(3, laneRow.split(", lane))").size - 1)
         assertTrue(source().contains("val groundPx = BarDecisions.laneHeight(size.height.toInt(), barPx.toInt(), BarDecisions.TOUCH_TARGET.dp.roundToPx())"))
-        // Horizontally the title is centred on the bar (so on the screen), not between the controls.
-        assertEquals(98, BarDecisions.titleLeft(width = 396, titleWidth = 200))
+        // Horizontally the title is centred on the bar (so on the screen), not between the controls, where it clears both.
+        assertEquals(98, BarDecisions.titleLeft(width = 396, titleWidth = 200, leading = 48, trailing = 48, gap = 8))
         val src = source()
         assertFalse("the fixed reserve", src.contains("titleSideReserve"))
         val frame = src.substringAfter("private fun BarRow(").substringBefore("\n}\n")
         assertTrue(frame.contains("Layout(\n        contents = listOf(start ?: {}, end ?: {}, title),"))
-        assertTrue(frame.contains("val maxTitle = BarDecisions.titleMaxWidth(width, s?.width ?: 0, e?.width ?: 0, BarDecisions.TITLE_GAP.dp.roundToPx())"))
+        assertTrue(frame.contains("val maxTitle = BarDecisions.titleMaxWidth(width, s?.width ?: 0, e?.width ?: 0, gap)"))
         assertTrue(frame.contains("titleMeasurables.firstOrNull()?.measure(Constraints(maxWidth = maxTitle))"))
-        assertTrue(frame.contains("t?.placeRelative(BarDecisions.titleLeft(width, t.width), BarDecisions.centredTop(t.height, lane))"))
+        assertTrue(frame.contains("t?.placeRelative(BarDecisions.titleLeft(width, t.width, s?.width ?: 0, e?.width ?: 0, gap), BarDecisions.centredTop(t.height, lane))"))
         // The three bars hand their controls to the measured row: the back button, the trailing item, the pills.
         assertTrue(src.contains("start = if (onBack != null) ({ BackButton(dark, onBack) }) else null,"))
         assertTrue(src.contains("start = { BarPill(cancelLabel, dark, true, onSurface, onCancel) },"))
@@ -621,7 +631,8 @@ class SkiptiBarTest {
         assertTrue(art.contains("static let token = \"groundAccent\""))
         assertTrue(art.contains("func barTint() -> some View { tint(Tokens.groundAccent) }"))
         val pill = source().substringAfter("private fun BarPill(").substringBefore("\n}\n")
-        assertTrue(pill.contains("Text(label, style = Type.body(dark).copy(fontSize = BarDecisions.BAR_BUTTON_SIZE.sp, color = Tok.groundAccent(dark)), maxLines = 1)"))
+        assertTrue(pill.contains("Text(label, style = Type.body(dark).copy(fontSize = size, color = Tok.groundAccent(dark)), maxLines = 1)"))
+        assertTrue(pill.contains("val size = with(LocalDensity.current) { BarDecisions.pillTextDp(BarDecisions.BAR_BUTTON_SIZE.sp.toDp().value).dp.toSp() }"))
         assertFalse(pill.contains("Tok.accent(dark)"))
     }
 

@@ -43,26 +43,33 @@ final class D248FixesTests: XCTestCase {
 
     // MARK: - U30.2 the typed-amount parser (decision 184)
 
-    /// Core's typed parser through the bindings: a subset of `.drafts/d248/typed_goldens.py`'s table (derived there with
-    /// exact Fractions, never read out of core), so the shell reads exactly what core's own test pins.
-    func testTypedAmountsReadOneCommaAsTheDecimalMark() {
-        let goldens: [(String, String, Int64?)] = [
-            ("12,50", "EUR", 1_250), (",5", "EUR", 50), ("1,005", "KWD", 1_005), (" 7,10 ", "USD", 710),
-            ("12.50", "EUR", 1_250), ("1005", "JPY", 1_005),
-            ("1,234,567", "INR", nil), ("1,234.56", "USD", nil), ("1.234,56", "EUR", nil), ("12,505", "EUR", nil),
-            ("1,0005", "KWD", nil), ("10,5", "JPY", nil), ("1,234", "INR", nil), (",", "EUR", nil), ("", "EUR", nil),
+    /// Core's typed parser through the bindings, given the phone's mark (decision 203): a subset of
+    /// `.drafts/d248/typed_goldens.py`'s table (derived there with exact Fractions, never read out of core), so the shell
+    /// reads exactly what core's own test pins. `AmountEntry` passes the mark of the locale it is given.
+    func testTypedAmountsReadACommaOnlyOnACommaPhone() {
+        let goldens: [(String, String, String, Int64?)] = [
+            ("12,50", "EUR", ",", 1_250), (",5", "EUR", ",", 50), ("1,005", "KWD", ",", 1_005), ("1,234", "KWD", ",", 1_234),
+            ("12.50", "EUR", ",", 1_250), ("1.05", "KWD", ",", 1_050), ("1234", "JPY", ",", 1_234),
+            ("1.234", "KWD", ",", nil), ("1.234", "EUR", ",", nil), ("10,5", "JPY", ",", nil), ("1,234", "INR", ",", nil),
+            ("1.234,56", "EUR", ",", nil), ("1,0005", "KWD", ",", nil), (",", "EUR", ",", nil),
+            ("12.50", "EUR", ".", 1_250), ("1.234", "KWD", ".", 1_234), ("1005", "JPY", ".", 1_005), (" 7.10 ", "USD", ".", 710),
+            ("1,500", "KWD", ".", nil), ("1,234", "KWD", ".", nil), ("12,50", "EUR", ".", nil), ("1,234,567", "INR", ".", nil),
+            ("1,234.56", "USD", ".", nil), ("2,00,000", "INR", ".", nil), ("", "EUR", ".", nil),
         ]
-        for (text, code, want) in goldens {
-            XCTAssertEqual(try? ffiMoneyParseTyped(text: text, currencyCode: code), want, "\(code) '\(text)'")
-            XCTAssertEqual(AmountEntry.minor(text, currency: code), want, "\(code) '\(text)'")
+        for (text, code, mark, want) in goldens {
+            XCTAssertEqual(try? ffiMoneyParseTyped(text: text, currencyCode: code, decimalMark: mark), want, "\(code) '\(text)' \(mark)")
+            XCTAssertEqual(AmountEntry.minor(text, currency: code, locale: mark == "," ? de : en), want, "\(code) '\(text)' \(mark)")
         }
+        // A mark that is neither is refused, never guessed.
+        XCTAssertNil(try? ffiMoneyParseTyped(text: "12.50", currencyCode: "EUR", decimalMark: "\u{066B}"))
         // Import's strict parser is untouched: a comma never reads there.
         XCTAssertThrowsError(try ffiMoneyParseMinor(digits: "12,50", currencyCode: "EUR"))
     }
 
-    /// "Enter an amount like {example}.": the example in the currency's own decimals (core's entry form of 1,250 minor
-    /// units) and the phone's decimal mark.
-    func testANonAmountIsRefusedInWordsWithTheLocalesMark() {
+    /// "Enter an amount like {example}.": the example in the currency's own decimals and the phone's decimal mark, both
+    /// from core (`ffiMoneyTypedDigits`, review M3); every field starts from core's entry form in that mark (review M6),
+    /// which the parser reads back on that phone.
+    func testANonAmountIsRefusedInWordsWithTheLocalesMark() throws {
         XCTAssertEqual(AmountEntry.mark(en), ".")
         XCTAssertEqual(AmountEntry.mark(de), ",")
         XCTAssertEqual(AmountEntry.mark(Locale(identifier: "fr_FR")), ",")
@@ -71,6 +78,7 @@ final class D248FixesTests: XCTestCase {
         XCTAssertEqual(AmountEntry.likeWords(currency: "EUR", locale: de), "Enter an amount like 12,50.")
         XCTAssertEqual(AmountEntry.example(currency: "JPY", locale: de), "1250", "no decimals in yen")
         XCTAssertEqual(AmountEntry.example(currency: "KWD", locale: de), "1,250", "three in dinars")
+        XCTAssertEqual(AmountEntry.example(currency: "KWD", locale: en), "1.250")
         XCTAssertNil(AmountEntry.example(currency: "XYZ", locale: en), "no example is made up")
         XCTAssertEqual(AmountEntry.likeWords(currency: "XYZ", locale: en), "Enter an amount.")
         XCTAssertEqual(try AmountEntry.parse("12,50", currency: "EUR", locale: de), 1_250)
@@ -80,10 +88,36 @@ final class D248FixesTests: XCTestCase {
         XCTAssertThrowsError(try AmountEntry.parse("10,5", currency: "JPY", locale: en)) { error in
             XCTAssertEqual(error as? AmountEntry.Refusal, AmountEntry.Refusal(words: "Enter an amount like 1250."))
         }
+        // I1: an English "1,500" in dinars is refused in words, never saved as 1.500 KD.
+        XCTAssertThrowsError(try AmountEntry.parse("1,500", currency: "KWD", locale: en)) { error in
+            XCTAssertEqual(error as? AmountEntry.Refusal, AmountEntry.Refusal(words: "Enter an amount like 1.250."))
+        }
         // Too large keeps core's own error, which SplitWords says ("That amount is too large.").
         XCTAssertThrowsError(try AmountEntry.parse("99999999999999999999", currency: "INR", locale: en)) { error in
             guard case CoreError.Overflow = error else { return XCTFail("\(error)") }
         }
+        // The prefills: in the phone's mark, and read back on that phone (a KWD "1.005" on a ',' phone would be refused).
+        for (locale, want) in [(de, "1,005"), (en, "1.005")] {
+            XCTAssertEqual(AmountEntry.digits(1_005, currency: "KWD", locale: locale), want)
+            XCTAssertEqual(OtherAmount.prefill(debt: 1_005, currency: "KWD", locale: locale), want)
+            XCTAssertEqual(AmountEntry.minor(want, currency: "KWD", locale: locale), 1_005)
+        }
+        let store = LedgerStore(path: dir.appendingPathComponent("ledger.db").path)
+        _ = try store.appendExpense(LedgerStore.ExpenseDTO(
+            payer: me, paidMinor: 1_005, currencyCode: "KWD", group: group, conversion: nil,
+            shares: [.init(id: me, amountMinor: 1_000), .init(id: rahul, amountMinor: 5)],
+            note: "Tea", timestampMs: 1_000, category: nil, addedBy: me
+        ), nowMs: 5_000)
+        let tea = try XCTUnwrap(store.projectedExpenses().expenses.first)
+        let edit = try ExpenseEditing.prefill(tea, locale: de)
+        XCTAssertEqual(edit.amountText, "1,005")
+        XCTAssertEqual(edit.exactEntries, [me: "1,000", rahul: "0,005"])
+        XCTAssertEqual(try AmountEntry.parse(edit.amountText, currency: "KWD", locale: de), 1_005, "Edit saves what it opened with")
+        XCTAssertEqual(try ExpenseEditing.prefill(tea, locale: en).amountText, "1.005")
+        // The example and the prefills are core's strings: nothing in the shell swaps a mark into an amount.
+        let entry = try slice(try appSource("AddExpenseScreen.swift"), from: "enum AmountEntry {", to: "\n}\n")
+        XCTAssertFalse(entry.contains("replacingOccurrences"))
+        XCTAssertTrue(entry.contains("try? ffiMoneyTypedDigits(minorUnits: minor, currencyCode: currency, decimalMark: mark(locale))"))
     }
 
     /// Every typed-amount site reads through the typed parser; the strict one is left to import and the fixed sample.
@@ -97,7 +131,7 @@ final class D248FixesTests: XCTestCase {
         XCTAssertTrue(add.contains("let total = try AmountEntry.parse(amountText, currency: currency)"), "Save")
         XCTAssertEqual(add.components(separatedBy: "AmountEntry.minor(amountText, currency: currency)").count, 3,
                        "the summary and the split's live line")
-        XCTAssertTrue(try appSource("SettleAll.swift").contains("guard let minor = AmountEntry.minor(text, currency: currency)"))
+        XCTAssertTrue(try appSource("SettleAll.swift").contains("guard let minor = AmountEntry.minor(text, currency: currency, locale: locale)"))
         XCTAssertTrue(try appSource("RemovalFlow.swift").contains("guard let minor = AmountEntry.minor(typed[id] ?? \"\", currency: currency)"))
     }
 
@@ -119,7 +153,7 @@ final class D248FixesTests: XCTestCase {
         // The whole itemised expense saves through core with them blank.
         let shares = try ffiSplitCompute(totalMinor: 90_000, currencyCode: "INR", members: [me, rahul], spec: itemised)
         XCTAssertEqual(shares.map(\.minorUnits).reduce(0, +), 90_000)
-        XCTAssertEqual(try spec(.itemised, lines: [("900", [me])], tax: "10,50", tip: "5"),
+        XCTAssertEqual(try spec(.itemised, lines: [("900", [me])], tax: "10,50", tip: "5", locale: de),
                        .itemised(lines: [LineInput(amountMinor: 90_000, participants: [me])], taxMinor: 1_050, tipMinor: 500))
         // A blank exact row: named at Save, nothing while the live line counts.
         XCTAssertThrowsError(try spec(.exact, exact: [me: "500"])) { error in
@@ -127,7 +161,7 @@ final class D248FixesTests: XCTestCase {
         }
         XCTAssertEqual(try spec(.exact, exact: [me: "500"], blanksAsZero: true),
                        .exact(entries: [IdAmount(id: me, amountMinor: 50_000), IdAmount(id: rahul, amountMinor: 0)]))
-        XCTAssertEqual(try spec(.exact, exact: [me: "500,25", rahul: "1.5"]),
+        XCTAssertEqual(try spec(.exact, exact: [me: "500,25", rahul: "1.5"], locale: de),
                        .exact(entries: [IdAmount(id: me, amountMinor: 50_025), IdAmount(id: rahul, amountMinor: 150)]))
         // What is typed and not an amount: AmountEntry's words, never core's raw error.
         XCTAssertThrowsError(try spec(.exact, exact: [me: "5x", rahul: "1"], locale: de)) { error in
@@ -136,8 +170,12 @@ final class D248FixesTests: XCTestCase {
         XCTAssertThrowsError(try spec(.itemised, lines: [("900", [me])], tax: "1,2,3")) { error in
             XCTAssertEqual(error as? AmountEntry.Refusal, AmountEntry.Refusal(words: "Enter an amount like 12.50."))
         }
+        // Decision 203: on a '.' phone the same comma is refused in words, never read.
+        XCTAssertThrowsError(try spec(.itemised, lines: [("900", [me])], tax: "10,50")) { error in
+            XCTAssertEqual(error as? AmountEntry.Refusal, AmountEntry.Refusal(words: "Enter an amount like 12.50."))
+        }
         // An adjustment left blank is none; an item left blank is 0, and core says so in words.
-        XCTAssertEqual(try spec(.adjustment, adjustment: [me: "-2,50"]),
+        XCTAssertEqual(try spec(.adjustment, adjustment: [me: "-2,50"], locale: de),
                        .adjustment(entries: [IdAmount(id: me, amountMinor: -250), IdAmount(id: rahul, amountMinor: 0)]))
         let blankLine = try spec(.itemised, lines: [("", [me])])
         XCTAssertThrowsError(try ffiSplitCompute(totalMinor: 100, currencyCode: "INR", members: [me, rahul], spec: blankLine)) { error in
@@ -202,10 +240,11 @@ final class D248FixesTests: XCTestCase {
         let store = LedgerStore(path: dir.appendingPathComponent("ledger.db").path)
         _ = try store.appendExpense(LedgerStore.ExpenseDTO(
             payer: me, paidMinor: 120_000, currencyCode: "INR", group: group, conversion: nil,
-            shares: [.init(id: me, amountMinor: 60_000), .init(id: rahul, amountMinor: 60_000)],
-            note: "Dinner", timestampMs: 1_000, category: nil, addedBy: me
+            shares: [.init(id: me, amountMinor: 70_000), .init(id: rahul, amountMinor: 50_000)],
+            note: "Dinner", timestampMs: 1_000, category: "food.dining", addedBy: me
         ), nowMs: 5_000)
         let dinner = try XCTUnwrap(store.projectedExpenses().expenses.first)
+        XCTAssertEqual(dinner.category, "food.dining")
         try store.reviseExpense(ExpenseEditing.delete(dinner, editor: me), nowMs: 6_000)
         XCTAssertEqual(try store.loadExpenses(), [])
 
@@ -214,7 +253,27 @@ final class D248FixesTests: XCTestCase {
         guard case .small(let line) = center.current else { return XCTFail("a toast") }
         XCTAssertEqual(line, DoneLine(title: "Expense deleted", parts: ["Dinner"], action: "Undo", actionSeconds: 5))
         center.act(center.serial)
-        XCTAssertEqual(try store.loadExpenses().map(\.note), ["Dinner"], "Undo restored it")
+        // Review M5: the whole expense comes back as it was (amount, payer, shares, category, date, note), not only its note.
+        let restored = try XCTUnwrap(try store.projectedExpenses().expenses.first { $0.id == dinner.id }, "Undo restored it")
+        XCTAssertEqual(restored.expense.paidMinor, dinner.expense.paidMinor)
+        XCTAssertEqual(restored.expense.currencyCode, dinner.expense.currencyCode)
+        XCTAssertEqual(restored.expense.payer, dinner.expense.payer)
+        XCTAssertEqual(restored.expense.shares, dinner.expense.shares)
+        XCTAssertEqual(restored.expense.group, dinner.expense.group)
+        XCTAssertEqual(restored.timestampMs, dinner.timestampMs)
+        XCTAssertEqual(restored.category, dinner.category)
+        XCTAssertEqual(restored.note, dinner.note)
+        XCTAssertEqual(try store.loadExpenses().count, 1)
+        guard case .small(let after) = center.current else { return XCTFail("the toast") }
+        XCTAssertNotEqual(after.title, DoneCopy.notRestored, "a written Undo says nothing more")
+        // Review M2: an Undo that cannot write says so ("Not restored."), as a settle's Undo says "Not recorded.". Here
+        // the expense is not in this vault, so the store refuses the revision.
+        let elsewhere = LedgerStore(path: dir.appendingPathComponent("other.db").path)
+        ExpenseUndo.offer(dinner, store: elsewhere, editor: me, center: center, screenReader: false)
+        center.act(center.serial)
+        guard case .small(let failed) = center.current else { return XCTFail("a toast") }
+        XCTAssertEqual(failed, DoneLine(title: "Not restored.", parts: []))
+        XCTAssertEqual(DoneCopy.notRestored, "Not restored.")
         // A screen reader gets the hold's longer window; a note-less expense shows the title alone.
         guard case .small(let long) = ExpenseUndo.moment(dinner, seconds: SettleHold.window(screenReader: true)) else { return XCTFail() }
         XCTAssertEqual(long.actionSeconds, 12)
@@ -234,22 +293,27 @@ final class D248FixesTests: XCTestCase {
     @MainActor
     func testANewGroupOpensItsPageOnHomeOnce() throws {
         let opening = GroupOpening()
-        XCTAssertNil(opening.take())
-        opening.request("g1")
-        XCTAssertEqual(opening.pending, "g1")
-        XCTAssertEqual(opening.take(), "g1")
-        XCTAssertNil(opening.take(), "once")
+        XCTAssertNil(opening.take(root: 0))
+        opening.request("g1", root: 2)
+        // Review M7: the request is for the rebuilt Home (generation 2). The Home being torn down (1) sees it first and
+        // leaves it, whatever order SwiftUI runs them in; the new Home takes it, once.
+        XCTAssertNil(opening.take(root: 1), "the old Home leaves it")
+        XCTAssertEqual(opening.pending, GroupOpening.Request(groupID: "g1", root: 2), "and it is still there")
+        XCTAssertEqual(opening.take(root: 2), "g1")
+        XCTAssertNil(opening.take(root: 2), "once")
         // Every create path opens it once its sheet has gone; Home pushes it on its own stack.
         let overview = try appSource("OverviewScreen.swift")
         XCTAssertTrue(overview.contains(".navigationDestination(item: $openedGroup) { opened in\n            GroupPageScreen(groupID: opened.id)"))
         XCTAssertTrue(overview.contains("if let id = createdID { createdID = nil; openedGroup = OpenedGroup(id: id) }"))
-        XCTAssertTrue(overview.contains("if let id = GroupOpening.shared.take() { openedGroup = OpenedGroup(id: id) }"))
+        XCTAssertTrue(overview.contains("if let id = GroupOpening.shared.take(root: root) { openedGroup = OpenedGroup(id: id) }"))
         let groups = try appSource("GroupsScreen.swift")
         XCTAssertTrue(groups.contains("if let id = createdID { createdID = nil; onCreated(id) }"))
         let shell = try appSource("HomeShell.swift")
-        XCTAssertTrue(shell.contains("roots[.balance, default: 0] += 1\n"))
-        XCTAssertTrue(shell.contains("DispatchQueue.main.async { GroupOpening.shared.request(id) }"))
-        XCTAssertTrue(shell.contains("if let id = startedGroupID { startedGroupID = nil; GroupOpening.shared.request(id) }"))
+        // Groups' create: Home's stack is rebuilt and the request names the new Home, in the same turn (no run-loop wait).
+        XCTAssertTrue(shell.contains("roots[.balance, default: 0] += 1\n                    // For the rebuilt Home alone (review M7): the old one, still on screen this turn, leaves it.\n                    GroupOpening.shared.request(id, root: roots[.balance, default: 0])"))
+        XCTAssertFalse(shell.contains("DispatchQueue.main.async { GroupOpening"))
+        XCTAssertTrue(shell.contains("OverviewScreen(root: roots[.balance, default: 0]) {"))
+        XCTAssertTrue(shell.contains("if let id = startedGroupID { startedGroupID = nil; GroupOpening.shared.request(id, root: roots[.balance, default: 0]) }"))
         // The first group's big moment is still posted by the sheet (the window's overlay draws it over the page).
         XCTAssertTrue(try appSource("GroupSheets.swift").contains("DoneCenter.shared.post(DoneMoments.groupCreated("))
     }
@@ -310,17 +374,199 @@ final class D248FixesTests: XCTestCase {
             .size().width
         XCTAssertGreaterThan(wide, TitleWidth.room, "uncapped '\(longest)' in Norse at \(biggest.rawValue): \(wide)")
         XCTAssertLessThanOrEqual(titleWidth(longest, theme: .norse, category: biggest), TitleWidth.room - 2)
-        // The cut the founder saw was a live bar's stale title width (the look: the same page entered again was whole):
-        // every live bar has its title measured again in the new font.
-        let art = try appSource("ThemeArt.swift")
-        XCTAssertTrue(art.contains("bar.titleTextAttributes = inline\n            remeasureTitle(of: bar)"))
-        XCTAssertTrue(art.contains("if let label = sub as? UILabel, (label.attributedText?.string ?? label.text) == title {"))
-        XCTAssertTrue(art.contains("v.invalidateIntrinsicContentSize()"))
-        let bar = UINavigationBar(frame: CGRect(x: 0, y: 0, width: 375, height: 44))
-        bar.items = [UINavigationItem(title: "Appearance")]
-        TitleStyle.remeasureTitle(of: bar)
-        XCTAssertEqual(bar.topItem?.title, "Appearance", "the title is kept")
         // Large titles are untouched: they scale past the inline cap.
         XCTAssertGreaterThan(TitleStyle.font(large: true, theme: .norse, category: .accessibilityLarge).pointSize, TitleStyle.inlineCap(.norse))
+    }
+
+    /// Decision 202 (review I2): one inline cap, 22, on both shells (stage 1 had 23 here, 22 on Android).
+    func testTheInlineCapIsTheTwinsOne() throws {
+        for theme in AppTheme.allCases { XCTAssertEqual(TitleStyle.inlineCap(theme), 22, "\(theme)") }
+        let biggest = try XCTUnwrap(TextSize.ladder.last)
+        XCTAssertEqual(TitleStyle.font(large: false, theme: .norse, category: biggest).pointSize, 22)
+        let android = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("android/app/src/main/java/com/vardrlabs/skipti/SkiptiBar.kt")
+        let bar = try String(contentsOf: android, encoding: .utf8)
+        XCTAssertTrue(bar.contains("const val INLINE_TITLE_CAP = 22\n"), "Android's cap")
+        XCTAssertTrue(bar.contains("const val PILL_TEXT_CAP = 20f\n"), "Android's pill text stops where iOS's bar button does")
+    }
+
+    // MARK: - Review I3: sheet titles beside their pill
+
+    /// Every fixed title a sheet's bar draws, with the pill in its corner (nil: no pill; the title has the bar). Left
+    /// out, as the person's own data the ellipsis is for: a group's, a person's or an expense's name ("Remove {name}").
+    private var sheetTitles: [(title: String, pill: String?)] {
+        [
+            ("Your name", "Cancel"), ("New group", "Cancel"), ("Add expense", "Cancel"), ("Edit expense", "Cancel"),
+            (UsernameCopy.title, UsernameCopy.cancel), (UsernameCopy.change, UsernameCopy.cancel), (AddPersonCopy.title, "Done"),
+            ("Expense", "Cancel"), ("Expense", "Close"), (InviteCopy.joinTitle, "Cancel"), (PeopleCopy.invitations, "Close"),
+            (PhonesCopy.title, "Close"), (GroupPictures.title, GroupPictures.cancel), (SettleAllCopy.howMuchPaid, nil),
+        ]
+    }
+
+    /// Each sheet title fits beside its pill (`TitleWidth.sheetRoom`, the pill as wide as its text makes it at that
+    /// step) on a 375 pt iPhone, in every theme at every text step, with 2 points of slack, at the size this app asks
+    /// for (the inline cap, above what iOS 26 draws). The negative: with the bar button's text uncapped (iOS 17 to 25
+    /// drew what it was given) the Cancel pill leaves "Pick your username" no room at the largest step.
+    @MainActor
+    func testEverySheetTitleClearsItsPillAtEveryTextStep() throws {
+        var measured = 0
+        for theme in AppTheme.allCases {
+            for category in TextSize.ladder {
+                for (title, pill) in sheetTitles {
+                    let room = pill.map { TitleWidth.sheetRoom(pill: TitleWidth.pill($0, theme: theme, category: category)) }
+                        ?? TitleWidth.phone - 2 * TitleWidth.edge
+                    var attributes = TitleStyle.attributes(large: false, theme: theme, category: category)
+                    if let font = attributes[.font] as? UIFont, font.pointSize < TitleWidth.floor {
+                        attributes[.font] = font.withSize(TitleWidth.floor)
+                        attributes[.kern] = TitleWidth.floor * TitleStyle.tracking(theme)
+                    }
+                    let drawn = NSAttributedString(string: title, attributes: attributes).size().width
+                    XCTAssertLessThanOrEqual(drawn, room - 2, "\(theme) \(category.rawValue) '\(title)' is \(drawn) in \(room)")
+                    measured += 1
+                }
+            }
+        }
+        XCTAssertEqual(measured, AppTheme.allCases.count * TextSize.ladder.count * sheetTitles.count)
+        XCTAssertGreaterThan(measured, 400, "the table is not empty")
+        let biggest = try XCTUnwrap(TextSize.ladder.last)
+        XCTAssertEqual((TitleStyle.barButtonAttributes(theme: .norse, category: biggest)[.font] as? UIFont)?.pointSize, TitleStyle.barButtonCap)
+        let base = TypeRole.base(TypeRole.face(.body, theme: .norse), size: 17, weight: 400, tabular: false)
+        let uncapped = UIFontMetrics(forTextStyle: .body).scaledFont(for: base, compatibleWith: UITraitCollection(preferredContentSizeCategory: biggest))
+        let wide = ceil(NSAttributedString(string: "Cancel", attributes: [.font: uncapped]).size().width) + 2 * TitleWidth.pillPadding
+        XCTAssertLessThan(TitleWidth.sheetRoom(pill: wide), titleWidth(UsernameCopy.title, theme: .norse, category: biggest),
+                          "uncapped, the pill is \(wide) wide")
+    }
+
+    /// The bar a sheet title is measured against is UIKit's own: a real navigation bar on a 375 pt window, styled by the
+    /// app's own `Appearance.apply` at every theme and text step, lays every sheet title out whole, clear of its pill,
+    /// and the pill as wide as `TitleWidth.pill` says. The negative: the same harness sees a title that is too long cut.
+    @MainActor
+    func testASheetBarIsLaidOutAsTheTableSays() throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: TitleWidth.phone, height: 812)
+        defer {
+            window.isHidden = true
+            TitleStyle.apply(AppearanceState.shared, to: window)
+        }
+        func layOut(_ title: String, pill: String, theme: AppTheme, step: Int) throws -> (title: UILabel, pill: UILabel) {
+            let root = UIViewController()
+            root.navigationItem.title = title
+            root.navigationItem.leftBarButtonItem = UIBarButtonItem(title: pill, style: .plain, target: nil, action: nil)
+            let nav = UINavigationController(rootViewController: root)
+            window.rootViewController = nav
+            window.isHidden = false
+            let state = AppearanceState()
+            state.theme = theme
+            state.phoneCategory = .large
+            state.textStep = step
+            Appearance.apply(state, to: window)
+            nav.view.layoutIfNeeded()
+            nav.navigationBar.layoutIfNeeded()
+            var labels: [UILabel] = []
+            func walk(_ view: UIView) {
+                for sub in view.subviews {
+                    if let label = sub as? UILabel { labels.append(label) }
+                    walk(sub)
+                }
+            }
+            walk(nav.navigationBar)
+            let text = { (l: UILabel) in l.attributedText?.string ?? l.text ?? "" }
+            return (try XCTUnwrap(labels.first { text($0) == title }, title), try XCTUnwrap(labels.first { text($0) == pill }, pill))
+        }
+        let steps = (0..<TextSize.ladder.count).map { $0 - 3 } // .large is the ladder's 4th
+        var laidOut = 0
+        for theme in AppTheme.allCases {
+            for step in steps {
+                let category = TextSize.category(phone: .large, step: step)
+                // A new theme or text size reaches a bar's button on the next turn: let it land before measuring.
+                _ = try layOut("Settle", pill: "Cancel", theme: theme, step: step)
+                RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+                for (title, pill) in sheetTitles {
+                    guard let pill else { continue }
+                    let (label, button) = try layOut(title, pill: pill, theme: theme, step: step)
+                    let frame = label.convert(label.bounds, to: nil)
+                    let pillFrame = button.convert(button.bounds, to: nil).insetBy(dx: -TitleWidth.pillPadding, dy: 0)
+                    let at = "\(theme) \(category.rawValue) '\(title)'"
+                    XCTAssertGreaterThanOrEqual(frame.width, label.intrinsicContentSize.width - 0.5, "\(at) is cut")
+                    XCTAssertGreaterThanOrEqual(frame.minX, pillFrame.maxX + TitleWidth.pillGap - 0.5, "\(at) runs into the pill")
+                    XCTAssertLessThanOrEqual(frame.maxX, TitleWidth.phone - TitleWidth.edge + 0.5, at)
+                    XCTAssertEqual(pillFrame.minX, TitleWidth.edge, accuracy: 0.5, "\(at): the pill's place")
+                    // The table's pill is UIKit's, at every step iOS 26 draws (it stops the text at 20 too).
+                    XCTAssertEqual(pillFrame.width, TitleWidth.pill(pill, theme: theme, category: category), accuracy: 1, "\(at): \(pill)")
+                    XCTAssertLessThanOrEqual(button.font.pointSize, TitleStyle.barButtonCap, at)
+                    laidOut += 1
+                }
+            }
+        }
+        XCTAssertGreaterThan(laidOut, 300)
+        // The negative: what does not fit is cut, and this harness sees it.
+        let (long, _) = try layOut("Pick your username and then one more long word", pill: "Cancel", theme: .norse, step: 8)
+        XCTAssertLessThan(long.convert(long.bounds, to: nil).width, long.intrinsicContentSize.width - 10)
+    }
+
+    // MARK: - U31 cause 1: a live bar measures its title again (review M4)
+
+    /// The cut the founder saw was a live bar's stale title width (the look: the same page entered again was whole). A
+    /// live bar whose title label still has a stale width (40 pt, set here as the look found it) is measured whole the
+    /// moment `TitleStyle.remeasureTitle` runs (with its body removed the label keeps the stale width: sabotage row S9),
+    /// and `TitleStyle.apply` calls it for every live bar (a source pin: see below).
+    @MainActor
+    func testApplyMeasuresALiveBarsTitleAgain() throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: TitleWidth.phone, height: 812)
+        defer {
+            window.isHidden = true
+            TitleStyle.apply(AppearanceState.shared, to: window)
+        }
+        let root = UIViewController()
+        root.navigationItem.title = "Settings"
+        let nav = UINavigationController(rootViewController: root)
+        let page = UIViewController()
+        page.navigationItem.title = "Appearance"
+        nav.pushViewController(page, animated: false)
+        window.rootViewController = nav
+        window.isHidden = false
+        let state = AppearanceState()
+        state.phoneCategory = .large
+        Appearance.apply(state, to: window)
+        nav.view.layoutIfNeeded()
+        nav.navigationBar.layoutIfNeeded()
+        func titleLabel() throws -> UILabel {
+            var found: UILabel?
+            func walk(_ view: UIView) {
+                for sub in view.subviews {
+                    if let label = sub as? UILabel, (label.attributedText?.string ?? label.text) == "Appearance" { found = label }
+                    walk(sub)
+                }
+            }
+            walk(nav.navigationBar)
+            return try XCTUnwrap(found)
+        }
+        // remeasureTitle itself: a label left at a stale width is measured whole at once.
+        let stale = try titleLabel()
+        stale.frame.size.width = 40
+        XCTAssertEqual(stale.frame.width, 40, "stale, as the look found it")
+        TitleStyle.remeasureTitle(of: nav.navigationBar)
+        XCTAssertTrue(try titleLabel() === stale, "the same label")
+        XCTAssertEqual(stale.frame.width, stale.intrinsicContentSize.width, accuracy: 0.5, "remeasured at once, whole")
+        // Through the app's own path: a theme changed on Appearance (the text size left alone) reaches a live bar whose
+        // title is stale, and the label is whole when `Appearance.apply` returns. (A bar in a test window is laid out
+        // again by UIKit on an appearance change by itself, so the founder's stale width, which a SwiftUI-hosted bar kept,
+        // does not reproduce here: that `apply` calls the remeasure for every live bar is pinned in its source below,
+        // a pin, not a behaviour proof; stage 1's look is the proof.)
+        stale.frame.size.width = 40
+        state.theme = .norse
+        Appearance.apply(state, to: window)
+        let label = try titleLabel()
+        XCTAssertEqual(label.frame.width, label.intrinsicContentSize.width, accuracy: 0.5, "measured again at once, whole")
+        // And once more on the next turn, when the new font has reached it.
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        let next = try titleLabel()
+        XCTAssertEqual(next.frame.width, next.intrinsicContentSize.width, accuracy: 0.5, "whole in the new font")
+        XCTAssertEqual(next.font.fontName, "CormorantSC-Bold")
+        let art = try appSource("ThemeArt.swift")
+        XCTAssertTrue(art.contains("bar.titleTextAttributes = inline\n            remeasureTitle(of: bar)"), "apply remeasures every live bar")
     }
 }

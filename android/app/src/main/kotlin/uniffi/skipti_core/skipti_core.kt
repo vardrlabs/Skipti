@@ -793,6 +793,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_skipti_core_checksum_func_ffi_money_spoken(
     ): Int
+    external fun uniffi_skipti_core_checksum_func_ffi_money_typed_digits(
+    ): Int
     external fun uniffi_skipti_core_checksum_func_ffi_named_group(
     ): Int
     external fun uniffi_skipti_core_checksum_func_ffi_new_participant_id(
@@ -994,9 +996,11 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_skipti_core_fn_func_ffi_money_parse_minor(`digits`: RustBuffer.ByValue,`currencyCode`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Long
-    external fun uniffi_skipti_core_fn_func_ffi_money_parse_typed(`text`: RustBuffer.ByValue,`currencyCode`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_skipti_core_fn_func_ffi_money_parse_typed(`text`: RustBuffer.ByValue,`currencyCode`: RustBuffer.ByValue,`decimalMark`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Long
     external fun uniffi_skipti_core_fn_func_ffi_money_spoken(`minorUnits`: Long,`currencyCode`: RustBuffer.ByValue,`locale`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_skipti_core_fn_func_ffi_money_typed_digits(`minorUnits`: Long,`currencyCode`: RustBuffer.ByValue,`decimalMark`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_skipti_core_fn_func_ffi_named_group(`group`: RustBuffer.ByValue,`selfId`: RustBuffer.ByValue,`members`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1292,10 +1296,13 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_skipti_core_checksum_func_ffi_money_parse_minor() != 26879) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_skipti_core_checksum_func_ffi_money_parse_typed() != 32718) {
+    if (lib.uniffi_skipti_core_checksum_func_ffi_money_parse_typed() != 28449) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_skipti_core_checksum_func_ffi_money_spoken() != 1431) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_skipti_core_checksum_func_ffi_money_typed_digits() != 50111) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_skipti_core_checksum_func_ffi_named_group() != 62596) {
@@ -11354,19 +11361,21 @@ public object FfiConverterSequenceTypeCondition: FfiConverterRustBuffer<List<Con
     
 
         /**
-         * D-248 (decision 184): THE parser for every amount a person types (Add,
-         * Edit, exact and itemised rows, tax and tip, Settle up's other amount,
-         * removal's settle-first): one ',' and no '.' is the decimal mark, else the
-         * strict rule. Import never calls it (see `money_parse_typed`).
+         * D-248 (decisions 184 and 203): THE parser for every amount a person types
+         * (Add, Edit, exact and itemised rows, tax and tip, Settle up's other
+         * amount, removal's settle-first), given the phone's decimal mark ("." or
+         * ","): a ',' is the decimal mark only on a "," phone. Import never calls it
+         * (see `money_parse_typed`).
          */
-    @Throws(CoreException::class) fun `ffiMoneyParseTyped`(`text`: kotlin.String, `currencyCode`: kotlin.String): kotlin.Long {
+    @Throws(CoreException::class) fun `ffiMoneyParseTyped`(`text`: kotlin.String, `currencyCode`: kotlin.String, `decimalMark`: kotlin.String): kotlin.Long {
             return FfiConverterLong.lift(
     uniffiRustCallWithError(CoreException) { _status ->
     UniffiLib.uniffi_skipti_core_fn_func_ffi_money_parse_typed(
     
         
         FfiConverterString.lower(`text`),
-        FfiConverterString.lower(`currencyCode`),_status)
+        FfiConverterString.lower(`currencyCode`),
+        FfiConverterString.lower(`decimalMark`),_status)
 }
     )
     }
@@ -11381,6 +11390,25 @@ public object FfiConverterSequenceTypeCondition: FfiConverterRustBuffer<List<Con
         FfiConverterLong.lower(`minorUnits`),
         FfiConverterString.lower(`currencyCode`),
         FfiConverterTypeLocaleTag.lower(`locale`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * D-248 fix wave (decision 203): minor units as a person types them on a
+         * phone whose decimal mark is `decimal_mark` (see `money_typed_digits`):
+         * what an entry field starts from, and the example in its words.
+         */
+    @Throws(CoreException::class) fun `ffiMoneyTypedDigits`(`minorUnits`: kotlin.Long, `currencyCode`: kotlin.String, `decimalMark`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(CoreException) { _status ->
+    UniffiLib.uniffi_skipti_core_fn_func_ffi_money_typed_digits(
+    
+        
+        FfiConverterLong.lower(`minorUnits`),
+        FfiConverterString.lower(`currencyCode`),
+        FfiConverterString.lower(`decimalMark`),_status)
 }
     )
     }

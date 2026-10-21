@@ -1215,6 +1215,29 @@ enum TitleWidth {
     static let phone: CGFloat = 375
     static let reserve: CGFloat = 16 + 44 + 8
     static let room: CGFloat = phone - 2 * reserve
+
+    /// D-248 fix wave (review I3): a SHEET's bar, measured on iOS 27 (`.drafts/d248/fix/probe-ios2.txt`, and pinned
+    /// against UIKit's own layout by D248FixesTests): Cancel, Close or Done is a glass pill `edge` from the side,
+    /// `pillPadding` wider each side than its text, the text growing with the text size up to `TitleStyle.barButtonCap`.
+    /// UIKit centres the title when that clears the pill, else starts it `pillGap` after the pill, and ends it `edge`
+    /// from the other side; only what still does not fit is cut. A sheet's title has `sheetRoom` for a pill that wide.
+    static let edge: CGFloat = 16
+    static let pillPadding: CGFloat = 16
+    static let pillGap: CGFloat = 12
+
+    /// iOS 26 and later draw bar text (the title and the buttons) at 17 at least, whatever smaller size it is given
+    /// (measured at the three smaller steps); the room is measured with that floor so it holds on every iOS.
+    static let floor: CGFloat = 17
+
+    static func sheetRoom(pill: CGFloat) -> CGFloat { phone - edge - pill - pillGap - edge }
+
+    /// The pill's width for `label` in `theme` at `category`: its text in the bar button's own attributes (no smaller
+    /// than `floor`), and the padding.
+    static func pill(_ label: String, theme: AppTheme, category: UIContentSizeCategory) -> CGFloat {
+        var attributes = TitleStyle.barButtonAttributes(theme: theme, category: category)
+        if let font = attributes[.font] as? UIFont, font.pointSize < floor { attributes[.font] = font.withSize(floor) }
+        return ceil(NSAttributedString(string: label, attributes: attributes).size().width) + 2 * pillPadding
+    }
 }
 
 enum TitleStyle {
@@ -1242,12 +1265,13 @@ enum TitleStyle {
         return UIFontMetrics(forTextStyle: .headline).scaledFont(for: base, maximumPointSize: inlineCap(theme), compatibleWith: traits)
     }
 
-    /// D-248 (U31): the inline title's largest size per theme, measured so the longest fixed pushed title fits a 375 pt
-    /// iPhone beside the back button at every text step (D248FixesTests' width table; Android's bar is checked at 360 dp).
-    /// Measured: the widest is Norse's "Profile and account", 166.9 pt at 17, so 23 draws it 225.8 wide in the 239 of room
-    /// (24 would leave 3.4; 23 keeps the slack). One cap for every theme; step 2 on a phone at its default size (21) is
-    /// under it, so the cap only bites at the larger steps.
-    static func inlineCap(_ theme: AppTheme) -> CGFloat { 23 }
+    /// D-248 (U31; fix wave, decision 202): the inline title's largest size, measured so the longest fixed pushed title
+    /// fits beside the back button at every text step on both phones (D248FixesTests' width table here, a 375 pt iPhone;
+    /// Android's at 360 dp). The widest is Norse's "Profile and account", 166.9 pt at 17: 22 draws it 216.0 wide, in
+    /// iOS's 239 of room and Android's 220. One cap, the same on both shells (Android's `INLINE_TITLE_CAP`): the twins
+    /// look identical (stage 1 had 23 here, a visible twin difference the review's I2 found). Step 2 on a phone at its
+    /// default size (21) is under it, so the cap only bites at the larger steps.
+    static func inlineCap(_ theme: AppTheme) -> CGFloat { 22 }
 
     static func attributes(large: Bool, theme: AppTheme, category: UIContentSizeCategory) -> [NSAttributedString.Key: Any] {
         let f = font(large: large, theme: theme, category: category)
@@ -1256,12 +1280,19 @@ enum TitleStyle {
 
     /// D-215: a bar button (Done, Cancel, a ToolbarItem) is UIKit's own text: the system sets it in the phone's face at
     /// 17, so it gets the theme's body face at 17, scaled like the system's `.body` text. Colour stays the bar's tint.
+    /// D-248 fix wave (review I3): it stops growing at `barButtonCap`.
     static func barButtonAttributes(theme: AppTheme, category: UIContentSizeCategory) -> [NSAttributedString.Key: Any] {
         let base = TypeRole.base(TypeRole.face(.body, theme: theme), size: 17, weight: 400, tabular: false)
         let font = UIFontMetrics(forTextStyle: .body)
-            .scaledFont(for: base, compatibleWith: UITraitCollection(preferredContentSizeCategory: category))
+            .scaledFont(for: base, maximumPointSize: barButtonCap, compatibleWith: UITraitCollection(preferredContentSizeCategory: category))
         return [.font: font]
     }
+
+    /// D-248 fix wave (review I3): the largest a bar button's text is drawn. iOS 26 and later draw it at 20 at most
+    /// whatever it is given (measured on iOS 27: Cancel at 20 from XXL up to AX5, `.drafts/d248/fix/probe-ios2.txt`), so
+    /// this cap changes nothing there and makes iOS 17 to 25 the same; Android's sheet pill stops at the same 20
+    /// (`BarDecisions.PILL_TEXT_CAP`). A sheet's title then keeps its room beside the pill at every text step.
+    static let barButtonCap: CGFloat = 20
 
     private static let barButtonStates: [UIControl.State] = [.normal, .highlighted, .disabled, .focused]
 

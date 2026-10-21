@@ -205,6 +205,10 @@ object DoneCopy {
     /** D-248 (U30.4): an expense deleted, its Undo on the toast wherever the delete happened. */
     const val EXPENSE_DELETED = "Expense deleted"
 
+    /** D-248 fix wave (review M2): the toast when that Undo could not write the expense back (as [NOT_RECORDED] says a
+     *  settle's Undo wrote nothing). */
+    const val NOT_RESTORED = "Not restored."
+
     /** D-247 fix wave (decision 201): what a screen reader hears after a toast that offers an action, so the action is
      *  named and its time said ([seconds], whole seconds as digits). */
     fun actionSpoken(label: String, seconds: String): String = "$label is available for $seconds seconds."

@@ -154,17 +154,27 @@ enum OverviewActions {
 /// lists it); the next thing a person does is add people or an expense there. Every create path asks once its sheet has
 /// gone (New group from Home, from Groups, and the welcome's Start a group); Home opens it (`OverviewScreen`). The first
 /// group's big moment is the window's overlay, so it still plays over the page. Android's twin opens the group's route.
+/// D-248 fix wave (review M7): a request names the Home it is for (`root`, the shell's generation of Home's stack), so
+/// only the new Home takes it: a Home being torn down for a rebuilt stack never takes the group with it, whichever sees
+/// the request first. No turn of the run loop is relied on.
 @MainActor @Observable
 final class GroupOpening {
     static let shared = GroupOpening()
-    private(set) var pending: String?
 
-    func request(_ groupID: String) { pending = groupID }
+    struct Request: Equatable {
+        let groupID: String
+        let root: Int
+    }
 
-    /// The group to open, once.
-    func take() -> String? {
-        defer { pending = nil }
-        return pending
+    private(set) var pending: Request?
+
+    func request(_ groupID: String, root: Int) { pending = Request(groupID: groupID, root: root) }
+
+    /// The group to open, once, for the Home of generation `root`; nil (and the request kept) for any other Home.
+    func take(root: Int) -> String? {
+        guard let pending, pending.root == root else { return nil }
+        self.pending = nil
+        return pending.groupID
     }
 }
 
@@ -174,6 +184,9 @@ struct OpenedGroup: Hashable, Identifiable {
 }
 
 struct OverviewScreen: View {
+    /// D-248 fix wave (review M7): this Home's generation (HomeShell's `roots[.balance]`): it takes only a
+    /// `GroupOpening` request made for it.
+    var root = 0
     var onSettle: () -> Void
 
     @State private var groups: [NamedGroupWire] = []
@@ -289,7 +302,7 @@ struct OverviewScreen: View {
         }
         // D-248 (U30.6): a group made elsewhere (Groups, the welcome) opens here, on Home's stack.
         .onChange(of: GroupOpening.shared.pending, initial: true) { _, _ in
-            if let id = GroupOpening.shared.take() { openedGroup = OpenedGroup(id: id) }
+            if let id = GroupOpening.shared.take(root: root) { openedGroup = OpenedGroup(id: id) }
         }
         .task(id: SyncStatus.shared.revision) {
             load()

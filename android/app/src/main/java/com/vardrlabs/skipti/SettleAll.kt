@@ -59,7 +59,6 @@ import uniffi.skipti_core.SettledProgressOut
 import uniffi.skipti_core.ShareOut
 import uniffi.skipti_core.ffiBalanceLine
 import uniffi.skipti_core.ffiCheckSettlement
-import uniffi.skipti_core.ffiMoneyInputDigits
 import uniffi.skipti_core.ffiSettledProgress
 import kotlin.math.abs
 
@@ -204,15 +203,22 @@ object OtherAmount {
         /** More than the debt: refused in words, Settle disabled (a partial never flips who owes whom). */
         data class TooMuch(val words: String) : Verdict
 
-        /** D-248 (U30.2): something typed that is not an amount: `AmountEntry`'s words, Settle disabled. */
+        /** D-248 (U30.2): something typed that is not an amount: `AmountEntry`'s words, said at a Settle tap or once the
+         *  field has rested ([WORDS_PAUSE_MS]), never on the first keystroke (fix wave, review M1); nothing is recorded. */
         data class NotAnAmount(val words: String) : Verdict
 
         /** Settle records this many minor units. */
         data class Settles(val minor: Long) : Verdict
     }
 
-    /** The whole debt as the field takes it back (core's entry form: "450.00", no symbol, no grouping). */
-    fun prefill(debt: Long, currency: String): String = runCatching { ffiMoneyInputDigits(debt, currency) }.getOrDefault("")
+    /** D-248 fix wave (review M1): how long the field rests before its not-an-amount words show, ms (a lone '.' or ','
+     *  is the start of "0,5", not a mistake). The twin of iOS's `OtherAmount.wordsPause`. */
+    const val WORDS_PAUSE_MS = 1_000L
+
+    /** The whole debt as the field takes it back (core's entry form in the phone's mark: "450.00", "450,00" on a ','
+     *  phone; no symbol, no grouping). */
+    fun prefill(debt: Long, currency: String, locale: java.util.Locale = java.util.Locale.getDefault()): String =
+        AmountEntry.digits(debt, currency, locale) ?: ""
 
     /** D-247 fix wave (review M3): the cap again at the Settle tap, against the card's LIVE debt ([live], from
      *  [SettleAll.liveEntry]; null, the card has gone): a sync that shrank the debt while the sheet was open refuses in
@@ -221,12 +227,16 @@ object OtherAmount {
         if (live == null || minor > abs(live.minorUnits)) Verdict.TooMuch(SettleAllCopy.moreThanDebt(youOwe, other))
         else Verdict.Settles(minor)
 
-    /** The sheet's cap line: the field's own (more than the debt the sheet opened on), else the tap's refusal. */
-    fun capWords(verdict: Verdict, refused: String?): String? = when (verdict) {
-        is Verdict.TooMuch -> verdict.words
-        is Verdict.NotAnAmount -> verdict.words
+    /** The sheet's cap line: the field's own (more than the debt the sheet opened on; not an amount, once [rested]),
+     *  else the tap's refusal. */
+    fun capWords(verdict: Verdict, refused: String?, rested: Boolean): String? = when {
+        verdict is Verdict.TooMuch -> verdict.words
+        verdict is Verdict.NotAnAmount && rested -> verdict.words
         else -> refused
     }
+
+    /** Settle can be tapped for an amount it settles, and for one that is not an amount (the tap says why, at once). */
+    fun tappable(verdict: Verdict): Boolean = verdict is Verdict.NotAnAmount || settles(verdict)
 
     /** [text] against the debt ([debt], the card's amount, always above 0). [check] is core's settlement check of the
      *  amount (`SettleAll.settlement(..., amount)`); a refusal reads as incomplete. */
@@ -240,7 +250,7 @@ object OtherAmount {
         check: (Long) -> Unit,
     ): Verdict {
         if (AmountEntry.isBlank(text)) return Verdict.Incomplete
-        val minor = AmountEntry.minor(text, currency) ?: return Verdict.NotAnAmount(AmountEntry.likeWords(currency, locale))
+        val minor = AmountEntry.minor(text, currency, locale) ?: return Verdict.NotAnAmount(AmountEntry.likeWords(currency, locale))
         if (minor <= 0) return Verdict.Incomplete
         if (minor > debt) return Verdict.TooMuch(SettleAllCopy.moreThanDebt(youOwe, other))
         if (runCatching { check(minor) }.isFailure) return Verdict.Incomplete
@@ -671,6 +681,13 @@ fun OtherAmountSheet(
             }
             // A refusal at the tap is about what the field said then: an edit clears it.
             var refused by remember(draft.key) { mutableStateOf<String?>(null) }
+            // Review M1: the field has rested since its last change (or Settle was tapped): its not-an-amount words show.
+            var rested by remember(draft.key) { mutableStateOf(false) }
+            LaunchedEffect(text) {
+                rested = false
+                kotlinx.coroutines.delay(OtherAmount.WORDS_PAUSE_MS)
+                rested = true
+            }
             val verdict = OtherAmount.verdict(text, draft.debt, draft.currency, draft.youOwe, draft.other) { minor ->
                 ffiCheckSettlement(SettleAll.settlement(draft.entry, draft.currency, draft.named, minor).toInput())
             }
@@ -718,7 +735,7 @@ fun OtherAmountSheet(
                                 .themePill(PillTone.ACCENT, inDark, onPage = false)
                                 .padding(horizontal = 12.dp, vertical = 4.dp),
                         )
-                        OtherAmount.capWords(verdict, refused)?.let { words ->
+                        OtherAmount.capWords(verdict, refused, rested)?.let { words ->
                             Text(words, style = Type.body(inDark).copy(fontSize = TypeScale.detail.sp, color = Tok.owed(inDark)))
                         }
                         // Section 11.6, verbatim.
@@ -728,8 +745,9 @@ fun OtherAmountSheet(
                         )
                     }
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        PrimaryAction(SettleAllCopy.SETTLE, inDark, enabled = OtherAmount.settles(verdict) && refused == null) {
+                        PrimaryAction(SettleAllCopy.SETTLE, inDark, enabled = OtherAmount.tappable(verdict) && refused == null) {
                             (verdict as? OtherAmount.Verdict.Settles)?.let { refused = onSettle(it.minor) }
+                            if (verdict is OtherAmount.Verdict.NotAnAmount) rested = true
                         }
                         SecondaryAction(SettleAllCopy.CANCEL, inDark, onClick = onCancel)
                     }

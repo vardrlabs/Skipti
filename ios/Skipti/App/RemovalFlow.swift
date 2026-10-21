@@ -271,7 +271,7 @@ struct RedistributeModel: Equatable {
         let equal = equalShares()
         typed = [:]
         for share in equal {
-            typed[share.id] = (try? ffiMoneyInputDigits(minorUnits: Self.magnitude(share.amountMinor), currencyCode: currency)) ?? ""
+            typed[share.id] = AmountEntry.digits(Self.magnitude(share.amountMinor), currency: currency) ?? ""
         }
         custom = true
     }

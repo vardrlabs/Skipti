@@ -410,12 +410,15 @@ enum ExpenseUndo {
     static func offer(_ deleted: ProjectedExpenseOut, store: LedgerStore, editor: String?, center: DoneCenter? = nil,
                       screenReader: Bool? = nil) {
         let screenReader = screenReader ?? UIAccessibility.isVoiceOverRunning
-        (center ?? .shared).post(moment(deleted, seconds: SettleHold.window(screenReader: screenReader)), onAction: {
-            undo(deleted, store: store, editor: editor)
+        let center = center ?? .shared
+        center.post(moment(deleted, seconds: SettleHold.window(screenReader: screenReader)), onAction: {
+            // Review M2: a failed write is said, never silent.
+            if !undo(deleted, store: store, editor: editor) { center.post(DoneMoments.line(DoneCopy.notRestored)) }
         })
     }
 
-    /// Written from the projection that HOLDS the delete, so the Undo has seen it. False when it could not be written.
+    /// Written from the projection that HOLDS the delete, so the Undo has seen it. False when it could not be written
+    /// (`offer` then posts "Not restored.").
     @discardableResult
     static func undo(_ deleted: ProjectedExpenseOut, store: LedgerStore, editor: String?) -> Bool {
         do {

@@ -162,6 +162,7 @@ class DoneMomentsTest {
         assertEquals("Undo", DoneCopy.UNDO)
         assertEquals("Not recorded.", DoneCopy.NOT_RECORDED)
         assertEquals("Expense deleted", DoneCopy.EXPENSE_DELETED)
+        assertEquals("Not restored.", DoneCopy.NOT_RESTORED)
         assertEquals("Group name saved", DoneCopy.GROUP_NAME_SAVED)
         assertEquals("Group deleted", DoneCopy.GROUP_DELETED)
         assertEquals("Haptics", DoneCopy.HAPTICS_TITLE)
