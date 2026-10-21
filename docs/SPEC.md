@@ -689,6 +689,13 @@ Two boundaries that must be enforced in the type system, not by convention:
    with the personal DEK.** Moving between them is an explicit re-encryption
    operation with a confirmation, never an implicit field change.
 
+**As built (D-249, 2026-10-21): "Just me".** A personal transaction is the Expense record with no group (the personal
+scope): payer you, one share, yours. The app calls this ledger "Just me": the first choice in Add expense's Ledger row
+(it hides the split), its own page ("Your spending", with "All my spending" adding your share of every group expense),
+and a Home section below the groups. It never enters a balance, Settle up or People, syncs only through the account's
+own log, and is in every export. Moving a transaction between Just me and a group is not offered yet (the confirmed
+operation above is still owed).
+
 ### 5.4 Split types
 
 Match every competitor and then add the two they charge for.

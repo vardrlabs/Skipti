@@ -1392,6 +1392,70 @@ https://claude.ai/artifact/FwwzuzRkyyxiuGvJKNMPCG (v1); briefs `.drafts/u9/brief
 - **Why:** the look found iOS's Cancel growing to about 44 pt at the largest step (SwiftUI buttons ignore the bar's
   font), pushing "New group" off centre while Android's stayed put: a twin difference.
 - **Status:** in D-248.
+
+### The D-249 chain, 187 to 191, 205, 206: Just me and All my spending (your 163 to 166, 193)
+
+#### 187: one core function for both views
+
+- **What:** `ffi_spending` returns a month's totals per currency, the category slices and the rows for Just me or All my
+  spending; both phones call it; one golden table (`.drafts/d248/goldens.py`).
+- **Why:** no money arithmetic in the shells (CLAUDE.md 10); one rule, one test table.
+- **Status:** in D-249.
+
+#### 188: no "sync" word on the empty spending page
+
+- **What:** the empty page says "Things you pay for yourself go here. Nobody owes anybody." with or without an account.
+- **Why:** guarantee 5: a screen without an account never mentions syncing.
+- **Status:** in D-249.
+
+#### 189: the spending switch and "Spending on Home" stay on each phone
+
+- **What:** the Just me / All my spending choice and the Spending on Home switch are local preferences, not synced
+  settings.
+- **Why:** adding a synced key changes the privacy page's list (public copy and a Hosting deploy, yours).
+- **Overturn:** add both keys to ADR-0043's table with a privacy line.
+- **Status:** in D-249.
+
+#### 190: the spending page is also reached from the Expenses tab
+
+- **What:** the Expenses tab's Just me header opens the page (starting in Just me: 206), so it is reachable with the
+  Home section hidden.
+- **Status:** in D-249.
+
+#### 191: moving an expense between Just me and a group is not in 0.5.1
+
+- **What:** Edit shows the ledger as a plain value; to move one, delete it and add it again.
+- **Why:** SPEC 5.3 wants an explicit, confirmed operation for a scope change; records are scope-bound.
+- **Status:** residue of D-249.
+
+#### 205: All my spending counts your share with each group's own "you"
+
+- **What:** `ffi_spending` takes, per group, your id in that group (the id Balance uses); a group not listed counts
+  nothing.
+- **Why:** with one viewer list for every group, an id reused across groups (D-237's A1 case) could count someone
+  else's share as yours (display only, but wrong).
+- **Status:** in D-249.
+
+#### 206: the Expenses header opens Just me
+
+- **What:** the page opened from the Expenses tab's Just me header always starts in Just me; the Home card keeps its
+  remembered view.
+- **Status:** in D-249.
+
+#### 207: the Just me export is named by the day it was made
+
+- **What:** `skipti-just-me-YYYY-MM-DD` in the phone's own date (the file holds every Just me month, not one).
+- **Why:** the review's M3: the plan's month name, in UTC, misdescribed a file holding all months.
+- **Status:** in D-249.
+
+#### 208: an expense's people must belong to its ledger before it is written
+
+- **What:** a core check run on every write path before an expense is saved: the payer and everyone with a share are
+  members of the expense's group (for Just me: you only). Ingest is unchanged (no core rule relaxed, no cursor reset).
+- **Why:** the review's I1 found Android could write group A's expense with group B's people after the screen was
+  re-created; `ffi_check_expense` never checked membership. Listed for Fable's security pass (a peer could still write
+  such a record; the rules and ingest do not refuse it).
+- **Status:** in D-249.
 ---
 
 ## High: user-visible behaviour or a privacy surface

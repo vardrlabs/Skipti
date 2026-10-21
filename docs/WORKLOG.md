@@ -98,7 +98,16 @@ then ONE round of pop-ups for every call of his, then build in his order with de
   wave 4ede6ef (decision 204), iOS sabotage lane 11 rows + pins d853e18; gate 23/23 (5m28s); RECORDED (JVM carried
   forward). Merging. NEXT: D-249 = U10 Just me: rebase /private/tmp/skipti-d248-core (branch d248-just-me) onto main,
   regenerate bindings (two new core fns now exist on main), then shells per `.drafts/d248/plan.md` (+ section 8).
-- **RESUME (session 11, mid D-248):** D-245, D-246, D-247 merged. D-248 (small fixes) branch d248-small-fixes from
+- **D-248 MERGED 464030f** (pushed, no Actions run; d248-look sim/AVD deleted; poster caches deleted).
+- **D-249 (U10 Just me), branch d249-just-me (renamed from d248-just-me), rebased onto main cleanly, worktree removed,
+  now in the main checkout.** Its core commit 70d5b01 says "D-248 stage 1" (numbering slip; it is D-249's core stage).
+  Stage 2 (bindings + iOS) dispatched, report `.drafts/d249/stage2-report.md`; spec `.drafts/d248/plan.md` + section 8.
+- **D-249 DONE:** stage 2 iOS 7d9faf6, stage 3 24022a2 (205, 206) + 72d21a3 Android, review (I1 a re-created Android
+  Add expense could write group A with group B's people: decision 208 `ffi_check_expense_members`), iOS sabotage lane
+  19 rows + pins fd04fd7, fix wave 35204ce; gate 23/23 (9m21s); RECORDED (decisions 187-191, 205-208; SPEC 5.3 "as
+  built"). Fable note: `.drafts/fable/notes-for-the-pass.md`. Merging. NEXT: D-250 fluidity sweep
+  (`.drafts/d249/plan.md` + `.drafts/d249/audit.md`).
+- **RESUME (session 11, older, see the line above):** D-245, D-246, D-247 merged. D-248 (small fixes) branch d248-small-fixes from
   main: stage 1 (core typed parser + bindings + iOS fixes) implementer dispatched, report `.drafts/d248/stage1-report.md`;
   then stage 2 Android twin, review, sabotage, gate, record, merge. Then D-249 = U10 Just me (`.drafts/d248/plan.md`
   + section 8; core stage on branch d248-just-me in worktree /private/tmp/skipti-d248-core: rebase it onto main after
