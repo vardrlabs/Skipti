@@ -340,7 +340,7 @@ object ToastCover {
      *  a link, settings) keep the toast, as iOS's stacks do. */
     fun covers(route: String?): Boolean {
         if (route == null) return false
-        if (route in setOf("add", "new-group", "new-group/you", "your-name", "username", "username/you", "username/find-me", "join-invite", "invitations")) return true
+        if (route in setOf("add", "add/justme", "new-group", "new-group/you", "your-name", "username", "username/you", "username/find-me", "join-invite", "invitations")) return true
         return listOf("expense-edit/", "pushed/", "username/change/", "remove/").any { route.startsWith(it) }
     }
 

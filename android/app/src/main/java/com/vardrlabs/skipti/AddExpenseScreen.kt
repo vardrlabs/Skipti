@@ -57,7 +57,8 @@ import uniffi.skipti_core.ffiSplitCompute
 object AddSheetCopy {
     const val HOW_MUCH = "How much?"
     const val WHAT_FOR = "What was it for?"
-    const val GROUP = "Group"
+    /** D-249 (U10): the row and its choice page are the ledger (Just me or a group); was "Group". */
+    const val LEDGER = "Ledger"
     // D-225 T7 (Design 11): the split card's labels and choice pages' titles, iOS's words.
     const val SPLIT = "Split"
     const val SPLIT_TYPE = "Split type"
@@ -214,29 +215,24 @@ object SplitWords {
     }
 }
 
-/** D-225 (Design 11): the Group row on Add and Edit expense. A new expense with more than one group to file it under gets
- *  a chooser (a value with a chevron, opening the choice page); a new expense with one group, or any edit (an edit stays
- *  in its own group, D-143), shows the group as a plain value; no group, no row. The twin of iOS's `AddExpenseRows`. */
+/** D-225 (Design 11), D-249 (U10): the Ledger row on Add and Edit expense, Just me first, then the groups this phone can
+ *  add to. A new expense with a group to choose gets a chooser (a value with a chevron, opening the Ledger page); Just me
+ *  alone, or any edit (an edit stays in its own ledger, D-143, decision 191), shows it as a plain value. There is always a
+ *  row: Just me takes an expense when no group can (the two "belong to a group" lines went). The twin of iOS's
+ *  `AddExpenseRows`. */
 object AddExpenseRows {
-    enum class GroupRow { CHOOSER, PLAIN, NONE }
+    enum class LedgerRow { CHOOSER, PLAIN }
 
-    fun groupRow(editing: Boolean, groupCount: Int): GroupRow = when {
-        editing -> GroupRow.PLAIN
-        groupCount > 1 -> GroupRow.CHOOSER
-        groupCount == 1 -> GroupRow.PLAIN
-        else -> GroupRow.NONE
-    }
+    fun ledgerRow(editing: Boolean, writableCount: Int): LedgerRow =
+        if (!editing && writableCount > 0) LedgerRow.CHOOSER else LedgerRow.PLAIN
 
-    /** D-234 (L7, decision 87): the line a new expense shows when no group can take it: no groups at all, or only groups
-     *  this phone can't add to (read-only copies); null when one can. The twin of iOS's `AddExpenseRows.emptyLine`. */
-    const val NO_GROUPS = "Expenses belong to a group. Make one on Groups first."
-    const val NONE_WRITABLE = "You can't add to your groups from this phone. Make a new group on Groups to add one."
+    /** The ledger a new expense opens on: Just me when no group can take it, or when Add was opened from Your spending;
+     *  otherwise the group shown (GUARANTEES #2: the default path for people with groups is unchanged). */
+    fun startsOnJustMe(fromSpending: Boolean, writableCount: Int): Boolean = fromSpending || writableCount == 0
 
-    fun emptyLine(groupCount: Int, writableCount: Int): String? = when {
-        writableCount > 0 -> null
-        groupCount == 0 -> NO_GROUPS
-        else -> NONE_WRITABLE
-    }
+    /** Just me has nothing to split: the Split section, the kind's hint, the itemised cards and the summary line are not
+     *  drawn; "Only you. Nothing to split." is. */
+    fun showsSplit(justMe: Boolean): Boolean = !justMe
 }
 
 /**
@@ -516,6 +512,8 @@ fun AddExpenseScreen(
      *  revision holding only what changed (`ExpenseEditingUi.revision`). */
     editingId: String? = null,
     onBack: (() -> Unit)? = null,
+    /** D-249: Add opened from Your spending starts on Just me. */
+    startOnJustMe: Boolean = false,
 ) {
     val dark = isSystemInDarkTheme()
     val scope = rememberCoroutineScope()
@@ -535,8 +533,13 @@ fun AddExpenseScreen(
     var groupLoaded by remember { mutableStateOf(false) }
     /** D-183: every group, for the Group picker inside the sheet. */
     var groups by remember { mutableStateOf<List<NamedGroupWire>>(emptyList()) }
-    /** D-234 (L7): every group, read-only copies too: whether "none can take it" or "there are none". */
-    var groupCount by remember { mutableStateOf(0) }
+    /** D-249 (U10): the expense goes to Just me (no group, you paid, the whole is yours); decided once per form. */
+    var justMe by rememberSaveable { mutableStateOf(false) }
+    var ledgerDecided by rememberSaveable { mutableStateOf(false) }
+    /** Decision 193: each group's create identity (core's projection), for the Ledger page's "Since {Month Year}". */
+    var ledgerCreated by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var myName by remember { mutableStateOf<String?>(null) }
+    var myAvatar by remember { mutableStateOf<Avatar>(Avatar.None) }
     // D-225 T7 (Design 11): the pill opens the whole currency list page; each choice opens its choice page (by name:
     // "category", "subcategory", "group", "split", "payer"; null while none is open).
     var listingCurrencies by rememberSaveable { mutableStateOf(false) }
@@ -591,6 +594,8 @@ fun AddExpenseScreen(
                 onSuccess = { (found, own) ->
                     editing = found
                     named = own
+                    // D-249: a Just me expense edits as Just me (decision 191: it never moves ledgers).
+                    justMe = found != null && found.expense.group == null
                     if (found == null) {
                         error = "This expense is not in your ledger."
                     } else if (!prefilled) {
@@ -617,35 +622,48 @@ fun AddExpenseScreen(
         val result = withContext(Dispatchers.IO) {
             runCatching {
                 val store = LedgerStore(vaultPath)
-                // D-183: the sheet can file it under any group. D-210: not a
-                // read-only copy, which takes nothing new.
-                val copies = store.readOnlyChecked().keys
-                val all = store.namedGroups()
-                val open = all.filter { it.group.id !in copies }
-                val shown = store.currentGroup()
-                Triple(shown?.let { s -> open.firstOrNull { it.group.id == s.group.id } } ?: open.firstOrNull(), open, all.size)
+                myName = runCatching { store.loadSelf()?.name }.getOrNull()
+                myAvatar = runCatching { store.loadAvatar() }.getOrDefault(Avatar.None)
+                try {
+                    // D-183: the sheet can file it under any group. D-210: not a
+                    // read-only copy, which takes nothing new.
+                    val copies = store.readOnlyChecked().keys
+                    val all = store.namedGroups()
+                    val open = all.filter { it.group.id !in copies }
+                    val shown = store.currentGroup()
+                    val created = runCatching { store.projectGroups().groups.associate { it.group.id to it.created } }.getOrDefault(emptyMap())
+                    Triple(shown?.let { s -> open.firstOrNull { it.group.id == s.group.id } } ?: open.firstOrNull(), open, created)
+                } catch (_: NeedsYourNameException) {
+                    // D-249: a group waits on your name; Just me does not.
+                    Triple(null, emptyList<NamedGroupWire>(), emptyMap())
+                }
             }
         }
         result.fold(
-            onSuccess = { (current, all, total) ->
+            onSuccess = { (current, all, created) ->
                 groups = all
-                groupCount = total
-                named = named ?: current
-                if (current != null) {
-                    if (payer !in current.group.members) payer = current.selfId
-                    if (participants.isEmpty()) participants = current.group.members.toSet()
-                    // A fresh form starts in the group's settlement currency
-                    // (twin of D-135; iOS started in USD for an INR group).
-                    if (amountText.isEmpty()) currency = current.group.settlementCurrency
+                ledgerCreated = created
+                // Filled in once: coming back from a choice page or a rotation keeps the ledger, people and currency
+                // already chosen.
+                if (!ledgerDecided) {
+                    ledgerDecided = true
+                    // D-249: Just me with no group to take it, or from Your spending (the read-only case, silently).
+                    if (AddExpenseRows.startsOnJustMe(fromSpending = startOnJustMe, writableCount = all.size)) {
+                        justMe = true
+                    } else if (current != null) {
+                        named = current
+                        payer = current.selfId
+                        if (participants.isEmpty()) participants = current.group.members.toSet()
+                        // A fresh form starts in the group's settlement currency
+                        // (twin of D-135; iOS started in USD for an INR group).
+                        if (amountText.isEmpty()) currency = current.group.settlementCurrency
+                    }
+                } else if (!justMe && named == null && current != null) {
+                    // A recreation keeps the chosen group (the choice is saved, the group object is read again).
+                    named = current
                 }
             },
-            onFailure = {
-                error = if (it is NeedsYourNameException) {
-                    "Add your name first."
-                } else {
-                    it.message?.takeIf { m -> m.isNotBlank() } ?: it.toString()
-                }
-            },
+            onFailure = { error = it.message?.takeIf { m -> m.isNotBlank() } ?: it.toString() },
         )
         groupLoaded = true
     }
@@ -659,13 +677,30 @@ fun AddExpenseScreen(
      *  currency unless one was picked for this expense. */
     fun choose(id: String?) {
         val next = groups.firstOrNull { it.group.id == id } ?: return
-        if (next.group.id == named?.group?.id) return
-        val previousCurrency = named?.group?.settlementCurrency
+        if (!justMe && next.group.id == named?.group?.id) return
+        val previousCurrency = if (justMe) DefaultCurrency.current else named?.group?.settlementCurrency
+        justMe = false
         named = next
         payer = next.selfId
         participants = next.group.members.toSet()
         draft = AddExpenseUi.allKinds.first { it::class == draft::class }
         if (amountText.isEmpty() || currency == previousCurrency) currency = next.group.settlementCurrency
+    }
+
+    /** D-249: Just me (no people, the default currency unless one was picked) or a group ([choose]). */
+    fun chooseLedger(choice: LedgerChoice) {
+        when (choice) {
+            LedgerChoice.JustMe -> {
+                if (justMe) return
+                val previousCurrency = named?.group?.settlementCurrency
+                justMe = true
+                named = null
+                payer = ""
+                participants = emptySet()
+                if (amountText.isEmpty() || currency == previousCurrency) currency = DefaultCurrency.current
+            }
+            is LedgerChoice.Group -> choose(choice.id)
+        }
     }
 
     // D-183: the summary line, from core: the split as it stands, then
@@ -707,7 +742,7 @@ fun AddExpenseScreen(
                     else -> "Add expense"
                 },
                 dark = dark,
-                enabled = amountText.isNotEmpty() && !saved && !saving.busy && named != null,
+                enabled = amountText.isNotEmpty() && !saved && !saving.busy && (named != null || justMe),
                 onClick = {
                     // D-235 (H1): taken BEFORE the save is launched; a second tap in the same moment finds it held.
                     if (saved || !saving.begin()) return@PrimaryAction
@@ -716,6 +751,30 @@ fun AddExpenseScreen(
                         var paid: Pair<Long, String>? = null
                         val result = withContext(Dispatchers.IO) {
                             try {
+                                if (justMe) {
+                                    // D-249 (U10): a Just me expense, new or edited: you paid and the whole is yours, no
+                                    // group (the personal scope). The store runs core's `ffiCheckExpense` and the note
+                                    // bound before anything is written (decisions 103, 112).
+                                    val total = AmountEntry.parse(amountText, currency)
+                                    require(total > 0) { "the amount must be positive" }
+                                    val store = LedgerStore(vaultPath)
+                                    val me = store.ensureSelf()
+                                    val target = editing
+                                    if (target != null) {
+                                        ExpenseEditingUi.revision(
+                                            editing = target,
+                                            money = JustMeExpense.money(target.expense.payer, total, currency),
+                                            note = note,
+                                            category = selectedCategory,
+                                            editor = me.id,
+                                        )?.let { store.reviseExpense(it) }
+                                    } else {
+                                        store.appendExpense(JustMeExpense.dto(me.id, total, currency, note.ifEmpty { null }, selectedCategory))
+                                    }
+                                    CloudSync.ledgerChanged(vaultPath)
+                                    paid = total to currency
+                                    return@withContext null
+                                }
                                 val group = named
                                     ?: throw IllegalStateException("Create a group first.")
                                 val expense = AddExpenseUi.buildExpense(
@@ -778,11 +837,6 @@ fun AddExpenseScreen(
             )
         },
     ) {
-        val emptyLine = AddExpenseRows.emptyLine(groupCount, groups.size)
-        if (groupLoaded && named == null && error == null && emptyLine != null) {
-            Text(emptyLine, style = Type.bodyDim(dark))
-        }
-
         // D-183 (the founder's canvas): the amount first, big and centred,
         // its currency on a pill.
         Column(
@@ -832,7 +886,7 @@ fun AddExpenseScreen(
         // value row opening its choice page.
         val parentNow = categoryParent ?: CategoryLevels.parent(selectedCategory, tree)
         val shown = named
-        val groupRow = if (shown == null) AddExpenseRows.GroupRow.NONE else AddExpenseRows.groupRow(editingId != null, groups.size)
+        val ledgerRow = AddExpenseRows.ledgerRow(editingId != null, groups.size)
         ListCard(dark) {
             row { FieldRow(note, { note = AddExpenseUi.capNote(it) }, AddSheetCopy.WHAT_FOR, dark) }
             row {
@@ -849,70 +903,31 @@ fun AddExpenseScreen(
                     ) { choosing = "subcategory" }
                 }
             }
-            // D-183: a new expense goes in any group (the shown one first); an edit stays in its own (D-143).
-            if (shown != null && groupRow != AddExpenseRows.GroupRow.NONE) {
+            // D-183, D-249: the Ledger row (`AddExpenseRows.ledgerRow`). A new expense with a group to choose opens the
+            // Ledger page (decision 193's rich rows, Just me first); Just me alone, or an edit (it stays in its own
+            // ledger), shows it plainly.
+            if (justMe || shown != null) {
                 row {
-                    val chooser = groupRow == AddExpenseRows.GroupRow.CHOOSER
+                    val chooser = ledgerRow == AddExpenseRows.LedgerRow.CHOOSER
                     ListRow(
-                        AddSheetCopy.GROUP, dark,
-                        trailing = RowTrailing.Value(shown.group.name, chevron = chooser),
-                        onClick = if (chooser) ({ choosing = "group" }) else null,
+                        AddSheetCopy.LEDGER, dark,
+                        trailing = RowTrailing.Value(if (justMe) SpendingCopy.JUST_ME else shown?.group?.name ?: "", chevron = chooser),
+                        onClick = if (chooser) ({ choosing = "ledger" }) else null,
                     )
                 }
             }
         }
+        if (justMe) CardCaption(SpendingCopy.ONLY_YOU_NOTHING_TO_SPLIT, dark)
         if (parentNow != null && selectedCategory == null) {
             CardCaption(CategoryCopy.hint(CategoryLevels.name(parentNow, tree)), dark)
         }
 
-        SectionLabel(AddSheetCopy.SPLIT, dark)
-
-        // The split card: the kind and who paid (choice pages), one switch row per person (everyone in by default),
-        // then the kind's own fields as field rows, only for people in the split, in the group's order (iOS's).
-        // The shares themselves come from core at save time.
-        ListCard(dark) {
-            row {
-                ListRow(AddSheetCopy.SPLIT_TYPE, dark, trailing = RowTrailing.Value(draft.label, chevron = true)) { choosing = "split" }
-            }
-            if (members.isNotEmpty()) {
-                row {
-                    ListRow(
-                        AddSheetCopy.PAID_BY, dark,
-                        trailing = RowTrailing.Value(members.firstOrNull { it.first == payer }?.second ?: "", chevron = true),
-                    ) { choosing = "payer" }
-                }
-            }
-            members.forEach { (id, name) ->
-                row {
-                    ListRow(
-                        name, dark,
-                        trailing = RowTrailing.Toggle(id in participants) { on ->
-                            participants = if (on) participants + id else participants - id
-                        },
-                    )
-                }
-            }
-            splitFieldRows(draft, members.map { it.first }.filter { it in participants }, members, dark) { draft = it }
-        }
-        SplitKindExtras(draft, members, dark) { draft = it }
-
-        // D-183: what this expense does for you, as it stands (core's).
-        summaryLine?.let {
-            Text(
-                it,
-                style = Type.body(dark).copy(color = Tok.textDim(dark), fontSize = TypeScale.prose.sp),
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-        splitProblem?.let {
-            Text(
-                it,
-                style = Type.body(dark).copy(color = Tok.owed(dark), fontSize = TypeScale.prose.sp),
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
+        if (AddExpenseRows.showsSplit(justMe)) SplitSection(
+            draft, members, participants, payer, summaryLine, splitProblem, dark,
+            onDraft = { draft = it },
+            onParticipants = { participants = it },
+            onChoose = { choosing = it },
+        )
 
         // The live line already says it; Save's refusal does not repeat it.
         error?.takeIf { it != splitProblem }?.let { msg ->
@@ -964,12 +979,14 @@ fun AddExpenseScreen(
             onPick = { selectedCategory = it },
             onClose = close,
         )
-        "group" -> ChoicePage(
-            AddSheetCopy.GROUP,
-            groups.map { ChoiceOption(it.group.id, it.group.name) },
-            chosen = named?.group?.id,
+        // Decision 193: the Ledger page's rich rows, Just me first.
+        "ledger" -> LedgerChoicePage(
+            LedgerOptions.build(groups, ledgerCreated),
+            chosen = if (justMe) LedgerChoice.JustMe else LedgerChoice.Group(named?.group?.id ?: ""),
+            name = myName,
+            avatar = myAvatar,
             dark = dark,
-            onPick = { choose(it) },
+            onPick = { chooseLedger(it) },
             onClose = close,
         )
         "split" -> ChoicePage(
@@ -990,6 +1007,71 @@ fun AddExpenseScreen(
             onClose = close,
         )
     }
+}
+
+/** The split (D-249: never for Just me): the kind and who paid, a switch row per person, the kind's fields, its hint, the
+ *  itemised cards, then what it does for you and how far off it is. The twin of iOS's `splitSection`. */
+@Composable
+private fun SplitSection(
+    draft: SplitDraft,
+    members: List<Pair<String, String>>,
+    participants: Set<String>,
+    payer: String,
+    summaryLine: String?,
+    splitProblem: String?,
+    dark: Boolean,
+    onDraft: (SplitDraft) -> Unit,
+    onParticipants: (Set<String>) -> Unit,
+    onChoose: (String) -> Unit,
+) {
+        SectionLabel(AddSheetCopy.SPLIT, dark)
+
+        // The split card: the kind and who paid (choice pages), one switch row per person (everyone in by default),
+        // then the kind's own fields as field rows, only for people in the split, in the group's order (iOS's).
+        // The shares themselves come from core at save time.
+        ListCard(dark) {
+            row {
+                ListRow(AddSheetCopy.SPLIT_TYPE, dark, trailing = RowTrailing.Value(draft.label, chevron = true)) { onChoose("split") }
+            }
+            if (members.isNotEmpty()) {
+                row {
+                    ListRow(
+                        AddSheetCopy.PAID_BY, dark,
+                        trailing = RowTrailing.Value(members.firstOrNull { it.first == payer }?.second ?: "", chevron = true),
+                    ) { onChoose("payer") }
+                }
+            }
+            members.forEach { (id, name) ->
+                row {
+                    ListRow(
+                        name, dark,
+                        trailing = RowTrailing.Toggle(id in participants) { on ->
+                            onParticipants(if (on) participants + id else participants - id)
+                        },
+                    )
+                }
+            }
+            splitFieldRows(draft, members.map { it.first }.filter { it in participants }, members, dark, onDraft)
+        }
+        SplitKindExtras(draft, members, dark, onDraft)
+
+        // D-183: what this expense does for you, as it stands (core's).
+        summaryLine?.let {
+            Text(
+                it,
+                style = Type.body(dark).copy(color = Tok.textDim(dark), fontSize = TypeScale.prose.sp),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        splitProblem?.let {
+            Text(
+                it,
+                style = Type.body(dark).copy(color = Tok.owed(dark), fontSize = TypeScale.prose.sp),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
 }
 
 @Composable

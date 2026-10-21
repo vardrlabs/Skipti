@@ -76,7 +76,8 @@ enum class ImportSource(val title: String, val detail: String, val fallbackGroup
     ),
     BUDGET_BAKERS(
         "Wallet by BudgetBakers",
-        "A records export, a .csv file. Your spending comes in as your own expenses, in a new group with just you.",
+        // D-249: Just me or a new group, chosen below.
+        "A records export, a .csv file. Your spending comes in as your own expenses.",
         "Wallet",
     ),
 }
@@ -266,28 +267,56 @@ object ImportSetup {
     }
 }
 
+/** D-249 (U10): where a Wallet by BudgetBakers file goes: Just me (the personal scope, first) or a new group with just
+ *  you. A Splitwise file is always a new group. iOS's twin is `ImportTarget`. */
+enum class ImportTarget(val title: String) {
+    JUST_ME(SpendingCopy.IMPORT_INTO_JUST_ME),
+    NEW_GROUP(SpendingCopy.IMPORT_AS_GROUP);
+
+    companion object {
+        /** The target a source can take: Splitwise only a group. */
+        fun effective(chosen: ImportTarget, source: ImportSource): ImportTarget =
+            if (source == ImportSource.BUDGET_BAKERS) chosen else NEW_GROUP
+    }
+}
+
 /** One import from choosing to writing, with the screen kept out of it. */
 class ImportJob(
-    val group: NamedGroupWire,
+    /** D-249: null for an import into Just me (no group is made). */
+    val group: NamedGroupWire?,
     val plan: ImportPlan,
     /** The saved ledger plus the new group: what the plan was checked against. */
     val existing: LedgerSnapshot,
     /** Your name, when this import is what gives you one. */
     val newName: String?,
     val selfId: String,
+    /** Your name for the review's wording when there is no group (Just me). */
+    val selfName: String = ExpenseCopy.YOU,
 ) {
     /** Participant id → name in the new group, for the review's wording. */
-    val names: Map<String, String> get() = group.members.associate { it.id to it.name }
+    val names: Map<String, String> get() = group?.members?.associate { it.id to it.name } ?: mapOf(selfId to selfName)
+
+    /** Where the review says it went: the group's name, or Just me. */
+    val ledgerName: String get() = group?.group?.name ?: SpendingCopy.JUST_ME
 
     /** After `ffiApplyImportPlan` accepted the merge: your name if this gave
      *  you one, the group, then the expenses in one vault session. */
     fun commit(expenses: List<PortExpense>, store: LedgerStore) {
         newName?.let { store.setYourName(it) }
-        store.adopt(group)
+        group?.let { store.adopt(it) }
         store.appendExpenses(expenses.map { ImportSetup.dto(it, selfId) })
     }
 
     companion object {
+        /** D-249: a Wallet file into Just me: no group, no name needed; every expense is yours, in the personal scope
+         *  (core's importer with `group: None`). */
+        fun prepareJustMe(store: LedgerStore, csv: String): ImportJob {
+            val me = store.ensureSelf()
+            val existing = store.snapshot()
+            val plan = ffiPlanImport(csv, ImportSetup.profile(ImportSource.BUDGET_BAKERS, emptyList(), null, me.id), existing)
+            return ImportJob(null, plan, existing, null, me.id, me.name ?: ExpenseCopy.YOU)
+        }
+
         /** Builds the group (not saved) and plans the file against it. */
         fun prepare(
             store: LedgerStore,
@@ -333,6 +362,9 @@ fun ImportFlowScreen(vaultPath: String, onBack: () -> Unit, onDone: () -> Unit) 
     var error by remember { mutableStateOf<String?>(null) }
     var job by remember { mutableStateOf<ImportJob?>(null) }
     var busy by remember { mutableStateOf(false) }
+    // D-249: a Wallet file's target, Just me first.
+    var chosenTarget by remember { mutableStateOf(ImportTarget.JUST_ME) }
+    val target = ImportTarget.effective(chosenTarget, source)
 
     LaunchedEffect(vaultPath) {
         needsName = withContext(Dispatchers.IO) { runCatching { LedgerStore(vaultPath).ensureSelf().name == null }.getOrDefault(false) }
@@ -395,7 +427,7 @@ fun ImportFlowScreen(vaultPath: String, onBack: () -> Unit, onDone: () -> Unit) 
         return
     }
 
-    val ready = csv != null && groupName.isNotBlank() && !busy &&
+    val ready = if (target == ImportTarget.JUST_ME) csv != null && !busy else csv != null && groupName.isNotBlank() && !busy &&
         (source == ImportSource.BUDGET_BAKERS || you != null) &&
         (!needsName || source == ImportSource.SPLITWISE || typedName.isNotBlank())
 
@@ -412,6 +444,14 @@ fun ImportFlowScreen(vaultPath: String, onBack: () -> Unit, onDone: () -> Unit) 
                 Text(option.detail, style = Type.bodyDim(dark).copy(fontSize = TypeScale.detail.sp))
             }
         }
+        // D-249 (U10): a Wallet file goes into Just me or a new group.
+        if (source == ImportSource.BUDGET_BAKERS) {
+            ImportTarget.entries.forEach { option ->
+                ChoiceRow(selected = option == chosenTarget, dark = dark, onClick = { chosenTarget = option }) {
+                    Text(option.title, style = Type.body(dark))
+                }
+            }
+        }
         SectionLabel(ImportCopy.FILE, dark)
         if (csv != null) {
             Text(fileName, style = Type.body(dark))
@@ -420,7 +460,7 @@ fun ImportFlowScreen(vaultPath: String, onBack: () -> Unit, onDone: () -> Unit) 
         SecondaryAction(if (csv == null) ImportCopy.CHOOSE_FILE else ImportCopy.CHOOSE_ANOTHER, dark) {
             openDocument.launch(arrayOf("*/*"))
         }
-        if (csv != null) {
+        if (csv != null && target == ImportTarget.NEW_GROUP) {
             SectionLabel(ImportCopy.NEW_GROUP, dark)
             OutlinedTextField(
                 value = groupName,
@@ -460,7 +500,8 @@ fun ImportFlowScreen(vaultPath: String, onBack: () -> Unit, onDone: () -> Unit) 
             error = null
             scope.launch(Dispatchers.IO) {
                 val outcome = runCatching {
-                    ImportJob.prepare(LedgerStore(vaultPath), text, source, groupName, currency, people, you, typedName)
+                    if (target == ImportTarget.JUST_ME) ImportJob.prepareJustMe(LedgerStore(vaultPath), text)
+                    else ImportJob.prepare(LedgerStore(vaultPath), text, source, groupName, currency, people, you, typedName)
                 }
                 withContext(Dispatchers.Main) {
                     busy = false
@@ -603,10 +644,11 @@ private fun ImportReviewScreen(
             }
             is ImportReview.AppliedState.Done -> {
                 Text(
-                    ImportCopy.done(state.expenseCount, job.group.group.name),
+                    ImportCopy.done(state.expenseCount, job.ledgerName),
                     style = Type.body(dark).copy(color = Tok.owing(dark)),
                 )
-                PrimaryAction(ImportCopy.SHOW_GROUP, dark, onClick = onDone)
+                // D-249: "Show the group"; "Done" for Just me.
+                PrimaryAction(if (job.group == null) ProfileCopy.DONE else ImportCopy.SHOW_GROUP, dark, onClick = onDone)
             }
             is ImportReview.AppliedState.Failed -> ErrorLine(state.message, dark)
         }

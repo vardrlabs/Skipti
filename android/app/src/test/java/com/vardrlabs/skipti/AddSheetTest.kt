@@ -39,7 +39,7 @@ class AddSheetTest {
     fun the_add_sheet_words_match_ios() {
         assertEquals("How much?", AddSheetCopy.HOW_MUCH)
         assertEquals("What was it for?", AddSheetCopy.WHAT_FOR)
-        assertEquals("Group", AddSheetCopy.GROUP)
+        assertEquals("Ledger", AddSheetCopy.LEDGER)
         assertEquals("You’ll get back €32.00", AddSheetCopy.summary(3_200, "€32.00"))
         assertEquals("You’ll owe €32.00", AddSheetCopy.summary(-3_200, "€32.00"))
         assertEquals("Nothing changes for you", AddSheetCopy.summary(0, "€0.00"))

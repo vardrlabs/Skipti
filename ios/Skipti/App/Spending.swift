@@ -51,7 +51,7 @@ enum SpendingCopy {
     static let importAsGroup = "Import as a new group"
 }
 
-/// Decision 165: the hero with no group yet. Android's twin is `HeroCopy`.
+/// Decision 165: the hero with no group yet. Android's twin is `NoGroupHeroCopy`.
 enum NoGroupHeroCopy {
     static let kicker = "No groups yet"
     static let title = "Splitting with someone?"

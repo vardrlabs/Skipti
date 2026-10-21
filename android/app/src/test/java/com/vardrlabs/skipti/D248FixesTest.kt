@@ -295,8 +295,9 @@ class D248FixesTest {
             sites += text.split("\"Add your name first.\"").size - 1
             sites += text.split("\"Create a group first.\"").size - 1
         }
-        // Import's two (ImportFlow and its group step), Settle up's two, Add expense's two.
-        assertEquals(6, sites)
+        // Import's two (ImportFlow and its group step), Settle up's two, Add expense's "Create a group first." (D-249: Add
+        // expense's "Add your name first." went: a group waiting on your name no longer stops a Just me expense).
+        assertEquals(5, sites)
     }
 
     // ---- U30.4 the delete's Undo where it happened ----
@@ -414,7 +415,7 @@ class D248FixesTest {
             InviteCopy.JOIN_TITLE, ImportCopy.TITLE, "Review", "Profile", PeopleCopy.INVITATIONS, AddPersonCopy.TITLE,
             PhonesCopy.TITLE, PhonesCopy.DELETE_TITLE, RolesCopy.REDISTRIBUTE_TITLE, UsernameCopy.TITLE, UsernameCopy.CHANGE,
             "Expense", "Sign in", CategoryCopy.CATEGORY, CategoryCopy.SUBCATEGORY, AddSheetCopy.SPLIT_TYPE,
-            AddSheetCopy.PAID_BY, AddSheetCopy.GROUP,
+            AddSheetCopy.PAID_BY, AddSheetCopy.LEDGER, SpendingCopy.TITLE,
         )
         val literal = Regex("""\b(?:PushedPage|PushedBar|SheetPage|ChoicePage)\(\s*"([^"$]+)"""")
         // SkiptiBar.kt's own proof titles are deliberately too long (they prove the ellipsis): not app titles.

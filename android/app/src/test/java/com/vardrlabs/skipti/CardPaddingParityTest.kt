@@ -85,6 +85,16 @@ class CardPaddingParityTest {
             Site("ListRows.kt", "val rows = ListCardScope().apply(build).rows", Side.AFTER),
         ),
         Pair(
+            "Your spending's expenses (D-249)",
+            Site("Spending.swift", "ForEach(Array(l.out.rows.enumerated()), id: \\.element.id) { i, row in", Side.AFTER),
+            Site("Spending.kt", "l.out.rows.forEachIndexed { i, row ->", Side.BEFORE),
+        ),
+        Pair(
+            "the Ledger page's rows (D-249, decision 193)",
+            Site("Spending.swift", "LucideIcon(glyph: .check, size: 20).foregroundStyle(Tokens.accent)", Side.AFTER),
+            Site("Spending.kt", ".selectable(selected = isChosen, role = Role.RadioButton, onClick = {", Side.AFTER),
+        ),
+        Pair(
             "the welcome's emoji choices (D-245 W4)",
             Site("Welcome.swift", "EmojiChoices(chosen: stage.staged ?? saved, open: moreOpen, onMore: { moreOpen = true }) { e in", Side.AFTER),
             Site("Welcome.kt", "EmojiChoices(s.stage.staged ?: s.saved, s.moreOpen, dark, onMore = { s.moreOpen = true }) { e ->", Side.BEFORE),
@@ -144,8 +154,8 @@ class CardPaddingParityTest {
     @Test
     fun the_ios_reader_reads_the_swift_values() {
         assertEquals(
-            // D-245: + the welcome's emoji choices, 10.
-            listOf(14, 14, 14, 14, 14, 14, 12, 14, 10, 14, 12, 0, 10),
+            // D-245: + the welcome's emoji choices, 10. D-249: + Your spending's expenses and the Ledger page's rows, 14 each.
+            listOf(14, 14, 14, 14, 14, 14, 12, 14, 10, 14, 12, 0, 14, 14, 10),
             pairs.map { iosPadding(it.ios) },
         )
     }

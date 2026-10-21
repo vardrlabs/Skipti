@@ -50,8 +50,16 @@ fun ExportScreen(
     /** D-210: one group's export (a read-only copy exports only that group);
      *  null is the whole ledger. */
     group: String? = null,
+    /** D-249 (U10): "Export Just me": the personal scope only (core's `ffiSnapshotPersonal`), named
+     *  `skipti-just-me-YYYY-MM`. */
+    justMe: Boolean = false,
 ) {
     val dark = isSystemInDarkTheme()
+    fun read(): LedgerSnapshot = when {
+        justMe -> uniffi.skipti_core.ffiSnapshotPersonal(store.snapshot())
+        group != null -> store.snapshot(group)
+        else -> store.snapshot()
+    }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val view = androidx.compose.ui.platform.LocalView.current
@@ -83,7 +91,7 @@ fun ExportScreen(
             try {
                 ExportWrite.write(
                     held = held,
-                    load = { if (group != null) store.snapshot(group) else store.snapshot() },
+                    load = { read() },
                     format = format,
                     open = { context.contentResolver.openOutputStream(uri) },
                 )
@@ -112,14 +120,14 @@ fun ExportScreen(
         // is the only place bytes are written.
         acknowledged = true
         val stamp = Exporter.filenameStamp(Exporter.utc())
-        val name = "${Exporter.FILENAME_PREFIX}-$stamp.${format.fileExtension}"
+        val name = if (justMe) Exporter.justMeName(Exporter.utc(), format) else "${Exporter.FILENAME_PREFIX}-$stamp.${format.fileExtension}"
         if (format == Exporter.Format.CSV) csvCreate.launch(name) else jsonCreate.launch(name)
     }
 
     LaunchedEffect(Unit) {
         val s = withContext(Dispatchers.IO) {
             try {
-                if (group != null) store.snapshot(group) else store.snapshot()
+                read()
             } catch (_: Exception) {
                 null
             }
@@ -155,7 +163,7 @@ fun ExportScreen(
                     modifier = Modifier.semantics { contentDescription = ExportFlow.WARNING_TEXT },
                 )
                 Spacer(Modifier.height(8.dp))
-                if (group == null) {
+                if (group == null && !justMe) {
                     Text(
                         "Your whole ledger leaves the encrypted store in one file.",
                         style = Type.bodyDim(dark),

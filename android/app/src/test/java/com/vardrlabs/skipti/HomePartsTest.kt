@@ -338,9 +338,11 @@ class HomePartsTest {
     @Test
     fun the_home_order() {
         val body = overviewScreen()
+        // D-249: the no-group hero in the hero's place, and Your spending (its label and card) under the ledgers.
         val anchors = listOf(
-            "HomeGreeting(", "Hero(", "SectionLabel(LedgerCopy.TITLE, dark, Modifier.padding(top = 4.dp), color = Tok.text(dark))",
-            "LedgerGrid(", "LatelyCard(", "SectionLabel(OverviewCopy.PEOPLE, dark, Modifier.padding(top = 4.dp), color = Tok.text(dark))",
+            "HomeGreeting(", "NoGroupHero(", "{ Hero(", "SectionLabel(LedgerCopy.TITLE, dark, Modifier.padding(top = 4.dp), color = Tok.text(dark))",
+            "LedgerGrid(", "SectionLabel(SpendingCopy.TITLE, dark, Modifier.padding(top = 4.dp), color = Tok.text(dark))", "SpendingCard(",
+            "LatelyCard(", "SectionLabel(OverviewCopy.PEOPLE, dark, Modifier.padding(top = 4.dp), color = Tok.text(dark))",
         )
         val at = anchors.map { a -> body.indexOf(a).also { assertTrue("'$a' on Home", it >= 0) } }
         assertEquals("in order: $anchors", at.sorted(), at)
@@ -545,11 +547,12 @@ class HomePartsTest {
     fun tab_icons_names_its_drawings() {
         val icons = kt("TabIcons.kt")
         // D-224: `vibrate` (the Haptics row) makes eighteen; D-225: `x` and `lock` make twenty; D-216 takes the bell
-        // away (the cut S is Android's notification icon now): nineteen; D-231: `sparkles` (Less motion) makes twenty.
-        assertEquals(20, TabIcons.PATHS.size)
+        // away (the cut S is Android's notification icon now): nineteen; D-231: `sparkles` (Less motion) makes twenty;
+        // D-249: `chart-pie` (Spending on Home) makes twenty-one.
+        assertEquals(21, TabIcons.PATHS.size)
         assertFalse("four path strings" in icons)
-        assertFalse(Regex("(?i)(sixteen|seventeen|eighteen|nineteen) drawings").containsMatchIn(icons))
-        assertTrue("twenty drawings" in icons)
+        assertFalse(Regex("(?i)(sixteen|seventeen|eighteen|nineteen|twenty) drawings").containsMatchIn(icons))
+        assertTrue("twenty-one drawings" in icons)
     }
 
     // ---- D-223 fix wave (Android) ----
@@ -596,7 +599,8 @@ class HomePartsTest {
     fun home_section_labels_take_ioss_top_padding() {
         assertTrue("iOS's", "Text(verbatim: text).sectionLabel().foregroundStyle(Tokens.text).padding(.top, 4)" in swift("OverviewScreen.swift"))
         val home = overviewScreen()
-        assertEquals("both labels", 2, home.split("dark, Modifier.padding(top = 4.dp), color = Tok.text(dark))").size - 1)
+        // D-249: + Your spending's.
+        assertEquals("the three labels", 3, home.split("dark, Modifier.padding(top = 4.dp), color = Tok.text(dark))").size - 1)
     }
 
     /** F5: Norse's ornament on a tab root. iOS draws it in the scroll content with a negative top padding whose padded
@@ -622,7 +626,8 @@ class HomePartsTest {
         assertTrue("iOS's empty()", "VStack(alignment: .leading, spacing: 12) {\n            if TitleOrnament.shows(AppearanceState.shared.theme) { TitleOrnament(above: 16) }" in swift("OverviewScreen.swift"))
         assertEquals(12, HomeEmpty.SPACING)
         assertTrue("iosOrnamentSpacing = if (emptyHome) HomeEmpty.SPACING else BarDecisions.CONTENT_SPACING," in overviewScreen())
-        assertTrue("val emptyHome = needsName || (loaded && groups.isEmpty() && error == null)" in overviewScreen())
+        // D-249: only "Add your name" is an empty state now (with no group yet the hero asks, in the page's stack).
+        assertTrue("val emptyHome = needsName\n" in overviewScreen())
         assertTrue("Column(verticalArrangement = Arrangement.spacedBy(HomeEmpty.SPACING.dp))" in fn("OverviewTab.kt", "private fun EmptyHome("))
     }
 
@@ -708,7 +713,8 @@ class HomePartsTest {
         }
         // What each screen draws first comes from the keep, never a fresh empty state.
         val list = kt("ExpenseListScreen.kt")
-        for (v in listOf("projected", "loadError", "groups", "only")) assertTrue("Expenses' $v is kept", "var $v by keep.slot" in list)
+        // D-249: the chip is a filter now (a group or Just me).
+        for (v in listOf("projected", "loadError", "groups", "filter")) assertTrue("Expenses' $v is kept", "var $v by keep.slot" in list)
         val groups = kt("GroupsTab.kt")
         for (v in listOf("groups", "waiting", "selectedId", "error", "loaded", "copies")) assertTrue("Groups' $v is kept", "var $v by keep.slot" in groups)
         val settle = kt("SettleAll.kt")

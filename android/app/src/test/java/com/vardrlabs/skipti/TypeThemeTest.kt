@@ -460,7 +460,8 @@ class TypeThemeTest {
                 Triple("OverviewTab.kt", "Type.numericColored(TypeScale.heroAmount, Tok.onHero(dark), androidx.compose.ui.text.font.FontWeight.Bold)", 1),
                 // D-223: + the hero's who-owes line. The By group card's "Settled" (settledLine) went with it; a ledger
                 // card's line is at the detail size (HomeParts.kt).
-                Triple("OverviewTab.kt", "fontSize = TypeScale.heroLine.sp", 3),
+                // D-249: 5, the no-group hero's line and its link separator.
+                Triple("OverviewTab.kt", "fontSize = TypeScale.heroLine.sp", 5),
                 Triple("OverviewTab.kt", "fontSize = TypeScale.settledLine.sp", 0),
                 // D-223: the ledger card's line, Lately's "See all" and a row's meta line.
                 Triple("HomeParts.kt", "fontSize = TypeScale.detail.sp", 3),
@@ -654,7 +655,9 @@ class TypeThemeTest {
         assertSites(
             listOf(
                 Triple("Profile.kt", "Type.kicker(date), style = Type.microLabel(dark).copy(fontSize = TypeScale.dateLine.sp)", 1),
-                Triple("OverviewTab.kt", "Type.kicker(OverviewCopy.ACROSS)", 1),
+                // D-249: the hero's card is shared (HeroCard): the kicker is its argument, the balance hero's ACROSS.
+                Triple("OverviewTab.kt", "Type.kicker(kicker)", 1),
+                Triple("OverviewTab.kt", "HeroCard(OverviewCopy.ACROSS, dark)", 1),
                 Triple("OverviewTab.kt", "Type.microLabel(dark).copy(fontSize = TypeScale.dateLine.sp, color = heroKickerColour)", 1),
                 Triple("OverviewTab.kt", "if (HeroKicker.usesSteel(Appearance.theme)) Tok.accent(dark) else dim", 1),
             ),

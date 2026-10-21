@@ -1525,7 +1525,8 @@ class AppearanceTest {
         }
         assertTrue("the labels were found ($seen)", seen >= 45)
         assertEquals("section labels outside the allow-list: $wrong", emptyList<String>(), wrong)
-        assertEquals("Home's in-card labels in text", mapOf("HomeParts.kt" to 1, "Settled.kt" to 2, "OverviewTab.kt" to 5), inCard)
+        // D-249: + Home's Your spending label, and the page's three (its total card's kicker, its where card, Expenses).
+        assertEquals("Home's in-card labels in text", mapOf("HomeParts.kt" to 1, "Settled.kt" to 2, "OverviewTab.kt" to 6, "Spending.kt" to 3), inCard)
     }
 
     // ---- D-216 Task 2: the app icon's decisions, names and copy (Design 3 to 5; the twin of iOS's AppearanceTests,

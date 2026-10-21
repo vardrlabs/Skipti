@@ -30,7 +30,7 @@ object LucideStroke {
  * the nav bar tints them with Tok.accent.
  *
  * No icon dependency is added: these are built with ui-graphics'
- * PathParser over the path strings in [PATHS]: twenty drawings since D-231
+ * PathParser over the path strings in [PATHS]: twenty-one drawings since D-249
  * (the tab bar's six first, D-179; the rest added since, each named in NOTICE).
  */
 object TabIcons {
@@ -156,6 +156,13 @@ object TabIcons {
             "M22 4h-4",
             "M4 18a2 2 0 1 0 0 4 2 2 0 1 0 0-4",
         ),
+        // D-249: read 2026-10-21 from upstream (lucide-static v1.59.0 icons/chart-pie.svg), its two paths verbatim, in
+        // upstream's order. The same bytes as iOS's LucideGlyph.chartPie (ThemeArtTest compares). Not on Lucide's
+        // Feather-derived list: ISC only (NOTICE).
+        "chart-pie" to listOf(
+            "M21 12c.552 0 1.005-.449.95-.998a10 10 0 0 0-8.953-8.951c-.55-.055-.998.398-.998.95v8a1 1 0 0 0 1 1z",
+            "M21.21 15.89A10 10 0 1 1 8 2.83",
+        ),
     )
 
     /** Balance: lucide `wallet`, verbatim. */
@@ -212,8 +219,11 @@ object TabIcons {
     /** D-231 (decision 69): the Less motion row's tile: lucide `sparkles`, verbatim. */
     val Sparkles: ImageVector by lazy { lucide("sparkles", *PATHS.getValue("sparkles").toTypedArray()) }
 
-    /** Account: lucide `user-round`, verbatim (its circle, cx 12 cy 8 r 5, as the arc path). NOTICE names twenty
-     *  drawings since D-231 (D-216's set and `sparkles`). */
+    /** D-249 (decision 163): the Spending on Home row's tile: lucide `chart-pie`, verbatim. */
+    val ChartPie: ImageVector by lazy { lucide("chart-pie", *PATHS.getValue("chart-pie").toTypedArray()) }
+
+    /** Account: lucide `user-round`, verbatim (its circle, cx 12 cy 8 r 5, as the arc path). NOTICE names twenty-one
+     *  drawings since D-249 (D-216's set, `sparkles` and `chart-pie`). */
     val UserRound: ImageVector by lazy { lucide("user-round", *PATHS.getValue("user-round").toTypedArray()) }
 
     /** Expenses: lucide `receipt`, verbatim. */
