@@ -1481,6 +1481,25 @@ https://claude.ai/artifact/FwwzuzRkyyxiuGvJKNMPCG (v1); briefs `.drafts/u9/brief
   crossfade on Android (cheap) and the twin difference is recorded.
 - **Status:** in D-250; the real-phone check is owed.
 
+### The D-251 chain, 216, 217: a store-shots seed for real screens
+
+#### 216: store screenshots come from real screens, seeded in debug builds only
+
+- **What:** `--store-shots` (iOS DEBUG builds, Android debug builds; the Android code lives in the debug source set)
+  seeds a deterministic sample ledger (you are Sam; Goa trip, Flat 4B, Paris; Just me this month), through the normal
+  checked store paths, no account, no cloud, no lock written; the theme from `--store-theme`.
+- **Why:** your captions describe real features; mock screens would not be honest store pages.
+- **Status:** in D-251.
+
+#### 217: the seed never deletes a ledger it did not make
+
+- **What:** the first run sets the existing vault aside (`ledger-vault.db.before-store-shots`, its key kept); a later
+  run deletes only a vault marked `storeshots/seeded`; a vault with an account owner, or an unmarked vault while an aside
+  exists, is refused with words and left alone; all moves are all-or-nothing; Android consumes the launch once. A
+  restore recipe is in `.drafts/u32/plan.md`; the rule is throwaway devices only.
+- **Why:** the review found a second run could delete a real ledger (CLAUDE.md 10: never auto-delete user data).
+- **Status:** in D-251.
+
 ### Siri and Gemini, 210 to 213: your answers (pop-up, 2026-10-21)
 
 - **210 (U15, U16):** Siri and Gemini come in **0.5.2**, not 0.5.1.
@@ -1498,6 +1517,14 @@ https://claude.ai/artifact/FwwzuzRkyyxiuGvJKNMPCG (v1); briefs `.drafts/u9/brief
   **ᛃ Jera** (the year's turn: a cycle coming round), carving itself in gold as you pull, then glowing from its own
   shape and turning while it syncs, a short flare when done; Aurora a curtain-light arc, Vardr Labs a bracketed bar
   that fills; Reduce Motion and Less motion show a still lit mark.
+- **218 (pop-up, 2026-10-21; your bug in 0.5.0):** a deleted group must end on every phone, the deleting account's other
+  phones included: fix on BOTH sides: the `deleteGroup` Function also tells the deleting account (stored, not pushed),
+  AND the apps confirm with the server when a group vanishes from the account's listing and, if it is gone, make it
+  read-only with "Group deleted" (covers groups deleted before the fix). Root cause `firebase/functions/index.js:1479`
+  (`members.filter((u) => u !== uid)`), `.drafts/groupdelete/rootcause.md`. Not a security flaw (the server refuses
+  every read and write of a deleted group).
+- **219 (pop-up):** the Functions fix deploys WITH 0.5.1's deploy, after Fable's pass (one deploy day; a CLOUD-SECURITY
+  row then). Until then the 0.5.0 workaround is deleting the group again on the other phone.
 ---
 
 ## High: user-visible behaviour or a privacy surface
