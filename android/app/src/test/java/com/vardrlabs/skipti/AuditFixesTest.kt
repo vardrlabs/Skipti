@@ -742,6 +742,7 @@ class AuditFixesTest {
     @Test
     fun export_reads_the_ledger_again_when_the_screen_lost_it() {
         val store = device("export")
+        HeldLedgers.self(store, me) // decision 208: a Just me expense is this vault's "you"'s
         store.appendExpense(ExpenseDTO(payer = me, paidMinor = 1200, currencyCode = "INR", shares = listOf(ExpenseDTO.ShareDTO(me, 1200))))
         val out = ByteArrayOutputStream()
         val n = ExportWrite.write(held = null, load = { store.snapshot() }, format = Exporter.Format.JSON, open = { out })

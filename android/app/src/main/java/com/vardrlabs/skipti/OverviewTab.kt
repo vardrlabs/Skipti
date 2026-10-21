@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -184,7 +185,7 @@ fun personTone(name: String): GroupTone {
 
 private fun money(minor: Long, code: String) = BalanceUi.moneyFormat(minor, code, AppLocale.current)
 
-private val sliceTones = listOf(GroupTone.CORAL, GroupTone.BLUE, GroupTone.TEAL, GroupTone.AMBER, GroupTone.SKY, GroupTone.PINK)
+internal val sliceTones = listOf(GroupTone.CORAL, GroupTone.BLUE, GroupTone.TEAL, GroupTone.AMBER, GroupTone.SKY, GroupTone.PINK)
 
 /** D-223 fix wave (F6): Home's place, kept by the shell above its route switch (a pushed route replaces the tabs, so
  *  Home leaves the composition): its last read and its scroll state. Home draws from them at once when it comes back,
@@ -199,6 +200,12 @@ class HomeKeep(val scroll: ScrollState = ScrollState(0)) {
     val needsName = mutableStateOf(false)
     val loaded = mutableStateOf(false)
     val error = mutableStateOf<String?>(null)
+    /** D-249 (decisions 163, 189): Your spending this month in the card's view, and your name and picture for its tile. */
+    val spending = mutableStateOf<SpendingLoad.Loaded?>(null)
+    /** D-249 fix wave (M2): this month's read failed; the card says so. */
+    val spendingFailed = mutableStateOf(false)
+    val myName = mutableStateOf<String?>(null)
+    val myAvatar = mutableStateOf<Avatar>(Avatar.None)
 
     /** Follow-up (A-R3): one read of Home, taken by [take] on the main thread. */
     fun take(read: Result<Pair<HomeOverview.Home, ActivityFeed.Loaded?>>) {
@@ -260,6 +267,8 @@ fun OverviewScreen(
     onSeeAllActivity: () -> Unit = {},
     /** D-223 fix wave (F6): Home's place, the shell's (kept across a pushed route); a screen of its own without one. */
     keep: HomeKeep = remember { HomeKeep() },
+    /** D-249: the Your spending card opens the page (the shell's, inside the tab). */
+    onOpenSpending: () -> Unit = {},
 ) {
     val knownUsername by rememberUpdatedState(username)
     val groups by keep.groups
@@ -269,6 +278,31 @@ fun OverviewScreen(
     val needsName by keep.needsName
     val loaded by keep.loaded
     val error by keep.error
+    val spending by keep.spending
+    val spendingFailed by keep.spendingFailed
+    val myName by keep.myName
+    val myAvatar by keep.myAvatar
+    val context = androidx.compose.ui.platform.LocalContext.current
+    // D-249: this month's Your spending in the card's view, your name and picture for its tile; read again on a sync, a
+    // switch of the view and a profile change (the welcome saves your name while Home waits under it). A failed read
+    // says so on the card (fix wave M2: never "Nothing yet this month", which is not known).
+    LaunchedEffect(vaultPath, SyncStatus.revision, SpendingPrefs.shownView, ProfileState.revision) {
+        val view = SpendingPrefs.shownView
+        val read = withContext(Dispatchers.IO) {
+            runCatching {
+                val store = LedgerStore(vaultPath)
+                Triple(
+                    SpendingLoad.cardRead { SpendingLoad.load(store, SpendingMonth.current(), view) },
+                    runCatching { store.loadSelf()?.name }.getOrNull(),
+                    runCatching { store.loadAvatar() }.getOrDefault(Avatar.None),
+                )
+            }.getOrNull()
+        }
+        keep.spending.value = read?.first?.first
+        keep.spendingFailed.value = read?.first?.second ?: true
+        keep.myName.value = read?.second
+        keep.myAvatar.value = read?.third ?: Avatar.None
+    }
 
     LaunchedEffect(vaultPath, SyncStatus.revision) {
         // D-223: Lately, read only (Home never marks the feed seen), inside Home's own read: a failure is Home's error
@@ -290,8 +324,9 @@ fun OverviewScreen(
         }
     }
 
-    // D-223 fix wave (F5): iOS's empty Home is its own stack, 12 apart, the Norse ornament its first child.
-    val emptyHome = needsName || (loaded && groups.isEmpty() && error == null)
+    // D-223 fix wave (F5): iOS's empty Home is its own stack, 12 apart, the Norse ornament its first child. D-249: only
+    // "Add your name" is one now (with no group yet the hero asks, in the page's own stack).
+    val emptyHome = needsName
     TabRootScaffold(
         title = "Balance",
         ornament = true,
@@ -309,22 +344,17 @@ fun OverviewScreen(
             // D-234 (L13): nothing under the title until the first read (iOS reads before its first frame), so a fresh
             // install never flashes the date and greeting before its empty state.
             !loaded -> Unit
-            loaded && groups.isEmpty() && error == null -> {
-                EmptyHome(
-                    dark, "Nothing here yet",
-                    "Create a group, join one you were invited to, or import from another app.",
-                    listOf("Create a group" to onCreateGroup, InviteCopy.JOIN_TITLE to onJoin, ImportCopy.ENTRY to onImport),
-                )
-                // C2: an account signed in before usernames were asked, with
-                // no groups yet: under the three actions, as iOS.
-                if (username == UsernameState.None) UsernameCard(dark, onPickUsername)
-            }
             else -> {
                 // D-206 (the founder's item 5): a greeting by name and time of day.
                 HomeGreeting(vaultPath, dark)
                 // C2: an account signed in before usernames were asked.
                 if (username == UsernameState.None) UsernameCard(dark, onPickUsername)
-                overview?.let { Hero(it, groups.size, dark, onSettle) }
+                // D-249 (decision 165): with no group yet the hero asks; it replaces the old empty state.
+                if (error == null && HomeHero.kind(groups.size) == HomeHero.NO_GROUP) {
+                    NoGroupHero(dark, onCreate = onCreateGroup, onJoin = onJoin, onImport = onImport)
+                } else {
+                    overview?.let { Hero(it, groups.size, dark, onSettle) }
+                }
                 // D-223 (L52, L54): "Your ledgers", a grid of cards with their meters; the old horizontal scroller is gone (L55).
                 if (groups.isNotEmpty()) {
                     // D-223 fix wave (F4): iOS's `section()` pads 4 above Home's labels.
@@ -340,6 +370,15 @@ fun OverviewScreen(
                             modifier = modifier,
                         )
                     }
+                }
+                // D-249 (decision 163): Your spending, full width under the ledgers; Spending on Home hides it.
+                if (SpendingPrefs.shownOnHome) {
+                    SectionLabel(SpendingCopy.TITLE, dark, Modifier.padding(top = 4.dp), color = Tok.text(dark))
+                    SpendingCard(
+                        spending, spendingFailed, SpendingPrefs.shownView, myName, myAvatar, dark,
+                        onView = { SpendingPrefs.setView(context, it) },
+                        onOpen = onOpenSpending,
+                    )
                 }
                 // D-223 (L53): the newest few of the feed, only when there is something to show.
                 val lately = latelyRead
@@ -390,10 +429,9 @@ object HeroKicker {
     fun usesSteel(theme: AppTheme): Boolean = theme == AppTheme.VARDR
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+/** The hero's card, shared by both heroes (D-249): the art, the kicker, then the content, 14 apart. */
 @Composable
-private fun Hero(o: OverviewOut, groupCount: Int, dark: Boolean, onSettle: () -> Unit) {
-    val first = o.totals.firstOrNull()
+private fun HeroCard(kicker: String, dark: Boolean, content: @Composable () -> Unit) {
     val dim = Tok.onHero(dark).copy(alpha = 0.82f)
     Column(
         Modifier
@@ -405,9 +443,98 @@ private fun Hero(o: OverviewOut, groupCount: Int, dark: Boolean, onSettle: () ->
         // D-217: a kicker (the micro role) at the date line's size; steel in Vardr Labs, the on-hero tone elsewhere.
         val heroKickerColour = if (HeroKicker.usesSteel(Appearance.theme)) Tok.accent(dark) else dim
         Text(
-            Type.kicker(OverviewCopy.ACROSS),
+            Type.kicker(kicker),
             style = Type.microLabel(dark).copy(fontSize = TypeScale.dateLine.sp, color = heroKickerColour),
         )
+        content()
+    }
+}
+
+/** D-249 (decision 165): the hero with no group yet: it asks, if they want to. One filled button; Join and Import are
+ *  quiet links opening today's flows. Just me never counts in the hero. The twin of iOS's `noGroupHero`. */
+@Composable
+private fun NoGroupHero(dark: Boolean, onCreate: () -> Unit, onJoin: () -> Unit, onImport: () -> Unit) {
+    val dim = Tok.onHero(dark).copy(alpha = 0.82f)
+    HeroCard(NoGroupHeroCopy.KICKER, dark) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                NoGroupHeroCopy.TITLE,
+                style = Type.display(dark).copy(fontSize = 28.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, color = Tok.onHero(dark)),
+            )
+            Text(NoGroupHeroCopy.LINE, style = Type.body(dark).copy(color = dim, fontSize = TypeScale.heroLine.sp))
+        }
+        HeroButton(NoGroupHeroCopy.CREATE, dark, onCreate)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+            HeroLink(NoGroupHeroCopy.JOIN, dark, onJoin)
+            Text(Separator.meta().withRunes(), style = Type.body(dark).copy(color = dim, fontSize = TypeScale.heroLine.sp), modifier = Modifier.clearAndSetSemantics {})
+            HeroLink(NoGroupHeroCopy.IMPORT, dark, onImport)
+        }
+    }
+}
+
+@Composable
+private fun HeroLink(label: String, dark: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .heightIn(min = 44.dp)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 6.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            label,
+            style = Type.label(dark, TypeScale.heroLine.toInt()).copy(
+                color = Tok.onHero(dark),
+                textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline,
+            ),
+        )
+    }
+}
+
+/** The hero's one filled action (Settle up; D-249: Create a group): outlined in Vardr Labs, filled onHero elsewhere. */
+@Composable
+private fun HeroButton(label: String, dark: Boolean, onClick: () -> Unit) {
+    if (ButtonLook.of(Appearance.theme) == ButtonLook.OUTLINED) {
+        // D-220 (L24): Vardr Labs' hero button is outlined: transparent, a 1 dp onHero border, the words in
+        // onHero through ButtonLook (uppercase) at .08 em, square; pressed shows an onHero film (art.py
+        // section 14). Twin of iOS's HeroButtonBody.
+        val press = remember { MutableInteractionSource() }
+        val pressed by press.collectIsPressedAsState()
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .background(Tok.onHero(dark).copy(alpha = if (pressed) Aurora.HERO_CHIP_ALPHA else 0f), RectangleShape)
+                .border(1.dp, Tok.onHero(dark), RectangleShape)
+                .clickable(interactionSource = press, indication = null, role = Role.Button, onClick = onClick)
+                .padding(vertical = 12.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                ButtonLook.label(label, Appearance.theme),
+                style = Type.label(dark, 16).copy(color = Tok.onHero(dark), letterSpacing = 0.08.em),
+            )
+        }
+    } else {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .clip(ThemeArt.controlShape(Appearance.theme))
+                .background(Tok.onHero(dark))
+                .clickable(role = Role.Button, onClick = onClick)
+                .padding(vertical = 12.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(label, style = Type.label(dark, 16).copy(color = Tok.heroStart(dark)))
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun Hero(o: OverviewOut, groupCount: Int, dark: Boolean, onSettle: () -> Unit) {
+    val first = o.totals.firstOrNull()
+    val dim = Tok.onHero(dark).copy(alpha = 0.82f)
+    HeroCard(OverviewCopy.ACROSS, dark) {
         if (first != null) {
             Column {
                 Text(
@@ -453,41 +580,7 @@ private fun Hero(o: OverviewOut, groupCount: Int, dark: Boolean, onSettle: () ->
                 )
             }
         }
-        if (first != null) {
-            if (ButtonLook.of(Appearance.theme) == ButtonLook.OUTLINED) {
-                // D-220 (L24): Vardr Labs' hero Settle up is outlined: transparent, a 1 dp onHero border, the words in
-                // onHero through ButtonLook (uppercase) at .08 em, square; pressed shows an onHero film (art.py
-                // section 14). Twin of iOS's HeroButtonBody.
-                val press = remember { MutableInteractionSource() }
-                val pressed by press.collectIsPressedAsState()
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .background(Tok.onHero(dark).copy(alpha = if (pressed) Aurora.HERO_CHIP_ALPHA else 0f), RectangleShape)
-                        .border(1.dp, Tok.onHero(dark), RectangleShape)
-                        .clickable(interactionSource = press, indication = null, role = Role.Button, onClick = onSettle)
-                        .padding(vertical = 12.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        ButtonLook.label(OverviewCopy.SETTLE_UP, Appearance.theme),
-                        style = Type.label(dark, 16).copy(color = Tok.onHero(dark), letterSpacing = 0.08.em),
-                    )
-                }
-            } else {
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(ThemeArt.controlShape(Appearance.theme))
-                        .background(Tok.onHero(dark))
-                        .clickable(onClick = onSettle)
-                        .padding(vertical = 12.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(OverviewCopy.SETTLE_UP, style = Type.label(dark, 16).copy(color = Tok.heroStart(dark)))
-                }
-            }
-        }
+        if (first != null) HeroButton(OverviewCopy.SETTLE_UP, dark, onSettle)
     }
 }
 

@@ -1497,7 +1497,9 @@ final class D235ShellTests: XCTestCase {
         XCTAssertEqual(try store.loadExpenses(), [])
         XCTAssertEqual(try store.loadSettlements(), [])
         // The good ones are written.
-        XCTAssertEqual(try store.appendExpense(dto([(you, 60), (them, 40)])).count, 1)
+        // Decision 208: a personal (Just me) expense is yours alone; one shared with someone is refused.
+        XCTAssertThrowsError(try store.appendExpense(dto([(you, 60), (them, 40)])))
+        XCTAssertEqual(try store.appendExpense(dto([(you, 100)])).count, 1)
         XCTAssertEqual(try store.appendSettlement(LedgerStore.SettlementDTO(
             from: you, to: them, amountMinor: 10, currencyCode: "USD", group: nil)).count, 1)
         // Edit expense: core's encode refuses bad new money, so the edit is not written either.

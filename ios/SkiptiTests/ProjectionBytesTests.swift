@@ -27,6 +27,7 @@ final class ProjectionBytesTests: XCTestCase {
 
     private func seededStore() throws -> LedgerStore {
         let s = LedgerStore(path: dir.appendingPathComponent("ledger.db").path)
+        try HeldLedgers.group(s, id: group, members: [me, rahul]) // decision 208
         let base = LedgerStore.ExpenseDTO(
             payer: me, paidMinor: 90_000, currencyCode: "INR", group: group, conversion: nil,
             shares: [.init(id: me, amountMinor: 45_000), .init(id: rahul, amountMinor: 45_000)],

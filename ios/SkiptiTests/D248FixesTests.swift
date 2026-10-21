@@ -103,6 +103,7 @@ final class D248FixesTests: XCTestCase {
             XCTAssertEqual(AmountEntry.minor(want, currency: "KWD", locale: locale), 1_005)
         }
         let store = LedgerStore(path: dir.appendingPathComponent("ledger.db").path)
+        try HeldLedgers.group(store, id: group, members: [me, rahul]) // decision 208
         _ = try store.appendExpense(LedgerStore.ExpenseDTO(
             payer: me, paidMinor: 1_005, currencyCode: "KWD", group: group, conversion: nil,
             shares: [.init(id: me, amountMinor: 1_000), .init(id: rahul, amountMinor: 5)],
@@ -232,8 +233,9 @@ final class D248FixesTests: XCTestCase {
             sites += text.components(separatedBy: "\"Add your name first.\"").count - 1
             sites += text.components(separatedBy: "\"Create a group first.\"").count - 1
         }
-        // ImportFlow's (older), Settle up's two, Add expense's two.
-        XCTAssertEqual(sites, 5)
+        // ImportFlow's (older), Settle up's two, Add expense's "Create a group first." (D-249: Add expense's "Add your name
+        // first." went: a group waiting on your name no longer stops a Just me expense).
+        XCTAssertEqual(sites, 4)
     }
 
     // MARK: - U30.4 the delete's Undo where it happened
@@ -241,6 +243,7 @@ final class D248FixesTests: XCTestCase {
     @MainActor
     func testTheDeleteUndoIsTheToastWhereverTheDetailOpened() throws {
         let store = LedgerStore(path: dir.appendingPathComponent("ledger.db").path)
+        try HeldLedgers.group(store, id: group, members: [me, rahul]) // decision 208
         _ = try store.appendExpense(LedgerStore.ExpenseDTO(
             payer: me, paidMinor: 120_000, currencyCode: "INR", group: group, conversion: nil,
             shares: [.init(id: me, amountMinor: 70_000), .init(id: rahul, amountMinor: 50_000)],
@@ -347,7 +350,7 @@ final class D248FixesTests: XCTestCase {
             InviteCopy.joinTitle, ImportCopy.title, ImportCopy.reviewTitle, "Profile", PeopleCopy.invitations,
             AddPersonCopy.title, PhonesCopy.title, PhonesCopy.deleteTitle, RolesCopy.redistributeTitle, UsernameCopy.title,
             UsernameCopy.change, "Expense", "Sign in", CategoryCopy.category, CategoryCopy.subcategory,
-            AddSheetCopy.splitType, AddSheetCopy.paidBy, AddSheetCopy.group,
+            AddSheetCopy.splitType, AddSheetCopy.paidBy, AddSheetCopy.ledger, SpendingCopy.title,
         ]
     }
 

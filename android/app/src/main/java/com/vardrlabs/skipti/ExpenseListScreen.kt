@@ -2,6 +2,7 @@ package com.vardrlabs.skipti
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -136,7 +137,10 @@ object ExpenseListUi {
 /** D-181: the Expenses tab's words; iOS's twin is `ExpenseCopy`. */
 object ExpenseCopy {
     const val ALL_GROUPS = "All groups"
-    const val PERSONAL = "Personal"
+    /** D-249 (U10): the no-group section and its chip (was "Personal"), still last. */
+    const val JUST_ME = SpendingCopy.JUST_ME
+    /** D-249: a Just me row's payer is always you. */
+    const val YOU = "You"
     const val NOT_INVOLVED = "not involved"
     fun effect(minor: Long, formatted: String) =
         if (minor > 0) "you lent $formatted" else if (minor < 0) "you owe $formatted" else NOT_INVOLVED
@@ -146,11 +150,29 @@ object ExpenseCopy {
 /**
  * D-181: the Expenses tab, grouped by group (the founder, 2026-09-29). A
  * section per group, the group with the newest expense first; within a
- * section, newest first; expenses in no group last, as "Personal". iOS's
- * twin: `ExpenseSections` in ExpenseListView.swift.
+ * section, newest first; expenses in no group last, as "Just me" (D-249). A chip narrows the tab to one group, or to
+ * Just me. iOS's twin: `ExpenseSections` in ExpenseListView.swift.
  */
 object ExpenseSections {
     data class Section(val groupId: String?, val expenses: List<ProjectedExpenseOut>)
+
+    /** D-249: what a chip narrows the tab to. */
+    sealed class Filter {
+        data object All : Filter()
+        data object JustMe : Filter()
+        data class Group(val id: String) : Filter()
+    }
+
+    /** D-249 fix wave (M4): All and Just me always end with the Just me section, empty when there is no Just me
+     *  expense, so its header (Your spending's door, decision 190) is there with Spending on Home off. iOS's twin. */
+    fun build(expenses: List<ProjectedExpenseOut>, filter: Filter): List<Section> = when (filter) {
+        Filter.All -> withJustMe(build(expenses, only = null))
+        is Filter.Group -> build(expenses, only = filter.id)
+        Filter.JustMe -> withJustMe(build(expenses, only = null).filter { it.groupId == null })
+    }
+
+    private fun withJustMe(sections: List<Section>): List<Section> =
+        if (sections.any { it.groupId == null }) sections else sections + Section(null, emptyList())
 
     fun build(expenses: List<ProjectedExpenseOut>, only: String?): List<Section> {
         val sorted = ExpenseListUi.sortedProjected(expenses).filter { only == null || it.expense.group == only }
@@ -168,6 +190,8 @@ fun ExpenseListScreen(
     onOpenAccount: (() -> Unit)? = null,
     /** D-225 T7 (A5): the tab's place, kept by the shell across a pushed route or another tab. */
     keep: TabKeep = remember { TabKeep() },
+    /** D-249 (decision 190): the Just me header opens Your spending (reachable with Home's card hidden). */
+    onOpenSpending: () -> Unit = {},
 ) {
     val dark = isSystemInDarkTheme()
     val scope = rememberCoroutineScope()
@@ -180,9 +204,12 @@ fun ExpenseListScreen(
     var menuFor by remember { mutableStateOf<String?>(null) }
     var confirming by remember { mutableStateOf<ProjectedExpenseOut?>(null) }
     var reloads by remember { mutableStateOf(0) }
-    /** D-181: the chip that narrows the tab to one group (null: all). D-225 T7 (A5): kept with the tab's place, so Back
-     *  from an expense returns to the same narrowed list at the same offset. */
-    var only by keep.slot<String?>("only") { null }
+    /** D-181: the chip that narrows the tab to one group (D-249: or to Just me). D-225 T7 (A5): kept with the tab's place,
+     *  so Back from an expense returns to the same narrowed list at the same offset. */
+    var filter by keep.slot<ExpenseSections.Filter>("filter") { ExpenseSections.Filter.All }
+    // D-249: your name and picture for the Just me section's tile.
+    var myName by keep.slot<String?>("myName") { null }
+    var myAvatar by keep.slot<Avatar>("myAvatar") { Avatar.None }
 
     // D-178: SyncStatus.revision: read again when sync brings records.
     LaunchedEffect(vaultPath, reloads, SyncStatus.revision) {
@@ -202,6 +229,12 @@ fun ExpenseListScreen(
                 // gets ids to edit by.
                 named to store.projectedExpenses().expenses
             }
+            val (me, avatar) = withContext(Dispatchers.IO) {
+                val store = LedgerStore(vaultPath)
+                runCatching { store.loadSelf()?.name }.getOrNull() to runCatching { store.loadAvatar() }.getOrDefault(Avatar.None)
+            }
+            myName = me
+            myAvatar = avatar
             groups = loadedGroups
             projected = loaded
             loadError = null
@@ -279,10 +312,12 @@ fun ExpenseListScreen(
                                 Modifier.horizontalScroll(rememberScrollState()),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
-                                (listOf<Pair<String?, String>>(null to ExpenseCopy.ALL_GROUPS) +
+                                // D-249: a Just me chip beside All groups once there is a Just me expense.
+                                (listOf<Pair<ExpenseSections.Filter, String>>(ExpenseSections.Filter.All to ExpenseCopy.ALL_GROUPS) +
+                                    (if (expenses.any { it.expense.group == null }) listOf(ExpenseSections.Filter.JustMe to ExpenseCopy.JUST_ME) else emptyList()) +
                                     groups.filter { g -> expenses.any { it.expense.group == g.group.id } }
-                                        .map { it.group.id to it.group.name }).forEach { (id, title) ->
-                                    val on = only == id
+                                        .map { ExpenseSections.Filter.Group(it.group.id) to it.group.name }).forEach { (value, title) ->
+                                    val on = filter == value
                                     // D-220 (L19): the filter pill, on the page ground (outlined in Vardr Labs, masking the grid).
                                     val tone = if (on) PillTone.SELECTED else PillTone.UNSELECTED
                                     Text(
@@ -290,7 +325,7 @@ fun ExpenseListScreen(
                                         style = Type.label(dark, 14).copy(color = ThemePills.text(tone, dark)),
                                         modifier = Modifier
                                             .themePill(tone, dark, onPage = true)
-                                            .selectable(selected = on, onClick = { only = id })
+                                            .selectable(selected = on, onClick = { filter = value })
                                             .padding(horizontal = 14.dp, vertical = 8.dp),
                                     )
                                 }
@@ -298,35 +333,46 @@ fun ExpenseListScreen(
                             actionError?.let {
                                 Text(it, style = Type.bodyDim(dark).copy(color = Tok.owed(dark)))
                             }
-                            ExpenseSections.build(expenses, only).forEach { section ->
+                            ExpenseSections.build(expenses, filter).forEach { section ->
                                 val named = groups.firstOrNull { it.group.id == section.groupId }
+                                val justMe = section.groupId == null
                                 Row(
                                     Modifier
                                         .padding(top = 6.dp)
+                                        // D-249 (decision 190): the Just me header opens Your spending.
+                                        .then(if (justMe) Modifier.clickable(onClickLabel = SpendingCopy.HINT, onClick = onOpenSpending) else Modifier)
                                         .semantics(mergeDescendants = true) { heading() },
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    named?.let {
-                                        GroupTile(it.group, dark, 30)
+                                    if (named != null) {
+                                        GroupTile(named.group, dark, 30)
+                                        Spacer(Modifier.width(10.dp))
+                                    } else if (justMe) {
+                                        SpendingTile(myName, myAvatar, dark, 30)
                                         Spacer(Modifier.width(10.dp))
                                     }
-                                    Text(named?.group?.name ?: ExpenseCopy.PERSONAL, style = Type.name(dark, 17), modifier = Modifier.weight(1f))
-                                    Text(ExpenseEditingUi.countLabel(section.expenses.size), style = Type.bodyDim(dark).copy(fontSize = TypeScale.groupCount.sp))
+                                    Text(named?.group?.name ?: ExpenseCopy.JUST_ME, style = Type.name(dark, 17), modifier = Modifier.weight(1f))
+                                    // D-249 fix wave (M4): an empty Just me section is its header alone (no count, no card).
+                                    if (section.expenses.isNotEmpty()) {
+                                        Text(ExpenseEditingUi.countLabel(section.expenses.size), style = Type.bodyDim(dark).copy(fontSize = TypeScale.groupCount.sp))
+                                    }
+                                    if (justMe) RowChevron(Tok.textDim(dark))
                                 }
                                 // D-234 (L12-d): iOS's 14 inside the group's card.
-                                Column(Modifier.glassCard(dark, padding = 14)) {
+                                if (section.expenses.isNotEmpty()) Column(Modifier.glassCard(dark, padding = 14)) {
                                     section.expenses.forEachIndexed { index, expense ->
                                         if (index > 0) HorizontalDivider(color = Tok.hairline(dark))
                                         Box {
                                             ExpenseRow(
                                                 expense = expense,
-                                                payerName = ExpenseListUi.memberLabel(
+                                                // D-249: a Just me row's payer is always you.
+                                                payerName = if (expense.expense.group == null) ExpenseCopy.YOU else ExpenseListUi.memberLabel(
                                                     expense.expense.payer, expense.expense.group, groups,
                                                 ),
                                                 viewer = groupOf(expense)?.selfId,
                                                 tree = tree,
                                                 dark = dark,
-                                                canEdit = groupOf(expense) != null,
+                                                canEdit = ExpenseDeleteCopy.canEdit(expense.expense.group, groupOf(expense)),
                                                 onOpen = { onOpen(expense.id) },
                                                 onMenu = { menuFor = expense.id },
                                                 onEdit = { onEdit(expense.id) },
@@ -343,7 +389,7 @@ fun ExpenseListScreen(
                                                 SkiptiWindowLocals {
                                                     DropdownMenuItem(
                                                         text = { Text("Edit", style = Type.body(dark)) },
-                                                        enabled = groupOf(expense) != null,
+                                                        enabled = ExpenseDeleteCopy.canEdit(expense.expense.group, groupOf(expense)),
                                                         onClick = {
                                                             menuFor = null
                                                             onEdit(expense.id)
@@ -375,7 +421,8 @@ fun ExpenseListScreen(
         SkiptiAlertDialog(
             onDismissRequest = { confirming = null },
             title = { Text("Delete this expense?") },
-            text = { Text("It leaves your balances. You can undo it right after.") },
+            // D-249: a Just me expense was never in a balance.
+            text = { Text(ExpenseDeleteCopy.message(justMe = e.expense.group == null)) },
             confirmButton = {
                 TextButton(onClick = {
                     confirming = null
@@ -412,12 +459,15 @@ private fun ExpenseRow(
     val spoken = BalanceUi.moneySpoken(money.paidMinor, money.currencyCode, locale)
     val categoryLine = ExpenseListUi.categoryLabel(tree, expense.category)
     val conflict = expense.moneyConflict.isNotEmpty()
-    // D-181: what it does to you (core's your_effect).
+    // D-181: what it does to you (core's your_effect). D-249: a Just me row says what it cost you ("spent ₹381.00"),
+    // core's own amount.
+    val justMe = money.group == null
     val effect = viewer?.let { runCatching { uniffi.skipti_core.ffiYourEffect(money, it) }.getOrNull() }
-    val effectText = effect?.let {
+    val effectText = if (justMe) SpendingCopy.spentAmount(amount) else effect?.let {
         ExpenseCopy.effect(it.amountMinor, BalanceUi.moneyFormat(kotlin.math.abs(it.amountMinor), it.currencyCode, locale))
     }
     val effectColour = when {
+        justMe -> Tok.textDim(dark)
         (effect?.amountMinor ?: 0L) > 0 -> Tok.owing(dark)
         (effect?.amountMinor ?: 0L) < 0 -> Tok.owed(dark)
         else -> Tok.textDim(dark)

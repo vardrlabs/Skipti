@@ -67,6 +67,8 @@ fun ExpenseDetailScreen(
     var group by remember { mutableStateOf(named) }
     // The group's history names (`historyNames`): people removed from it too.
     var history by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    // D-249: your ids, so a Just me expense reads "You" (it has no group to name you in).
+    var yourIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var loadError by remember { mutableStateOf<String?>(null) }
     var actionError by remember { mutableStateOf<String?>(null) }
     // D-235 (H1): one revision per tap: a double tap on Delete or on a version to keep writes it once.
@@ -92,6 +94,8 @@ fun ExpenseDetailScreen(
                 val groupId = found?.expense?.group
                 val copy = if (groupId == null) false else runCatching { groupId in store.readOnlyChecked() }.getOrDefault(true)
                 val names = groupId?.let { runCatching { store.historyNames(it) }.getOrDefault(emptyMap()) } ?: emptyMap()
+                val me = runCatching { store.loadSelf() }.getOrNull()
+                yourIds = listOfNotNull(me?.id).plus(me?.aliases.orEmpty()).toSet()
                 Detail(found, own, copy, names)
             }
         }
@@ -107,7 +111,10 @@ fun ExpenseDetailScreen(
         )
     }
 
-    fun name(id: String): String = group?.let { LedgerStore.label(id, it, history) } ?: history[id] ?: "Unknown member"
+    fun name(id: String): String {
+        if (expense?.expense?.group == null && id in yourIds) return ExpenseCopy.YOU
+        return group?.let { LedgerStore.label(id, it, history) } ?: history[id] ?: "Unknown member"
+    }
 
     fun write(revision: () -> uniffi.skipti_core.ExpenseRevisionIn, after: () -> Unit) {
         if (!writing.begin()) return
@@ -169,7 +176,11 @@ fun ExpenseDetailScreen(
                         },
                     )
                     Row {
-                        Text(Type.kicker("Paid by ${name(e.expense.payer)}"), style = Type.microLabel(dark).copy(color = Tok.groundFaint(dark)))
+                        // D-249: a Just me expense names its ledger, not a payer (it is always you).
+                        Text(
+                            Type.kicker(if (e.expense.group == null) SpendingCopy.JUST_ME else "Paid by ${name(e.expense.payer)}"),
+                            style = Type.microLabel(dark).copy(color = Tok.groundFaint(dark)),
+                        )
                         Spacer(Modifier.weight(1f))
                         e.timestampMs?.let {
                             Text(
@@ -180,7 +191,10 @@ fun ExpenseDetailScreen(
                     }
                 }
 
-                Column(
+                // D-249: Just me has nothing to split.
+                if (e.expense.group == null) {
+                    Text(Type.kicker(SpendingCopy.ONLY_YOU_NOTHING_TO_SPLIT), style = Type.microLabel(dark).copy(color = Tok.groundFaint(dark)))
+                } else Column(
                     Modifier
                         .fillMaxWidth()
                         .background(Tok.surface(dark), ThemeArt.panelShape(Appearance.theme, 12))
@@ -234,10 +248,11 @@ fun ExpenseDetailScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 // D-213 (fix wave 2): iOS's SecondaryButtonStyle (it is not a danger button there either).
                 SecondaryAction("Delete", dark, modifier = Modifier.weight(1f)) { confirmingDelete = true }
+                // D-249: a Just me expense edits too (it has no group by design); a group's needs its group here.
                 PrimaryAction(
                     label = "Edit",
                     dark = dark,
-                    enabled = group != null,
+                    enabled = ExpenseDeleteCopy.canEdit(expense?.expense?.group, group),
                     modifier = Modifier.weight(1f),
                     onClick = onEdit,
                 )
@@ -252,7 +267,8 @@ fun ExpenseDetailScreen(
         SkiptiAlertDialog(
             onDismissRequest = { confirmingDelete = false },
             title = { Text("Delete this expense?") },
-            text = { Text("It leaves your balances. You can undo it right after.") },
+            // D-249: a Just me expense was never in a balance.
+            text = { Text(ExpenseDeleteCopy.message(justMe = e != null && e.expense.group == null)) },
             confirmButton = {
                 TextButton(onClick = {
                     confirmingDelete = false
@@ -341,11 +357,14 @@ object ExpenseDetailUi {
      *  expense of ₹1,200 and two amount edits with empty `seen`. Returns the
      *  vault path, the expense id and the group the page names people from. */
     fun seedConflict(dir: java.io.File): Triple<String, String, NamedGroupWire> {
-        val asha = "0".repeat(31) + "1"
-        val ravi = "0".repeat(31) + "2"
-        val group = "0".repeat(31) + "9"
         val path = java.io.File(dir.apply { deleteRecursively(); mkdirs() }, "ledger-vault.db").absolutePath
         val store = LedgerStore(path)
+        // D-249 fix wave (decision 208): a write names only a held group's people, so the throwaway vault holds the
+        // proof fixture group (core-made id) and the proof's two people are its first two members.
+        val held = store.loadGroupsOrSeed().first()
+        val asha = held.members[0]
+        val ravi = held.members[1]
+        val group = held.id
         fun money(minor: Long): uniffi.skipti_core.ExpenseInput = uniffi.skipti_core.ExpenseInput(
             payer = asha, paidMinor = minor, currencyCode = "INR",
             shares = uniffi.skipti_core.ffiSplitCompute(minor, "INR", listOf(asha, ravi), uniffi.skipti_core.SplitSpecInput.Equal)
@@ -452,4 +471,15 @@ object ExpenseUndo {
             store.reviseExpense(ExpenseEditingUi.undo(current, editor))
             written(store.path)
         }.isSuccess
+}
+
+/** D-249: the delete confirmation's words and whether Edit is offered, for a group's expense and a Just me one (the
+ *  list's long press and the detail page say the same). iOS's twin is `ExpenseDeleteCopy`. */
+object ExpenseDeleteCopy {
+    const val GROUP_MESSAGE = "It leaves your balances. You can undo it right after."
+
+    fun message(justMe: Boolean): String = if (justMe) SpendingCopy.DELETE_MESSAGE else GROUP_MESSAGE
+
+    /** A Just me expense always; a group's only while this phone holds the group. */
+    fun canEdit(group: String?, named: NamedGroupWire?): Boolean = group == null || named != null
 }

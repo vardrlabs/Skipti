@@ -114,7 +114,7 @@ class ImportFlowTest {
         assertEquals(2, job.plan.expenses.size)
         // The plan was checked against the ledger plus the unsaved group. (Core
         // checks only a group id's shape today: BUILD-LOG §4, D-166.)
-        assertTrue(job.existing.groups.any { it.id == job.group.group.id })
+        assertTrue(job.existing.groups.any { it.id == job.group?.group?.id })
         ffiApplyImportPlan(job.existing, job.plan)
         assertTrue(store.loadGroups().isEmpty())
         assertTrue(store.loadExpenses().isEmpty())

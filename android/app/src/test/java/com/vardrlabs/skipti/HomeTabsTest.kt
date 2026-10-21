@@ -105,6 +105,11 @@ class HomeTabsTest {
                     "M22 4h-4",
                     "M4 18a2 2 0 1 0 0 4 2 2 0 1 0 0-4",
                 ),
+                // D-249: chart-pie, from upstream's SVG (lucide-static v1.59.0) read 2026-10-21: its two paths verbatim.
+                "chart-pie" to listOf(
+                    "M21 12c.552 0 1.005-.449.95-.998a10 10 0 0 0-8.953-8.951c-.55-.055-.998.398-.998.95v8a1 1 0 0 0 1 1z",
+                    "M21.21 15.89A10 10 0 1 1 8 2.83",
+                ),
             ),
             TabIcons.PATHS,
         )
@@ -234,7 +239,8 @@ class HomeTabsTest {
         assertTrue("the tab switch is found: $start, $end", start >= 0 && end > start)
         val pages = Regex("""^\s*(?:\} \?: if \([^)]*\) \{\s*)?(?:HomeTab\.[A-Z, .]+->\s*(?:openGroup\?\.let \{ id ->)?\s*)?([A-Z][A-Za-z]+)\(""", RegexOption.MULTILINE)
             .findAll(shell.substring(start, end)).map { it.groupValues[1] }.toSet()
-        assertEquals(setOf("GroupPage", "OverviewScreen", "GroupsTab", "ExpenseListScreen", "SettleAllScreen"), pages)
+        // D-249: Your spending's page, over Balance (the card) or Expenses (the Just me header).
+        assertEquals(setOf("GroupPage", "SpendingScreen", "OverviewScreen", "GroupsTab", "ExpenseListScreen", "SettleAllScreen"), pages)
         val sources = java.io.File("src/main/java/com/vardrlabs/skipti").walkTopDown()
             .filter { it.isFile && it.name.endsWith(".kt") }.toList()
             .also { check(it.size > 50) { "main sources not found: ${it.size}" } }

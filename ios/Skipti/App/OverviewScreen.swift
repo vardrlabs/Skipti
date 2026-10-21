@@ -92,8 +92,8 @@ enum CategoryCopy {
     static func hint(_ parent: String) -> String { "Choose one to file it under \(parent)." }
 }
 
-/// A slice colour for "Where the money went": the tones, in order.
-private func sliceColour(_ index: Int) -> Color {
+/// A slice colour for "Where the money went": the tones, in order (D-249: Your spending's bars too).
+func sliceColour(_ index: Int) -> Color {
     let tones: [GroupTone] = [.coral, .blue, .teal, .amber, .sky, .pink]
     return tones[index % tones.count].letter
 }
@@ -218,8 +218,26 @@ struct OverviewScreen: View {
     /// the cards sit in branches a sync can flip (empty Home becomes the
     /// list), and a sheet on a card was torn down with it (the D-208 class).
     @State private var pickingUsername = false
+    /// D-249 (decisions 163, 189): Your spending, read with Home; the card's switch and Spending on Home are this phone's.
+    @State private var spending: SpendingLoad.Loaded?
+    @State private var spendingFailed = false
+    @AppStorage(SpendingPrefs.viewKey) private var spendingViewRaw = SpendingPrefs.justMeRaw
+    @AppStorage(SpendingPrefs.onHomeKey) private var spendingOnHome = true
+    @State private var openSpending = false
+    /// The no-group hero's quiet links (decision 165), pushed from the always-present container (the hero goes once a
+    /// group exists).
+    @State private var joining = false
+    @State private var importing = false
+    @State private var myName: String?
+    @State private var myAvatar: Avatar = .none
+    /// The tile's name and picture follow a profile change (the welcome saves your name while Home waits under it).
+    @AppStorage(LedgerStore.profileRevisionKey) private var profileRevision = 0
 
     private var store: LedgerStore { LedgerStore.defaultStore() }
+
+    private var spendingView: Binding<SpendingView> {
+        Binding(get: { SpendingPrefs.view(spendingViewRaw) }, set: { spendingViewRaw = SpendingPrefs.raw($0) })
+    }
 
     var body: some View {
         // A container, not a Group: a Group hands its modifiers (the sheets
@@ -229,25 +247,6 @@ struct OverviewScreen: View {
                 empty(title: String(localized: "Add your name"),
                       detail: String(localized: "This ledger has a group from before names existed. Add your name once; you will see yourself as \"Name (You)\".")) {
                     Button("Add your name") { askingName = true }.buttonStyle(PrimaryButtonStyle())
-                }
-            } else if loaded && groups.isEmpty && error == nil {
-                empty(title: String(localized: "Nothing here yet"),
-                      detail: String(localized: "Create a group, join one you were invited to, or import from another app.")) {
-                    Button("Create a group") { creating = true }.buttonStyle(PrimaryButtonStyle())
-                    NavigationLink {
-                        JoinPasteScreen(store: store) { _ in
-                            NotificationCenter.default.post(name: .skiptiLedgerImported, object: nil)
-                        }
-                    } label: { Text(verbatim: InviteCopy.joinTitle) }
-                        .buttonStyle(SecondaryButtonStyle())
-                    NavigationLink(ImportCopy.entry) { ImportFlowScreen() }
-                        .buttonStyle(SecondaryButtonStyle())
-                    // C2: an account signed in before usernames were asked,
-                    // with no groups yet.
-                    if usernameState == UsernameState.none {
-                        UsernameCard { pickingUsername = true }
-                            .padding(.top, 8)
-                    }
                 }
             } else {
                 ScrollView {
@@ -259,11 +258,23 @@ struct OverviewScreen: View {
                         if usernameState == UsernameState.none {
                             UsernameCard { pickingUsername = true }
                         }
-                        if let overview { hero(overview) }
+                        // D-249 (decision 165): with no group yet the hero asks; it replaces the old empty state.
+                        if loaded && error == nil && HomeHero.kind(groupCount: groups.count) == .noGroup {
+                            noGroupHero
+                        } else if let overview {
+                            hero(overview)
+                        }
                         // D-223 (Design 1, L52): "Your ledgers" and the grid; the old per-group scroller went (L55).
                         if !groups.isEmpty {
                             section(LedgerCopy.title)
                             LedgerGrid(count: groups.count) { i in AnyView(ledgerCard(groups[i])) }
+                        }
+                        // D-249 (decision 163): Your spending, full width under the ledgers; Spending on Home hides it.
+                        if loaded && spendingOnHome {
+                            section(SpendingCopy.title)
+                            SpendingCard(loaded: spending, failed: spendingFailed, view: spendingView, name: myName, avatar: myAvatar) {
+                                openSpending = true
+                            }
                         }
                         // D-223 (L53): the newest three of the feed; hidden when there is none.
                         if !lately.entries.isEmpty {
@@ -300,6 +311,15 @@ struct OverviewScreen: View {
         .navigationDestination(item: $openedGroup) { opened in
             GroupPageScreen(groupID: opened.id)
         }
+        .navigationDestination(isPresented: $openSpending) { SpendingScreen() }
+        .navigationDestination(isPresented: $joining) {
+            JoinPasteScreen(store: store) { _ in
+                NotificationCenter.default.post(name: .skiptiLedgerImported, object: nil)
+            }
+        }
+        .navigationDestination(isPresented: $importing) { ImportFlowScreen() }
+        .onChange(of: spendingViewRaw) { loadSpending() }
+        .onChange(of: profileRevision) { loadSpending() }
         // D-248 (U30.6): a group made elsewhere (Groups, the welcome) opens here, on Home's stack.
         .onChange(of: GroupOpening.shared.pending, initial: true) { _, _ in
             if let id = GroupOpening.shared.take(root: root) { openedGroup = OpenedGroup(id: id) }
@@ -363,6 +383,7 @@ struct OverviewScreen: View {
             nowMs = RelativeWhen.nowMs
             needsYourName = false
             error = nil
+            loadSpending()
         } catch LedgerStore.GroupStoreError.needsYourName {
             needsYourName = true
         } catch {
@@ -371,12 +392,73 @@ struct OverviewScreen: View {
         loaded = true
     }
 
-    private func hero(_ o: OverviewOut) -> some View {
-        let first = o.totals.first
-        return VStack(alignment: .leading, spacing: 14) {
-            Text(verbatim: OverviewCopy.across)
+    /// D-249: this month's Your spending in the card's view, your name and picture for its tile. A failed read says so on
+    /// the card (fix wave M2: never "Nothing yet this month", which is not known).
+    private func loadSpending() {
+        (spending, spendingFailed) = SpendingLoad.cardRead {
+            try SpendingLoad.load(store, month: .current(), view: SpendingPrefs.view(spendingViewRaw))
+        }
+        let me = try? store.loadSelf()
+        myName = me?.name
+        myAvatar = (try? store.loadAvatar()) ?? .none
+    }
+
+    /// D-249 (decision 165): the hero with no group yet: it asks, if they want to. One filled button; Join and Import are
+    /// quiet links opening today's flows. Just me never counts in the hero.
+    private var noGroupHero: some View {
+        heroCard(kicker: NoGroupHeroCopy.kicker) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(verbatim: NoGroupHeroCopy.title).font(TypeRole.display(28, weight: 700)).foregroundStyle(Tokens.onHero)
+                heroDim(Text(verbatim: NoGroupHeroCopy.line))
+            }
+            Button(NoGroupHeroCopy.create) { creating = true }
+                .buttonStyle(HeroButtonStyle())
+            HStack(spacing: 6) {
+                Spacer(minLength: 0)
+                heroLink(NoGroupHeroCopy.join) { joining = true }
+                heroDim(Text(verbatim: Separator.meta)).accessibilityHidden(true)
+                heroLink(NoGroupHeroCopy.importLink) { importing = true }
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    /// D-249: the no-group hero's dim lines, in the hero line's face.
+    private func heroDim(_ text: Text) -> some View {
+        text.font(TypeRole.body(TypeScale.heroLine)).foregroundStyle(Tokens.onHero.opacity(0.82))
+    }
+
+    /// The hero's card, shared by both heroes (D-249): the kicker, the content, the clipped art and Norse's glow.
+    private func heroCard<Content: View>(kicker: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(verbatim: kicker)
                 .microLabelFont(TypeScale.dateLine)
                 .foregroundStyle(HeroKicker.usesSteel(AppearanceState.shared.theme) ? Tokens.accent : Tokens.onHero.opacity(0.82))
+            content()
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background { HeroArt().clipShape(ThemeArt.cardShape(AppearanceState.shared.theme)) }
+        // D-243 (T7): Norse's edge glow, outside the clipped art.
+        .norseEdgeGlow()
+    }
+
+    private func heroLink(_ title: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(verbatim: title)
+                .font(TypeRole.label(TypeScale.heroLine))
+                .underline()
+                .foregroundStyle(Tokens.onHero)
+                .frame(minHeight: 44)
+                .padding(.horizontal, 6)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func hero(_ o: OverviewOut) -> some View {
+        let first = o.totals.first
+        return heroCard(kicker: OverviewCopy.across) {
             if let first {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(verbatim: first.amountMinor > 0 ? OverviewCopy.getBack : OverviewCopy.owe)
@@ -406,11 +488,6 @@ struct OverviewScreen: View {
                     .buttonStyle(HeroButtonStyle())
             }
         }
-        .padding(20)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background { HeroArt().clipShape(ThemeArt.cardShape(AppearanceState.shared.theme)) }
-        // D-243 (T7): Norse's edge glow, outside the clipped art.
-        .norseEdgeGlow()
     }
 
     private func personRow(_ p: PersonNetOut) -> some View {

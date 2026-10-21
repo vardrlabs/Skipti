@@ -513,7 +513,7 @@ final class WelcomeTests: XCTestCase {
             (WelcomeCopy.pictureLine, "A photo or an emoji beside your name."), (WelcomeCopy.more, "More"),
             (WelcomeCopy.photo, "Choose a photo"), (WelcomeCopy.use, "Use this picture"),
             (WelcomeCopy.pictureFoot, ProfileCopy.phoneOnly), (WelcomeCopy.doneTitle("Sam"), "Nice to meet you, Sam"),
-            (WelcomeCopy.doneTitleNoName, "You're set"), (WelcomeCopy.doneLine, "Start a group for a trip, a flat or a dinner."),
+            (WelcomeCopy.doneTitleNoName, "You're set"), (WelcomeCopy.doneLine, "Start a group for a trip, a flat or a dinner, or keep your own spending in Just me."),
             (WelcomeCopy.startGroup, "Start a group"), (WelcomeCopy.lookAround, "Look around first"),
             (WelcomeCopy.sheetTitle, "Your picture"),
             (WelcomeCopy.groupsPicture, "Your groups will see a small copy of this picture."),

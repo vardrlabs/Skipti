@@ -681,7 +681,8 @@ class ThemeArtTest {
         val files = java.io.File("src/main/java/com/vardrlabs/skipti").listFiles()!!.filter { it.name.endsWith(".kt") }
         val uses = files.associate { it.name to it.readText().replace("fun Modifier.norseEdgeGlow(", "").split(".norseEdgeGlow(").size - 1 }
             .filterValues { it > 0 }
-        assertEquals(mapOf("Aurora.kt" to 1, "ThemeMotion.kt" to 1, "HomeParts.kt" to 1), uses)
+        // D-249: + the Ledger page's rows (a card with a selection, its glow before the clip, as the ledger card's).
+        assertEquals(mapOf("Aurora.kt" to 1, "ThemeMotion.kt" to 1, "HomeParts.kt" to 1, "Spending.kt" to 1), uses)
         val ledger = src("HomeParts.kt").substringAfter("fun LedgerCard(").substringBefore(".glassCard(dark)")
         assertTrue("the ledger card's glow is Norse's alone, before its clip",
             ledger.indexOf("if (CardStyle.of(Appearance.theme) == CardStyle.NOTCHED) Modifier.norseEdgeGlow(") in 0 until ledger.indexOf(".clip("))
@@ -1493,8 +1494,8 @@ class ThemeArtTest {
                 at = text.indexOf(".tileEdge(", at + 1)
             }
         }
-        // D-245: + the welcome's five places (W1), each in the theme's person tile.
-        assertEquals("the five tiles (group header, milestone seal, removal person, D-222 You's settings tile, D-245 W1's places)", 5, callers)
+        // D-245: + the welcome's five places (W1), each in the theme's person tile. D-249: + Just me's ᛁ tile.
+        assertEquals("the six tiles (group header, milestone seal, removal person, D-222 You's settings tile, D-245 W1's places, D-249 Just me)", 6, callers)
     }
 
     /** iOS's `static let disabledAlpha: Double = 0.45` (read from ThemeArt.swift) is Android's constant. */
@@ -1859,8 +1860,8 @@ class ThemeArtTest {
             "BalanceScreen.kt" to 4,
             // GroupsCopy.detail [GroupsScreen.swift:322]
             "GroupsTab.kt" to 1,
-            // OverviewCopy.settlesIn [OverviewScreen.swift:29]
-            "OverviewTab.kt" to 1,
+            // OverviewCopy.settlesIn [OverviewScreen.swift:29]; D-249: the no-group hero's link separator [heroDim(Separator.meta)]
+            "OverviewTab.kt" to 2,
             // RolesCopy.balanceHere [Roles.swift:185]
             "Roles.kt" to 1,
             // the two staleness lines and the "Settle in" SectionLabel [SettleScreen.swift:94, 95, 113]
@@ -1880,6 +1881,7 @@ class ThemeArtTest {
             // D-220 (L25): the photo lines only; the plain card and the tile row draw their parts with Separator.annotated.
             Triple("GroupsTab.kt", "GroupsCopy.detail(named.members.size, named.group.settlementCurrency).withRunes(),", 1),
             Triple("OverviewTab.kt", "OverviewCopy.settlesIn(n.members.size, n.group.settlementCurrency).withRunes()", 1),
+            Triple("OverviewTab.kt", "Text(Separator.meta().withRunes(), style = Type.body(dark).copy(color = dim, fontSize = TypeScale.heroLine.sp)", 1),
             Triple("GroupsTab.kt", "Separator.annotated(GroupsCopy.detailParts(", 1),
             Triple("OverviewTab.kt", "Separator.annotated(OverviewCopy.settlesInParts(", 1),
             Triple("RemovalFlow.kt", "if (sub != null) Text(sub.withRunes(), style = Type.bodyDim(dark)", 1),
@@ -1900,10 +1902,12 @@ class ThemeArtTest {
     @Test
     fun the_add_expense_group_line_is_a_label_left_and_a_dim_name_right() {
         val add = src("AddExpenseScreen.kt")
-        val branch = add.substringAfter("if (shown != null && groupRow != AddExpenseRows.GroupRow.NONE) {").substringBefore("SectionLabel(AddSheetCopy.SPLIT, dark)")
+        // D-249: the Ledger row (Just me or the group's name).
+        val branch = add.substringAfter("if (justMe || shown != null) {").substringBefore("if (justMe) CardCaption(")
+        assertTrue("the branch is found", branch.length in 1..900)
         assertFalse("no separator", "Separator" in branch)
-        assertTrue("the label is the row's title", "AddSheetCopy.GROUP, dark," in branch)
-        assertTrue("the name is the row's value", "trailing = RowTrailing.Value(shown.group.name, chevron = chooser)," in branch)
+        assertTrue("the label is the row's title", "AddSheetCopy.LEDGER, dark," in branch)
+        assertTrue("the name is the row's value", "trailing = RowTrailing.Value(if (justMe) SpendingCopy.JUST_ME else shown?.group?.name ?: \"\", chevron = chooser)," in branch)
         val value = src("ListRows.kt").substringAfter("is RowTrailing.Value -> Row(").substringBefore("is RowTrailing.Piece")
         assertTrue("right-aligned", "horizontalArrangement = Arrangement.End" in value)
         assertTrue("in textDim", "style = Type.bodyDim(dark)," in value)
@@ -1939,7 +1943,9 @@ class ThemeArtTest {
         val welcome = src("Welcome.kt")
         assertEquals(1, welcome.split("val style = Type.rune(with(density) { WelcomeProgress.RUNE_SIZE.dp.toSp() })").size - 1)
         assertEquals(1, welcome.split("style = Type.rune(with(LocalDensity.current) { runeDp.dp.toSp() }).copy(color = tint),").size - 1)
-        assertEquals(mapOf("TabBar.kt" to 1, "ThemeArt.kt" to 1, "ThemeMotion.kt" to 3, "YouProgress.kt" to 1, "AccountHubScreen.kt" to 1, "Welcome.kt" to 2), users)
+        // D-249 (decision 164): Just me's ᛁ tile in Norse.
+        assertEquals(1, src("Spending.kt").split("Text(SPENDING_RUNE, style = Type.rune((size * 0.62f).sp).copy(color = Tok.accent(dark)))").size - 1)
+        assertEquals(mapOf("TabBar.kt" to 1, "ThemeArt.kt" to 1, "ThemeMotion.kt" to 3, "YouProgress.kt" to 1, "AccountHubScreen.kt" to 1, "Welcome.kt" to 2, "Spending.kt" to 1), users)
     }
 
     // ---- D-220 Task 3: the Android call sites take the decisions (twins of iOS's ThemeArtTests guards) ----
@@ -2077,13 +2083,15 @@ class ThemeArtTest {
      *  ButtonLook at .08 em, an onHero film when pressed. Aurora and Norse keep the filled slab. */
     @Test
     fun vardr_hero_settle_is_outlined() {
-        val hero = funBody("OverviewTab.kt", "private fun Hero(")
+        // D-249: both heroes' one action is HeroButton (Settle up, and the no-group hero's Create a group).
+        assertTrue("Settle up is the hero's button", "if (first != null) HeroButton(OverviewCopy.SETTLE_UP, dark, onSettle)" in funBody("OverviewTab.kt", "private fun Hero("))
+        val hero = funBody("OverviewTab.kt", "private fun HeroButton(")
         val branch = hero.indexOf("if (ButtonLook.of(Appearance.theme) == ButtonLook.OUTLINED)")
         assertTrue("the hero branches on the look", branch >= 0)
         val outlined = hero.substring(branch)
         assertTrue("the border", ".border(1.dp, Tok.onHero(dark), RectangleShape)" in outlined)
         assertTrue("the pressed film", "Tok.onHero(dark).copy(alpha = if (pressed) Aurora.HERO_CHIP_ALPHA else 0f)" in outlined)
-        assertTrue("the words", "ButtonLook.label(OverviewCopy.SETTLE_UP, Appearance.theme)" in outlined)
+        assertTrue("the words", "ButtonLook.label(label, Appearance.theme)" in outlined)
         assertTrue("the tracking", "letterSpacing = 0.08.em" in outlined)
         assertTrue("the filled slab stays", ".background(Tok.onHero(dark))" in outlined)
     }
@@ -2267,9 +2275,13 @@ class ThemeArtTest {
         // D-225 T7: 49: Add expense's "Paid by" and "Lines" labels went (rows of the split card, Design 11), New group's
         // "Settles in" became a row, and Your name gained iOS's "Your name" label (Design 12).
         // D-216: 50, Appearance's "App icon" label. D-234 (A2): 49, the label went (the header row says it).
-        const val SECTION_LABELS = 50
+        // D-249: 54, Home's "Your spending" and the page's three (its total card's kicker, "Where the money went" and
+        // "Expenses"; iOS's twin went 39 to 42).
+        const val SECTION_LABELS = 54
         // D-225 T7 (A7): + the vault recovery screen's "Ledger unavailable" (iOS's micro label).
         // D-225 fix wave (M3): 25: Add expense's four hint kickers are one call over `AddSheetCopy.hint` (4 - 1).
-        const val KICKERS = 25
+        // D-249: 30, the spending card's "This month", the table's three column heads and the detail's "Only you. Nothing
+        // to split." (iOS's micro labels went 21 to 23, its detail line is a `micro`).
+        const val KICKERS = 30
     }
 }

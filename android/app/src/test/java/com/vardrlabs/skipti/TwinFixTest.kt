@@ -32,22 +32,15 @@ class TwinFixTest {
     /** L7 (the D-229 look's F2, decision 87): the empty lines say why, word for word iOS's. */
     @Test
     fun the_empty_lines_say_why_and_match_ios() {
-        assertEquals("Expenses belong to a group. Make one on Groups first.", AddExpenseRows.emptyLine(groupCount = 0, writableCount = 0))
-        assertEquals(
-            "You can't add to your groups from this phone. Make a new group on Groups to add one.",
-            AddExpenseRows.emptyLine(groupCount = 1, writableCount = 0),
-        )
-        assertEquals(AddExpenseRows.NONE_WRITABLE, AddExpenseRows.emptyLine(groupCount = 3, writableCount = 0))
-        assertNull(AddExpenseRows.emptyLine(groupCount = 1, writableCount = 1))
-        assertNull(AddExpenseRows.emptyLine(groupCount = 4, writableCount = 2))
+        // D-249 (U10): Add expense's two "belong to a group" lines went (Just me takes the expense); gone on both phones.
+        for (gone in listOf("Expenses belong to a group", "You can't add to your groups from this phone")) {
+            assertFalse("AddExpenseScreen.swift still says $gone", gone in swift("AddExpenseScreen.swift"))
+            assertFalse("AddExpenseScreen.kt still says $gone", gone in main("AddExpenseScreen.kt"))
+        }
         assertEquals("Nothing to settle yet. Add an expense with the + below.", SettleAllCopy.empty(0))
         assertEquals("Nothing to settle from this phone. Your groups here can't take new records.", SettleAllCopy.empty(1))
         assertEquals(SettleAllCopy.NOTHING_HERE, SettleAllCopy.empty(3))
-        val add = swift("AddExpenseScreen.swift")
-        assertTrue("static let noGroups = \"${AddExpenseRows.NO_GROUPS}\"" in add)
-        assertTrue("static let noneWritable = \"${AddExpenseRows.NONE_WRITABLE}\"" in add)
         assertTrue("static let nothingHere = \"${SettleAllCopy.NOTHING_HERE}\"" in swift("SettleAll.swift"))
-        assertTrue("the form uses it", "val emptyLine = AddExpenseRows.emptyLine(groupCount, groups.size)" in main("AddExpenseScreen.kt"))
         assertTrue("Settle up uses it", "Text(SettleAllCopy.empty(groupCount), style = Type.bodyDim(dark), modifier = Modifier.glassCard(dark))" in main("SettleAll.kt"))
     }
 
@@ -58,7 +51,8 @@ class TwinFixTest {
         val home = main("OverviewTab.kt")
         val arms = home.substringAfter("        when {\n            needsName -> EmptyHome(").substringBefore("            else -> {")
         assertTrue("an arm for the read in flight", "            !loaded -> Unit\n" in arms)
-        assertTrue("after the name, before the empty state", arms.indexOf("!loaded -> Unit") < arms.indexOf("loaded && groups.isEmpty() && error == null ->"))
+        // D-249: no empty-state arm after it (with no group yet the hero asks, in the page's own stack).
+        assertFalse("no empty state arm", "loaded && groups.isEmpty() && error == null ->" in arms)
     }
 
     /** L14 (the D-232 lock look, decision 88): phones run portrait, as the iPhone does (its Info.plist allows portrait

@@ -33,7 +33,8 @@ enum NoteLimit {
 enum AddSheetCopy {
     static let howMuch = "How much?"
     static let whatFor = "What was it for?"
-    static let group = "Group"
+    /// D-249 (U10): the row and its choice page are the ledger (Just me or a group); was "Group".
+    static let ledger = "Ledger"
     // D-225 T6 (Design 11): the split card's label and its two choice rows (the choice pages' titles), Android's words.
     static let split = "Split"
     static let splitType = "Split type"
@@ -73,30 +74,27 @@ enum AddSheetCopy {
     }
 }
 
-/// D-225 (Design 11): the Group row on Add and Edit expense. A new expense with more than one group to file it under
-/// gets a chooser (a value with a chevron, opening the choice page); a new expense with one group, or any edit (an edit
-/// stays in its own group, D-142), shows the group as a plain value; no group, no row. Android's twin is
+/// D-225 (Design 11), D-249 (U10): the Ledger row on Add and Edit expense, Just me first, then the groups this phone can
+/// add to. A new expense with a group to choose gets a chooser (a value with a chevron, opening the Ledger page); Just me
+/// alone, or any edit (an edit stays in its own ledger, D-142, decision 191), shows it as a plain value. There is always a
+/// row: Just me takes an expense when no group can (the two "belong to a group" lines went). Android's twin is
 /// `AddExpenseRows` in AddExpenseScreen.kt.
 enum AddExpenseRows {
-    enum GroupRow: Equatable {
-        case chooser, plain, none
+    enum LedgerRow: Equatable {
+        case chooser, plain
     }
 
-    static func groupRow(editing: Bool, groupCount: Int) -> GroupRow {
-        if editing { return .plain }
-        if groupCount > 1 { return .chooser }
-        return groupCount == 1 ? .plain : .none
+    static func ledgerRow(editing: Bool, writableCount: Int) -> LedgerRow {
+        !editing && writableCount > 0 ? .chooser : .plain
     }
 
-    /// D-234 (L7, decision 87): the line a new expense shows when no group can take it: no groups at all, or only groups
-    /// this phone can't add to (read-only copies); nil when one can. Android's twin is `AddExpenseRows.emptyLine`.
-    static let noGroups = "Expenses belong to a group. Make one on Groups first."
-    static let noneWritable = "You can't add to your groups from this phone. Make a new group on Groups to add one."
+    /// The ledger a new expense opens on: Just me when no group can take it, or when Add was opened from Your spending;
+    /// otherwise the group shown (GUARANTEES #2: the default path for people with groups is unchanged).
+    static func startsOnJustMe(fromSpending: Bool, writableCount: Int) -> Bool { fromSpending || writableCount == 0 }
 
-    static func emptyLine(groupCount: Int, writableCount: Int) -> String? {
-        if writableCount > 0 { return nil }
-        return groupCount == 0 ? noGroups : noneWritable
-    }
+    /// Just me has nothing to split: the Split section, the kind's hint, the itemised cards and the summary line are not
+    /// drawn; "Only you. Nothing to split." is.
+    static func showsSplit(justMe: Bool) -> Bool { !justMe }
 }
 
 /// D-248 (U30.2, decisions 184 and 203): every amount a person types is read by core's typed parser
@@ -239,9 +237,13 @@ struct AddExpenseScreen: View {
     /// only what changed (`ExpenseEditing.revision`), or nothing at all.
     let editing: ExpenseEditTarget?
 
-    init(onSaved: (() -> Void)? = nil, editing: ExpenseEditTarget? = nil) {
+    /// D-249: Add opened from Your spending starts on Just me.
+    let startOnJustMe: Bool
+
+    init(onSaved: (() -> Void)? = nil, editing: ExpenseEditTarget? = nil, startOnJustMe: Bool = false) {
         self.onSaved = onSaved
         self.editing = editing
+        self.startOnJustMe = startOnJustMe
     }
 
     enum SplitKind: String, CaseIterable, Identifiable {
@@ -300,6 +302,13 @@ struct AddExpenseScreen: View {
     /// D-248 (U29.3): the amount takes the keyboard when a NEW expense opens (never on Edit), once.
     @FocusState private var amountFocused: Bool
     @State private var focusedOnce = false
+    /// D-249 (U10): the expense goes to Just me (no group, you paid, the whole is yours); decided once per form.
+    @State private var justMe = false
+    @State private var ledgerDecided = false
+    /// Decision 193: each group's create identity (core's projection), for the Ledger page's "Since {Month Year}".
+    @State private var ledgerCreated: [String: String] = [:]
+    @State private var myName: String?
+    @State private var myAvatar: Avatar = .none
 
     private var title: String {
         editing == nil ? String(localized: "Add expense") : String(localized: "Edit expense")
@@ -322,11 +331,6 @@ struct AddExpenseScreen: View {
         // the default path is unchanged (the amount, then Add expense: you paid, everyone in, Equal).
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
-                if named == nil, error == nil, let line = AddExpenseRows.emptyLine(groupCount: groupCount, writableCount: groups.count) {
-                    Text(verbatim: line)
-                        .font(TypeRole.body())
-                        .foregroundStyle(Tokens.textDim)
-                }
                 amountBlock
                 // What it was for, its category in two steps (D-181: the category, then only its own sub-categories;
                 // only a sub-category is assigned, SPEC 8.1), and the group (D-183: what it was, then where it goes).
@@ -357,12 +361,67 @@ struct AddExpenseScreen: View {
                         }
                         .buttonStyle(.plain)
                     }
-                    groupRow
+                    ledgerRow
+                }
+                if justMe {
+                    CardCaption(SpendingCopy.onlyYouNothingToSplit)
                 }
                 if let categoryParent, selectedCategoryID == nil {
                     CardCaption(CategoryCopy.hint(CategoryLevels.name(categoryParent, in: categoryTree)))
                 }
 
+                if AddExpenseRows.showsSplit(justMe: justMe) { splitSection }
+
+                // The live line already says it; Save's refusal does not repeat it.
+                if let error, error != splitProblem {
+                    Text(verbatim: error)
+                        .font(TypeRole.body())
+                        .foregroundStyle(Tokens.owed)
+                        .accessibilityLabel(Text(verbatim: "Could not save. \(error)"))
+                }
+
+                Text("Recorded in your ledger. It does not move money.")
+                    .microLabelFont()
+                    .foregroundStyle(Tokens.textDim)
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .auroraBackground()
+        // D-183: the decimal pad has no Done key; a scroll puts it away, so
+        // the summary line under the split can be read.
+        .scrollDismissesKeyboard(.interactively)
+        // D-128: the Add tab's one action. D-139: under the form, not in it.
+        .formActionBar {
+            // D-224 (Design 8): no saved-label phase: the toast says it, and the sheet closes at once.
+            Button(editing == nil ? "Add expense" : "Save changes") { save() }
+                .buttonStyle(PrimaryButtonStyle())
+                .disabled(amountText.isEmpty || saved || (named == nil && !justMe))
+                .accessibilityHint(saveHint)
+        }
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.large)
+        .navigationDestination(isPresented: $listingCurrencies) {
+            CurrencyListScreen(selection: $currency)
+        }
+        .onChange(of: categoryParent) { _, parent in
+            selectedCategoryID = CategoryLevels.keep(selectedCategoryID, under: parent, in: categoryTree)
+        }
+        .task { loadGroup() }
+        .onAppear {
+            // D-248 (U29.3): a new expense starts at its amount, once (not again back from a choice page, not on Edit).
+            if AmountFocus.focusesOnOpen(editing: editing != nil, already: focusedOnce) {
+                focusedOnce = true
+                amountFocused = true
+            }
+        }
+    }
+
+    /// The split (D-249: never for Just me): the kind and who paid, a switch row per person, the kind's fields, its hint,
+    /// the itemised cards, then what it does for you and how far off it is.
+    @ViewBuilder
+    private var splitSection: some View {
                 header(AddSheetCopy.split)
                 // The kind and who paid (choice pages), one switch row per person (everyone in by default), then the
                 // kind's own fields, only for people in the split, in the group's order. Core computes the shares.
@@ -400,51 +459,6 @@ struct AddExpenseScreen: View {
                         .frame(maxWidth: .infinity, alignment: .center)
                         .multilineTextAlignment(.center)
                 }
-
-                // The live line already says it; Save's refusal does not repeat it.
-                if let error, error != splitProblem {
-                    Text(verbatim: error)
-                        .font(TypeRole.body())
-                        .foregroundStyle(Tokens.owed)
-                        .accessibilityLabel(Text(verbatim: "Could not save. \(error)"))
-                }
-
-                Text("Recorded in your ledger. It does not move money.")
-                    .microLabelFont()
-                    .foregroundStyle(Tokens.textDim)
-            }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .auroraBackground()
-        // D-183: the decimal pad has no Done key; a scroll puts it away, so
-        // the summary line under the split can be read.
-        .scrollDismissesKeyboard(.interactively)
-        // D-128: the Add tab's one action. D-139: under the form, not in it.
-        .formActionBar {
-            // D-224 (Design 8): no saved-label phase: the toast says it, and the sheet closes at once.
-            Button(editing == nil ? "Add expense" : "Save changes") { save() }
-                .buttonStyle(PrimaryButtonStyle())
-                .disabled(amountText.isEmpty || saved || named == nil)
-                .accessibilityHint(saveHint)
-        }
-        .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.large)
-        .navigationDestination(isPresented: $listingCurrencies) {
-            CurrencyListScreen(selection: $currency)
-        }
-        .onChange(of: categoryParent) { _, parent in
-            selectedCategoryID = CategoryLevels.keep(selectedCategoryID, under: parent, in: categoryTree)
-        }
-        .task { loadGroup() }
-        .onAppear {
-            // D-248 (U29.3): a new expense starts at its amount, once (not again back from a choice page, not on Edit).
-            if AmountFocus.focusesOnOpen(editing: editing != nil, already: focusedOnce) {
-                focusedOnce = true
-                amountFocused = true
-            }
-        }
     }
 
     /// D-183 (the founder's canvas): the amount first, big and centred, its currency on a pill. D-225 T6 (Design 11):
@@ -491,10 +505,14 @@ struct AddExpenseScreen: View {
         // D-142: an edit opens in the expense's OWN group, filled in once.
         if let editing {
             named = editing.named
+            // D-249: a Just me expense edits as Just me (decision 191: it never moves ledgers).
+            justMe = editing.expense.expense.group == nil
             if !prefilled { applyPrefill(editing) }
             return
         }
         let store = LedgerStore.defaultStore()
+        myName = (try? store.loadSelf())?.name
+        myAvatar = (try? store.loadAvatar()) ?? .none
         do {
             // D-183: the sheet can file it under any group. D-210: not a
             // read-only copy, which takes nothing new.
@@ -502,52 +520,80 @@ struct AddExpenseScreen: View {
             let all = try store.namedGroups()
             groupCount = all.count
             groups = all.filter { !copies.contains($0.group.id) }
+            ledgerCreated = Dictionary((try? LedgerStore.Sync.projectGroups(store).groups.map { ($0.group.id, $0.created) }) ?? [],
+                                       uniquingKeysWith: { a, _ in a })
             let shown = try store.currentGroup()
             let current = shown.flatMap { s in groups.first { $0.group.id == s.group.id } } ?? groups.first
             // Filled in once: coming back from All currencies runs this again,
-            // and must keep the group, people and currency already chosen.
-            if named == nil, let current {
-                named = current
-                payer = current.selfId
-                if participants.isEmpty { participants = Set(current.group.members) }
-                // A fresh form starts in the group's settlement currency (it
-                // started in USD for an INR group, seen on the simulator).
-                if amountText.isEmpty { currency = current.group.settlementCurrency }
+            // and must keep the ledger, people and currency already chosen.
+            if !ledgerDecided {
+                ledgerDecided = true
+                // D-249: Just me with no group to take it, or from Your spending (the read-only case, silently).
+                if AddExpenseRows.startsOnJustMe(fromSpending: startOnJustMe, writableCount: groups.count) {
+                    justMe = true
+                } else if let current {
+                    named = current
+                    payer = current.selfId
+                    if participants.isEmpty { participants = Set(current.group.members) }
+                    // A fresh form starts in the group's settlement currency (it
+                    // started in USD for an INR group, seen on the simulator).
+                    if amountText.isEmpty { currency = current.group.settlementCurrency }
+                }
             }
         } catch LedgerStore.GroupStoreError.needsYourName {
-            error = String(localized: "Add your name first.")
+            // D-249: a group waits on your name; Just me does not.
+            groups = []
+            if !ledgerDecided { ledgerDecided = true; justMe = true }
         } catch {
             self.error = "\(error)"
         }
     }
 
-    /// D-183: the Group row (D-225 T6, Design 11: `AddExpenseRows.groupRow`). A new expense with more than one group
-    /// opens the group page (the shown group first); one group, or an edit (it stays in its own, D-142), shows it plainly.
+    /// D-183, D-249: the Ledger row (`AddExpenseRows.ledgerRow`). A new expense with a group to choose opens the Ledger
+    /// page (decision 193's rich rows, Just me first); Just me alone, or an edit (it stays in its own ledger), shows it
+    /// plainly.
     @ViewBuilder
-    private var groupRow: some View {
-        if let named {
-            switch AddExpenseRows.groupRow(editing: editing != nil, groupCount: groups.count) {
+    private var ledgerRow: some View {
+        if justMe || named != nil {
+            let value = justMe ? SpendingCopy.justMe : (named?.group.name ?? "")
+            switch AddExpenseRows.ledgerRow(editing: editing != nil, writableCount: groups.count) {
             case .chooser:
                 NavigationLink {
-                    ChoicePage(title: AddSheetCopy.group, options: groups.map { ChoiceOption(value: $0.group.id, label: $0.group.name) },
-                               chosen: named.group.id) { choose($0) }
+                    LedgerChoicePage(options: LedgerOptions.build(groups: groups, created: ledgerCreated),
+                                     chosen: justMe ? .justMe : .group(named?.group.id ?? ""),
+                                     name: myName, avatar: myAvatar) { chooseLedger($0) }
                 } label: {
-                    ListRow(title: AddSheetCopy.group, trailing: .value(named.group.name, chevron: true))
+                    ListRow(title: AddSheetCopy.ledger, trailing: .value(value, chevron: true))
                 }
                 .buttonStyle(.plain)
             case .plain:
-                ListRow(title: AddSheetCopy.group, trailing: .value(named.group.name, chevron: false))
-            case .none:
-                EmptyView()
+                ListRow(title: AddSheetCopy.ledger, trailing: .value(value, chevron: false))
             }
+        }
+    }
+
+    /// D-249: Just me (no people, the default currency unless one was picked) or a group (`choose`).
+    private func chooseLedger(_ choice: LedgerChoice) {
+        switch choice {
+        case .justMe:
+            guard !justMe else { return }
+            let previousCurrency = named?.group.settlementCurrency
+            justMe = true
+            named = nil
+            payer = ""
+            participants = []
+            if amountText.isEmpty || currency == previousCurrency { currency = DefaultCurrency.current }
+        case .group(let id):
+            choose(id)
         }
     }
 
     /// D-183: another group: its people, you paying, everyone in, and its
     /// currency unless one was picked for this expense.
     private func choose(_ id: String) {
-        guard let next = groups.first(where: { $0.group.id == id }), next.group.id != named?.group.id else { return }
-        let previousCurrency = named?.group.settlementCurrency
+        guard let next = groups.first(where: { $0.group.id == id }), justMe || next.group.id != named?.group.id else { return }
+        let previousCurrency = justMe ? DefaultCurrency.current : named?.group.settlementCurrency
+        justMe = false
         named = next
         payer = next.selfId
         participants = Set(next.group.members)
@@ -731,6 +777,10 @@ struct AddExpenseScreen: View {
             guard total > 0 else {
                 throw CoreError.InvalidInput("the amount must be positive")
             }
+            if justMe {
+                try saveJustMe(total: total)
+                return
+            }
             let roster = participants.sorted()
             let spec = try buildSpec(roster: roster)
             let computed = try ffiSplitCompute(
@@ -781,6 +831,28 @@ struct AddExpenseScreen: View {
         }
     }
 
+    /// D-249 (U10): a Just me expense, new or edited: you paid and the whole is yours, no group (the personal scope). The
+    /// store runs core's `ffiCheckExpense` and the note bound before anything is written (decisions 103, 112).
+    private func saveJustMe(total: Int64) throws {
+        let store = LedgerStore.defaultStore()
+        let me = try store.ensureSelf()
+        if let editing {
+            let money = JustMeExpense.money(payer: editing.expense.expense.payer, totalMinor: total, currency: currency)
+            if let revision = ExpenseEditing.revision(editing: editing.expense, money: money, note: note,
+                                                      category: selectedCategoryID, editor: me.id) {
+                try editing.store.reviseExpense(revision)
+                CloudSync.shared.ledgerChanged()
+            }
+        } else {
+            _ = try store.appendExpense(JustMeExpense.dto(you: me.id, totalMinor: total, currency: currency,
+                                                         note: note.isEmpty ? nil : note, category: selectedCategoryID))
+            CloudSync.shared.ledgerChanged()
+        }
+        saved = true
+        DoneCenter.shared.post(DoneMoments.expense(edited: editing != nil, note: note, paidMinor: total, currency: currency))
+        if let onSaved { onSaved() } else { dismiss() }
+    }
+
     /// D-142: the stored expense as the form's starting state.
     private func applyPrefill(_ target: ExpenseEditTarget) {
         prefilled = true
@@ -813,7 +885,7 @@ struct AddExpenseScreen: View {
         )
         if let revision = ExpenseEditing.revision(
             editing: target.expense, money: money, note: note,
-            category: selectedCategoryID, editor: target.named.selfId
+            category: selectedCategoryID, editor: target.named?.selfId
         ) {
             try target.store.reviseExpense(revision)
             CloudSync.shared.ledgerChanged()

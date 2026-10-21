@@ -46,7 +46,8 @@ enum WelcomeCopy {
     // W5
     static func doneTitle(_ name: String) -> String { "Nice to meet you, \(name)" }
     static let doneTitleNoName = "You're set"
-    static let doneLine = "Start a group for a trip, a flat or a dinner."
+    /// Decision 180: names Just me now that Just me exists (D-249).
+    static let doneLine = "Start a group for a trip, a flat or a dinner, or keep your own spending in Just me."
     static let startGroup = "Start a group"
     static let lookAround = "Look around first"
 

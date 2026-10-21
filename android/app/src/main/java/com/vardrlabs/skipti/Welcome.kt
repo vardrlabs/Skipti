@@ -141,7 +141,8 @@ object WelcomeCopy {
     // W5
     fun doneTitle(name: String) = "Nice to meet you, $name"
     const val DONE_TITLE_NO_NAME = "You're set"
-    const val DONE_LINE = "Start a group for a trip, a flat or a dinner."
+    /** Decision 180: names Just me now that Just me exists (D-249). */
+    const val DONE_LINE = "Start a group for a trip, a flat or a dinner, or keep your own spending in Just me."
     const val START_GROUP = "Start a group"
     const val LOOK_AROUND = "Look around first"
 

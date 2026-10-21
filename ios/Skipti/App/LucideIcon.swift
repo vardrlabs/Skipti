@@ -254,7 +254,7 @@ enum LucideStroke {
     static let plus: CGFloat = 2.8
 }
 
-/// The Lucide drawings SKIPTI ships (NOTICE: twenty since D-231). Path data is copied
+/// The Lucide drawings SKIPTI ships (NOTICE: twenty-one since D-249). Path data is copied
 /// VERBATIM from `android/app/src/main/java/com/vardrlabs/skipti/TabIcons.kt`.
 /// If these strings ever differ from Android's, one shell is drawing a
 /// different icon, and the D-128 test pins them.
@@ -290,6 +290,8 @@ enum LucideGlyph: String, CaseIterable {
     case lock
     /// D-231 (decision 69): the Less motion row's icon tile on Appearance.
     case sparkles
+    /// D-249 (decision 163): the Spending on Home row's icon tile on Appearance.
+    case chartPie = "chart-pie"
 
     var pathData: [String] {
         switch self {
@@ -399,6 +401,13 @@ enum LucideGlyph: String, CaseIterable {
                 "M20 2v4",
                 "M22 4h-4",
                 "M4 18a2 2 0 1 0 0 4 2 2 0 1 0 0-4",
+            ]
+        // D-249: read 2026-10-21 from upstream (lucide-static v1.59.0 icons/chart-pie.svg), its two paths verbatim, in
+        // upstream's order. Not on Lucide's Feather-derived list: ISC only (NOTICE).
+        case .chartPie:
+            return [
+                "M21 12c.552 0 1.005-.449.95-.998a10 10 0 0 0-8.953-8.951c-.55-.055-.998.398-.998.95v8a1 1 0 0 0 1 1z",
+                "M21.21 15.89A10 10 0 1 1 8 2.83",
             ]
         }
     }

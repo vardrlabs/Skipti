@@ -192,10 +192,14 @@ final class BalanceLineTests: XCTestCase {
             spec: .equal
         )
         XCTAssertEqual(computed.map(\.minorUnits), [834, 833, 833], "largest-remainder via core")
+        // Decision 208: a shared expense belongs to a group the vault holds, its people the group's.
+        let trip = String(repeating: "0", count: 31) + "7"
+        try HeldLedgers.group(store, id: trip, members: [Fixtures.ada, Fixtures.rahul, Fixtures.priya], currency: "USD")
         _ = try store.appendExpense(.init(
             payer: Fixtures.ada,
             paidMinor: 2_500,
             currencyCode: "USD",
+            group: trip,
             shares: computed.map { .init(id: $0.id, amountMinor: $0.minorUnits) }
         ))
 
@@ -207,7 +211,7 @@ final class BalanceLineTests: XCTestCase {
             settlements: [],
             redistributions: [],
             removed: [], viewer: Fixtures.ada,
-            group: nil
+            group: trip
         )
         XCTAssertEqual(lines.count, 1)
         XCTAssertEqual(lines[0].currencyCode, "USD")
@@ -1052,7 +1056,7 @@ final class BalanceLineTests: XCTestCase {
 
         XCTAssertEqual(AddSheetCopy.howMuch, "How much?")
         XCTAssertEqual(AddSheetCopy.whatFor, "What was it for?")
-        XCTAssertEqual(AddSheetCopy.group, "Group")
+        XCTAssertEqual(AddSheetCopy.ledger, "Ledger")
         XCTAssertEqual(AddSheetCopy.summary(effect: 3_200, formatted: "€32.00"), "You\u{2019}ll get back €32.00")
         XCTAssertEqual(AddSheetCopy.summary(effect: -3_200, formatted: "€32.00"), "You\u{2019}ll owe €32.00")
         XCTAssertEqual(AddSheetCopy.summary(effect: 0, formatted: "€0.00"), "Nothing changes for you")

@@ -42,17 +42,16 @@ class AddExpenseTest {
         val opener: () -> uniffi.skipti_core.SkiptiVault = { SkiptiVault.open(path, keystore) }
     }
 
-    /** D-225 (Design 11): Add expense's Group row; the twin of iOS's
-     *  testTheGroupRowOffersAChooserOnlyToANewExpenseWithAChoice. A new expense with more than one group offers the
-     *  chooser; one group or any edit (an edit stays in its own group) shows it plainly; no group, no row. */
+    /** D-225 (Design 11), D-249 (U10): Add expense's Ledger row; the twin of iOS's
+     *  testTheLedgerRowOffersAChooserOnlyToANewExpenseWithAChoice. Just me plus any writable group is a choice for a new
+     *  expense; Just me alone, or any edit (an edit stays in its own ledger), shows it plainly. There is always a row. */
     @Test
-    fun the_group_row_offers_a_chooser_only_to_a_new_expense_with_a_choice() {
-        assertEquals("an edit never moves group", AddExpenseRows.GroupRow.PLAIN, AddExpenseRows.groupRow(editing = true, groupCount = 2))
-        assertEquals(AddExpenseRows.GroupRow.PLAIN, AddExpenseRows.groupRow(editing = true, groupCount = 1))
-        assertEquals(AddExpenseRows.GroupRow.CHOOSER, AddExpenseRows.groupRow(editing = false, groupCount = 2))
-        assertEquals(AddExpenseRows.GroupRow.CHOOSER, AddExpenseRows.groupRow(editing = false, groupCount = 5))
-        assertEquals(AddExpenseRows.GroupRow.PLAIN, AddExpenseRows.groupRow(editing = false, groupCount = 1))
-        assertEquals(AddExpenseRows.GroupRow.NONE, AddExpenseRows.groupRow(editing = false, groupCount = 0))
+    fun the_ledger_row_offers_a_chooser_only_to_a_new_expense_with_a_choice() {
+        assertEquals("an edit never moves ledger", AddExpenseRows.LedgerRow.PLAIN, AddExpenseRows.ledgerRow(editing = true, writableCount = 2))
+        assertEquals(AddExpenseRows.LedgerRow.PLAIN, AddExpenseRows.ledgerRow(editing = true, writableCount = 0))
+        assertEquals(AddExpenseRows.LedgerRow.CHOOSER, AddExpenseRows.ledgerRow(editing = false, writableCount = 2))
+        assertEquals(AddExpenseRows.LedgerRow.CHOOSER, AddExpenseRows.ledgerRow(editing = false, writableCount = 1))
+        assertEquals(AddExpenseRows.LedgerRow.PLAIN, AddExpenseRows.ledgerRow(editing = false, writableCount = 0))
     }
 
     // ---- D-225 Task 7 (Design 11): Add and Edit expense in list cards with choice pages (twins of iOS's Task 6) ----
@@ -69,8 +68,11 @@ class AddExpenseTest {
         for (gone in listOf("OutlinedTextField", "ExposedDropdownMenuBox", "FilterChip", "Checkbox(", "fun ChoiceDropdown(", "FlowRow")) {
             assertFalse("Add expense keeps $gone", gone in t)
         }
-        assertEquals("five choice pages", 5, t.split("ChoicePage(").size - 1)
-        for (title in listOf("CategoryCopy.CATEGORY", "CategoryCopy.SUBCATEGORY", "AddSheetCopy.GROUP", "AddSheetCopy.SPLIT_TYPE", "AddSheetCopy.PAID_BY")) {
+        // D-249: four choice pages, and the Ledger row opens decision 193's rich page.
+        assertEquals("four choice pages", 4, Regex("""(?<!Ledger)ChoicePage\(""").findAll(t).count())
+        assertEquals("the Ledger page", 1, Regex("""LedgerChoicePage\(\s*LedgerOptions\.build\(""").findAll(t).count())
+        assertTrue("a row opening the Ledger page", Regex("""ListRow\(\s*AddSheetCopy\.LEDGER,""").containsMatchIn(t))
+        for (title in listOf("CategoryCopy.CATEGORY", "CategoryCopy.SUBCATEGORY", "AddSheetCopy.SPLIT_TYPE", "AddSheetCopy.PAID_BY")) {
             assertTrue("a choice page titled $title", Regex("""ChoicePage\(\s*$title,""").containsMatchIn(t))
             assertTrue("a row opening $title", Regex("""ListRow\(\s*$title,""").containsMatchIn(t))
         }
@@ -80,7 +82,7 @@ class AddExpenseTest {
             "AddSheetCopy.WHAT_FOR", "\"Amount for \${name(id)}\"", "\"Percent for \${name(id)}\"", "\"Shares for \${name(id)}\"",
             "\"Adjustment for \${name(id)}\"", "\"Line amount\"", "\"Tax\"", "\"Tip\"",
         )) assertTrue("a field row for $field", Regex("""FieldRow\([^\n]*\n?[^\n]*${Regex.escape(field)}""").containsMatchIn(t))
-        assertTrue("the Group row's decision", "AddExpenseRows.groupRow(editingId != null, groups.size)" in t)
+        assertTrue("the Ledger row's decision", "AddExpenseRows.ledgerRow(editingId != null, groups.size)" in t)
         assertTrue("the split's label", "SectionLabel(AddSheetCopy.SPLIT, dark)" in t)
         assertTrue("Save is still the pinned action", "actions = {\n            PrimaryAction(" in t)
     }
@@ -247,6 +249,8 @@ class AddExpenseTest {
     @Test
     fun append_expense_persists_through_the_vault_loop() {
         val fixture = VaultFixture()
+        // Decision 208: the vault holds the group (its id is the fixture's) and its people.
+        HeldLedgers.group(fixture.store(), BalanceFixtures.ada, listOf(BalanceFixtures.ada, BalanceFixtures.rahul, BalanceFixtures.amit))
         val first = AddExpenseUi.buildExpense(
             amountText = "25.00", currency = "USD", note = "Taxi",
             category = null,

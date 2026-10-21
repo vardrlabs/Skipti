@@ -734,6 +734,31 @@ pub fn snapshot_for_group(s: &LedgerSnapshot, group: &str) -> LedgerSnapshot {
     }
 }
 
+/// D-248: the "Export Just me" slice of a snapshot, the twin of
+/// [`snapshot_for_group`]: every personal (group-less) expense and
+/// settlement. Every group, every group's records and every redistribution
+/// (each names a group) are dropped, and so is the profile, as for a group's
+/// slice: the export is a ledger, not you.
+pub fn snapshot_personal(s: &LedgerSnapshot) -> LedgerSnapshot {
+    LedgerSnapshot {
+        groups: Vec::new(),
+        expenses: s
+            .expenses
+            .iter()
+            .filter(|e| e.group.is_none())
+            .cloned()
+            .collect(),
+        settlements: s
+            .settlements
+            .iter()
+            .filter(|x| x.group.is_none())
+            .cloned()
+            .collect(),
+        redistributions: Vec::new(),
+        profile: None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1049,6 +1074,78 @@ mod tests {
             snapshot_for_group(&all, "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0"),
             LedgerSnapshot::default()
         );
+    }
+
+    /// D-248: the Just me slice keeps every group-less expense and
+    /// settlement and nothing of any group; the profile stays out.
+    #[test]
+    fn the_just_me_snapshot_holds_only_personal_records() {
+        let ga = "c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0";
+        let expense = |g: Option<&str>, minor: i64| PortExpense {
+            payer: ADA.into(),
+            paid_minor: minor,
+            currency_code: "INR".into(),
+            group: g.map(str::to_string),
+            conversion: None,
+            shares: vec![ExpenseShare {
+                id: ADA.into(),
+                amount_minor: minor,
+            }],
+            note: None,
+            timestamp_ms: None,
+            category: None,
+        };
+        let settle = |g: Option<&str>, minor: i64| PortSettlement {
+            from: BOB.into(),
+            to: ADA.into(),
+            amount_minor: minor,
+            currency_code: "INR".into(),
+            group: g.map(str::to_string),
+        };
+        let all = LedgerSnapshot {
+            groups: vec![PortGroup {
+                id: ga.into(),
+                name: "A".into(),
+                settlement_currency: "INR".into(),
+                members: vec![ADA.into(), BOB.into()],
+            }],
+            expenses: vec![
+                expense(Some(ga), 100),
+                expense(None, 300),
+                expense(None, 400),
+            ],
+            settlements: vec![settle(Some(ga), 10), settle(None, 30)],
+            redistributions: vec![PortRedistribution {
+                from: BOB.into(),
+                currency_code: "INR".into(),
+                group: ga.into(),
+                shares: vec![ExpenseShare {
+                    id: ADA.into(),
+                    amount_minor: -500,
+                }],
+            }],
+            profile: Some(PortProfile {
+                name: Some("Tim".into()),
+                emoji: None,
+                photo_hex: None,
+            }),
+        };
+        assert_eq!(validate_snapshot(&all), Ok(()));
+        let mine = snapshot_personal(&all);
+        assert_eq!(
+            mine,
+            LedgerSnapshot {
+                expenses: vec![expense(None, 300), expense(None, 400)],
+                settlements: vec![settle(None, 30)],
+                ..LedgerSnapshot::default()
+            }
+        );
+        assert_eq!(validate_snapshot(&mine), Ok(()));
+        // A ledger with only groups gives an empty slice.
+        let mut groups_only = all.clone();
+        groups_only.expenses.retain(|e| e.group.is_some());
+        groups_only.settlements.retain(|x| x.group.is_some());
+        assert_eq!(snapshot_personal(&groups_only), LedgerSnapshot::default());
     }
 
     #[test]

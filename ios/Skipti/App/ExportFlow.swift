@@ -160,7 +160,7 @@ final class ExportFlowModel {
     /// The write. Structurally refuses an unacknowledged session: there is
     /// no parameter, default, or flag that lowers this gate.
     @discardableResult
-    func export(format: Format, snapshot: LedgerSnapshot) throws -> URL {
+    func export(format: Format, snapshot: LedgerSnapshot, justMe: Bool = false) throws -> URL {
         guard acknowledged else { throw FlowError.notAcknowledged }
         do {
             let text: String
@@ -168,7 +168,7 @@ final class ExportFlowModel {
             case .csv: text = try ffiExportLedgerCsv(snapshot: snapshot)
             case .json: text = try ffiExportLedgerJson(snapshot: snapshot)
             }
-            let url = try Exporter.write(text: text, format: format.exporterFormat)
+            let url = try Exporter.write(text: text, format: format.exporterFormat, justMe: justMe)
             exportedURL = url
             failureText = nil
             return url
@@ -203,6 +203,9 @@ struct ExportScreen: View {
     /// D-210: one group's export (a read-only copy exports only that group);
     /// nil is the whole ledger.
     var group: String? = nil
+    /// D-249 (U10): "Export Just me": the personal scope only (core's `ffiSnapshotPersonal`), named
+    /// `skipti-just-me-YYYY-MM`.
+    var justMe = false
     @State private var model = ExportFlowModel()
     @State private var snapshot: LedgerSnapshot?
     @State private var loadFailed = false
@@ -253,7 +256,7 @@ struct ExportScreen: View {
                 .foregroundStyle(Tokens.text)
                 .accessibilityLabel(ExportFlowModel.warningText)
 
-            if group == nil {
+            if group == nil && !justMe {
                 Text("Your whole ledger leaves the encrypted store in one file.")
                     .font(TypeRole.body())
                     .foregroundStyle(Tokens.textDim)
@@ -327,7 +330,7 @@ struct ExportScreen: View {
         lastFormat = format
         model.acknowledge()
         do {
-            let url = try model.export(format: format, snapshot: snapshot)
+            let url = try model.export(format: format, snapshot: snapshot, justMe: justMe)
             shareURL = url
             // D-224 (Design 7): the page shows the file; only the success haptic, through the app's gate.
             DoneCenter.shared.success()
@@ -339,7 +342,8 @@ struct ExportScreen: View {
     private func loadSnapshot() {
         DispatchQueue.global(qos: .userInitiated).async {
             do {
-                let s = try group.map { try store.snapshot(group: $0) } ?? store.snapshot()
+                let s = justMe ? ffiSnapshotPersonal(snapshot: try store.snapshot())
+                    : try group.map { try store.snapshot(group: $0) } ?? store.snapshot()
                 DispatchQueue.main.async {
                     snapshot = s
                     isEmpty = s.expenses.isEmpty && s.settlements.isEmpty && s.redistributions.isEmpty

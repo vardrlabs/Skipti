@@ -54,9 +54,8 @@ enum Exporter {
     /// Writes the export to a fresh file and returns its URL. The file is
     /// PLAINTEXT (§9.4's warning is the caller's obligation to show first:
     /// this function does not and cannot un-write that fact).
-    static func write(text: String, format: Format, date: Date = Date()) throws -> URL {
-        let stamp = Self.filenameStamp(date)
-        let name = "\(filePrefix)\(stamp).\(format.fileExtension)"
+    static func write(text: String, format: Format, date: Date = Date(), justMe: Bool = false) throws -> URL {
+        let name = justMe ? justMeName(date, format: format) : "\(filePrefix)\(Self.filenameStamp(date)).\(format.fileExtension)"
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
         try Self.fileData(for: text, format: format).write(to: url, options: .atomic)
         return url
@@ -64,6 +63,19 @@ enum Exporter {
 
     /// Every export file's name starts with this (`write`).
     static let filePrefix = "skipti-export-"
+    /// D-249 (U10): "Export Just me" writes `skipti-just-me-YYYY-MM-DD.csv` (or .json): fixed text and the day it was
+    /// made, never a name (SPEC 9.3). Decision 207: the phone's own date (Gregorian, in `timeZone`), not UTC, and the
+    /// day, not a month (the file holds every Just me month). Android's twin is `Exporter.justMeName`.
+    static let justMePrefix = "skipti-just-me-"
+
+    static func justMeName(_ date: Date, format: Format, timeZone: TimeZone = .current) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = timeZone
+        formatter.dateFormat = "yyyy-MM-dd"
+        return "\(justMePrefix)\(formatter.string(from: date)).\(format.fileExtension)"
+    }
 
     /// D-235 (C4, iOS M1): the plaintext export files in `directory` (the app's tmp): removed once the share sheet is
     /// done with one, when the export page closes, at launch, and by the erase (whose copy says everything SKIPTI kept
@@ -73,7 +85,7 @@ enum Exporter {
     static func removeExports(in directory: URL = FileManager.default.temporaryDirectory) throws -> Int {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
         var removed = 0
-        for name in names where name.hasPrefix(filePrefix) {
+        for name in names where name.hasPrefix(filePrefix) || name.hasPrefix(justMePrefix) {
             try FileManager.default.removeItem(at: directory.appendingPathComponent(name))
             removed += 1
         }

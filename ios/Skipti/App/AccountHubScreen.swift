@@ -1092,6 +1092,8 @@ struct SettingsSectionScreen: View {
             HapticsRow()
             // D-231 (decision 69): the Less motion row, after Haptics (a sibling in the page's stack, 16 below it).
             MotionRow()
+            // D-249 (decision 163): Spending on Home, after Less motion; this phone's own (decision 189).
+            SpendingHomeRow()
         case .appLock, .privacy, .phones, .erase, .deleteAccount, .currency, .export, .importData:
             // D-225: Security's and Your data's items are drawn by securityPage and yourDataPage.
             EmptyView()

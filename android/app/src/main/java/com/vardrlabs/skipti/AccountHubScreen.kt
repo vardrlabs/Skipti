@@ -722,6 +722,9 @@ fun AccountHubScreen(
                     // D-231 (decision 69): the Less motion row, after Haptics, 16 below it as the page's items.
                     Spacer(Modifier.height(16.dp))
                     MotionRow(dark)
+                    // D-249 (decision 163): Spending on Home, after Less motion; this phone's own (decision 189).
+                    Spacer(Modifier.height(16.dp))
+                    SpendingHomeRow(dark)
                 }
                 // D-225: Security's and Your data's items are drawn by SecurityPage and YourDataPage.
                 SettingItem.APP_LOCK, SettingItem.PRIVACY, SettingItem.PHONES, SettingItem.ERASE, SettingItem.DELETE_ACCOUNT,
@@ -946,6 +949,7 @@ private fun settingsGlyph(name: String): ImageVector = when (name) {
     "info" -> TabIcons.Info
     "vibrate" -> TabIcons.Vibrate
     "sparkles" -> TabIcons.Sparkles
+    "chart-pie" -> TabIcons.ChartPie
     else -> error("no drawing for $name")
 }
 
@@ -989,6 +993,27 @@ private fun MotionRow(dark: Boolean) {
                 parts = listOf(MotionCopy.SUMMARY),
                 trailing = RowTrailing.Toggle(Appearance.lessMotion) { on -> Appearance.setLessMotion(context, on) },
                 leading = { SettingsTile("sparkles", dark) },
+            )
+        }
+    }
+}
+
+/** D-249 (decision 163): Appearance's "Spending on Home" row, the twin of iOS's `SpendingHomeRow`: one list card, the
+ *  chart-pie tile, the title over the summary on two lines (the approved words do not fit one on the narrowest phones:
+ *  the width tables, decision 82), and the switch; on until turned off; this phone's own (decision 189), so it writes
+ *  [SpendingPrefs] directly, never through SettingsSync. Off hides Home's Your spending section only. */
+@Composable
+private fun SpendingHomeRow(dark: Boolean) {
+    val context = LocalContext.current
+    ListCard(dark) {
+        row {
+            ListRow(
+                SpendingCopy.HOME_ROW,
+                dark,
+                parts = listOf(SpendingCopy.HOME_SUMMARY),
+                summaryLines = 2,
+                trailing = RowTrailing.Toggle(SpendingPrefs.shownOnHome) { on -> SpendingPrefs.setOnHome(context, on) },
+                leading = { SettingsTile("chart-pie", dark) },
             )
         }
     }

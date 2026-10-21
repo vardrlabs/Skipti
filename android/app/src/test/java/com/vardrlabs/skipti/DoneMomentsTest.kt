@@ -1177,6 +1177,9 @@ class DoneMomentsTest {
                 }
         rows += SummaryRow("Haptics", listOf(DoneCopy.HAPTICS_SUMMARY), tile = true, trailing = toggle)
         rows += SummaryRow("Less motion", listOf(MotionCopy.SUMMARY), tile = true, trailing = toggle)
+        // D-249 (decision 163): Spending on Home, the same switch row. Two lines: the approved words are wider than a
+        // 360 dp phone's switch row in every theme (iOS's table says the same).
+        rows += SummaryRow("Spending on Home", listOf(SpendingCopy.HOME_SUMMARY), lines = 2, tile = true, trailing = toggle)
         for (lock in LockTimeout.entries) rows += SummaryRow("App lock", listOf(SecurityRows.appLockLine(lock, true)), trailing = chevron)
         rows += SummaryRow("App lock", listOf(SecurityRows.appLockLine(LockTimeout.OFF, false)), trailing = chevron)
         rows += SummaryRow("Erase", listOf(SecurityRows.ERASE_SUMMARY), trailing = chevron)

@@ -670,7 +670,8 @@ final class ThemeMotionTests: XCTestCase {
             }
         }
         XCTAssertGreaterThanOrEqual(dim, 30, "the walk saw the labels")
-        XCTAssertEqual(card, 7, "Home's in-card labels")
+        // D-249: 10 with Your spending's two in-card labels and its Expenses label (Home's sections take text).
+        XCTAssertEqual(card, 10, "Home's in-card labels")
     }
 
     /// F10: the art is clipped to the hero's shape, the hero's content is not; the art as a whole is decoration.
@@ -766,7 +767,8 @@ final class ThemeMotionTests: XCTestCase {
             }
         }
         // D-217 final fix: 21, the two Join sheets' Cancels are now one conditional item in JoinScreen.
-        XCTAssertEqual(items, 21, "a new toolbar item takes .barTint() and moves this count on purpose")
+        // D-249: 22, Your spending's Export Just me.
+        XCTAssertEqual(items, 22, "a new toolbar item takes .barTint() and moves this count on purpose")
     }
 
     /// D-224 (E3): the done moments' motion, goldens re-typed from .drafts/d224/motion.py part 6 (never read back from

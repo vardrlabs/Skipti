@@ -12,16 +12,16 @@ available at http://www.apache.org/licenses/LICENSE-2.0.
 Third-party material incorporated or referenced
 -----------------------------------------------
 
-- Lucide icons: twenty drawings (`wallet`, `users`, `receipt`, `plus`,
+- Lucide icons: twenty-one drawings (`wallet`, `users`, `receipt`, `plus`,
   `circle-check`, `user-round`, `user-plus`, `chevron-left`,
   `chevron-right`, `search`, `check`, `sun`, `shield`, `download`, `info`,
-  `inbox`, `vibrate`, `x`, `lock`, `sparkles`),
+  `inbox`, `vibrate`, `x`, `lock`, `sparkles`, `chart-pie`),
   used as both shells' tab bar icons, the account entry
   point, a group's "Add people" button, the
   back button's chevron (`chevron-left`), the chevron at the end of a list
   row (`chevron-right`), the currency list's search field (`search`) and
   selected row (`check`), the icon tiles on You's rows (`user-round`,
-  `sun`, `shield`, `download`, `info`), the empty Expenses list (`inbox`), the Haptics row (`vibrate`), the clear and remove cross (`x`), the lock screen (`lock`) and the Less motion row (`sparkles`) (D-179 replaced `scale` and `arrow-left-right`
+  `sun`, `shield`, `download`, `info`), the empty Expenses list (`inbox`), the Haptics row (`vibrate`), the clear and remove cross (`x`), the lock screen (`lock`), the Less motion row (`sparkles`) and the Spending on Home row (`chart-pie`) (D-179 replaced `scale` and `arrow-left-right`
   with `wallet`, `users` and `circle-check`; D-186 added `user-plus`; D-217 added the two chevrons, which both
   shells draw in place of their system chevrons; D-220 added `search` and
   `check`, in place of two SF Symbols on iOS and new on Android; D-222 added
@@ -31,7 +31,7 @@ Third-party material incorporated or referenced
   added `x` for the clear and remove cross and `lock` for the lock screen,
   `lock`'s `<rect>` written the same way; D-231 added `sparkles` for the
   Less motion row on Appearance, its `<circle>` written as its two-arc
-  path). Distributed under the ISC licence
+  path; D-249 added `chart-pie` for the Spending on Home row on Appearance). Distributed under the ISC licence
   (copyright Lucide Contributors). The path data shipped in
   `android/app/src/main/java/com/vardrlabs/skipti/TabIcons.kt` and
   `ios/Skipti/App/LucideIcon.swift` is copied VERBATIM from upstream

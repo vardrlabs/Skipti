@@ -1596,6 +1596,73 @@ public func FfiConverterTypeCurrencyBalanceOut_lower(_ value: CurrencyBalanceOut
 
 
 /**
+ * What one currency's spending was, and where it went.
+ */
+public struct CurrencySpendingOut: Equatable, Hashable {
+    public var currencyCode: String
+    public var totalMinor: Int64
+    /**
+     * This currency's slices, largest first, basis points summing to 10,000.
+     */
+    public var categories: [CategoryShareOut]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(currencyCode: String, totalMinor: Int64, 
+        /**
+         * This currency's slices, largest first, basis points summing to 10,000.
+         */categories: [CategoryShareOut]) {
+        self.currencyCode = currencyCode
+        self.totalMinor = totalMinor
+        self.categories = categories
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CurrencySpendingOut: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCurrencySpendingOut: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CurrencySpendingOut {
+        return
+            try CurrencySpendingOut(
+                currencyCode: FfiConverterString.read(from: &buf), 
+                totalMinor: FfiConverterInt64.read(from: &buf), 
+                categories: FfiConverterSequenceTypeCategoryShareOut.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CurrencySpendingOut, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.currencyCode, into: &buf)
+        FfiConverterInt64.write(value.totalMinor, into: &buf)
+        FfiConverterSequenceTypeCategoryShareOut.write(value.categories, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCurrencySpendingOut_lift(_ buf: RustBuffer) throws -> CurrencySpendingOut {
+    return try FfiConverterTypeCurrencySpendingOut.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCurrencySpendingOut_lower(_ value: CurrencySpendingOut) -> RustBuffer {
+    return FfiConverterTypeCurrencySpendingOut.lower(value)
+}
+
+
+/**
  * Sum of accepted costs per currency, the reconciliation preview: these are
  * the numbers to cross-check against the source app's own totals BEFORE
  * committing anything.
@@ -5850,6 +5917,365 @@ public func FfiConverterTypeShareOut_lower(_ value: ShareOut) -> RustBuffer {
 }
 
 
+/**
+ * One live (not deleted) expense, as the shells hold it.
+ */
+public struct SpendingExpenseIn: Equatable, Hashable {
+    /**
+     * The projected expense's id (`ProjectedExpenseOut.id`), carried to its row.
+     */
+    public var id: String
+    public var expense: ExpenseInput
+    public var note: String?
+    /**
+     * The expense's own category (the leaf id, as stored), carried to its row.
+     */
+    public var category: String?
+    /**
+     * The category its slice counts under: the shells pass the parent, as
+     * the group page does for `group_stats`; None is the "No category" slice.
+     */
+    public var sliceCategory: String?
+    /**
+     * When it happened, if set (`ProjectedExpenseOut.timestamp_ms`).
+     */
+    public var timestampMs: UInt64?
+    /**
+     * When it was added (`ProjectedExpenseOut.added_at_ms`): the date when
+     * `timestamp_ms` is absent.
+     */
+    public var addedAtMs: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The projected expense's id (`ProjectedExpenseOut.id`), carried to its row.
+         */id: String, expense: ExpenseInput, note: String?, 
+        /**
+         * The expense's own category (the leaf id, as stored), carried to its row.
+         */category: String?, 
+        /**
+         * The category its slice counts under: the shells pass the parent, as
+         * the group page does for `group_stats`; None is the "No category" slice.
+         */sliceCategory: String?, 
+        /**
+         * When it happened, if set (`ProjectedExpenseOut.timestamp_ms`).
+         */timestampMs: UInt64?, 
+        /**
+         * When it was added (`ProjectedExpenseOut.added_at_ms`): the date when
+         * `timestamp_ms` is absent.
+         */addedAtMs: UInt64) {
+        self.id = id
+        self.expense = expense
+        self.note = note
+        self.category = category
+        self.sliceCategory = sliceCategory
+        self.timestampMs = timestampMs
+        self.addedAtMs = addedAtMs
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SpendingExpenseIn: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSpendingExpenseIn: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SpendingExpenseIn {
+        return
+            try SpendingExpenseIn(
+                id: FfiConverterString.read(from: &buf), 
+                expense: FfiConverterTypeExpenseInput.read(from: &buf), 
+                note: FfiConverterOptionString.read(from: &buf), 
+                category: FfiConverterOptionString.read(from: &buf), 
+                sliceCategory: FfiConverterOptionString.read(from: &buf), 
+                timestampMs: FfiConverterOptionUInt64.read(from: &buf), 
+                addedAtMs: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SpendingExpenseIn, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterTypeExpenseInput.write(value.expense, into: &buf)
+        FfiConverterOptionString.write(value.note, into: &buf)
+        FfiConverterOptionString.write(value.category, into: &buf)
+        FfiConverterOptionString.write(value.sliceCategory, into: &buf)
+        FfiConverterOptionUInt64.write(value.timestampMs, into: &buf)
+        FfiConverterUInt64.write(value.addedAtMs, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSpendingExpenseIn_lift(_ buf: RustBuffer) throws -> SpendingExpenseIn {
+    return try FfiConverterTypeSpendingExpenseIn.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSpendingExpenseIn_lower(_ value: SpendingExpenseIn) -> RustBuffer {
+    return FfiConverterTypeSpendingExpenseIn.lower(value)
+}
+
+
+/**
+ * D-249 (decision 205): who you are in one group, as the Balance tab reads
+ * it (`OverviewGroupIn.viewer`). All counts a group expense's share only
+ * when it is held by YOUR id in THAT expense's group, so an id that means
+ * you in one group can never count someone else's share in another (the
+ * D-237 A1 shape: a group's maker can name any id as a person).
+ */
+public struct SpendingGroupIn: Equatable, Hashable {
+    public var groupId: String
+    /**
+     * Your id in this group (its `selfId`).
+     */
+    public var viewer: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(groupId: String, 
+        /**
+         * Your id in this group (its `selfId`).
+         */viewer: String) {
+        self.groupId = groupId
+        self.viewer = viewer
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SpendingGroupIn: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSpendingGroupIn: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SpendingGroupIn {
+        return
+            try SpendingGroupIn(
+                groupId: FfiConverterString.read(from: &buf), 
+                viewer: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SpendingGroupIn, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.groupId, into: &buf)
+        FfiConverterString.write(value.viewer, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSpendingGroupIn_lift(_ buf: RustBuffer) throws -> SpendingGroupIn {
+    return try FfiConverterTypeSpendingGroupIn.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSpendingGroupIn_lower(_ value: SpendingGroupIn) -> RustBuffer {
+    return FfiConverterTypeSpendingGroupIn.lower(value)
+}
+
+
+public struct SpendingOut: Equatable, Hashable {
+    /**
+     * One per currency, never converted into each other, largest total
+     * first (ties by code). Empty when nothing counts.
+     */
+    public var currencies: [CurrencySpendingOut]
+    /**
+     * Every expense that counts, newest first (ties: the larger id first).
+     * A Just me expense of 0 is still listed (it was logged); a group
+     * expense is listed only when your share of it is above 0.
+     */
+    public var rows: [SpendingRowOut]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * One per currency, never converted into each other, largest total
+         * first (ties by code). Empty when nothing counts.
+         */currencies: [CurrencySpendingOut], 
+        /**
+         * Every expense that counts, newest first (ties: the larger id first).
+         * A Just me expense of 0 is still listed (it was logged); a group
+         * expense is listed only when your share of it is above 0.
+         */rows: [SpendingRowOut]) {
+        self.currencies = currencies
+        self.rows = rows
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SpendingOut: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSpendingOut: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SpendingOut {
+        return
+            try SpendingOut(
+                currencies: FfiConverterSequenceTypeCurrencySpendingOut.read(from: &buf), 
+                rows: FfiConverterSequenceTypeSpendingRowOut.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SpendingOut, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypeCurrencySpendingOut.write(value.currencies, into: &buf)
+        FfiConverterSequenceTypeSpendingRowOut.write(value.rows, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSpendingOut_lift(_ buf: RustBuffer) throws -> SpendingOut {
+    return try FfiConverterTypeSpendingOut.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSpendingOut_lower(_ value: SpendingOut) -> RustBuffer {
+    return FfiConverterTypeSpendingOut.lower(value)
+}
+
+
+/**
+ * One expense that counts in the window.
+ */
+public struct SpendingRowOut: Equatable, Hashable {
+    public var id: String
+    /**
+     * `timestamp_ms`, else `added_at_ms`: the date the window was read on.
+     */
+    public var dateMs: UInt64
+    public var note: String?
+    /**
+     * The expense's own category (the leaf), as given.
+     */
+    public var category: String?
+    /**
+     * The currency it counts in: its converted one, if converted.
+     */
+    public var currencyCode: String
+    /**
+     * What counts: the full amount for a Just me expense, your share for a
+     * group one.
+     */
+    public var amountMinor: Int64
+    /**
+     * The group it belongs to; None for Just me.
+     */
+    public var group: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, 
+        /**
+         * `timestamp_ms`, else `added_at_ms`: the date the window was read on.
+         */dateMs: UInt64, note: String?, 
+        /**
+         * The expense's own category (the leaf), as given.
+         */category: String?, 
+        /**
+         * The currency it counts in: its converted one, if converted.
+         */currencyCode: String, 
+        /**
+         * What counts: the full amount for a Just me expense, your share for a
+         * group one.
+         */amountMinor: Int64, 
+        /**
+         * The group it belongs to; None for Just me.
+         */group: String?) {
+        self.id = id
+        self.dateMs = dateMs
+        self.note = note
+        self.category = category
+        self.currencyCode = currencyCode
+        self.amountMinor = amountMinor
+        self.group = group
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SpendingRowOut: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSpendingRowOut: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SpendingRowOut {
+        return
+            try SpendingRowOut(
+                id: FfiConverterString.read(from: &buf), 
+                dateMs: FfiConverterUInt64.read(from: &buf), 
+                note: FfiConverterOptionString.read(from: &buf), 
+                category: FfiConverterOptionString.read(from: &buf), 
+                currencyCode: FfiConverterString.read(from: &buf), 
+                amountMinor: FfiConverterInt64.read(from: &buf), 
+                group: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SpendingRowOut, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterUInt64.write(value.dateMs, into: &buf)
+        FfiConverterOptionString.write(value.note, into: &buf)
+        FfiConverterOptionString.write(value.category, into: &buf)
+        FfiConverterString.write(value.currencyCode, into: &buf)
+        FfiConverterInt64.write(value.amountMinor, into: &buf)
+        FfiConverterOptionString.write(value.group, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSpendingRowOut_lift(_ buf: RustBuffer) throws -> SpendingRowOut {
+    return try FfiConverterTypeSpendingRowOut.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSpendingRowOut_lower(_ value: SpendingRowOut) -> RustBuffer {
+    return FfiConverterTypeSpendingRowOut.lower(value)
+}
+
+
 public struct SplitwiseOptions: Equatable, Hashable {
     public var dateFormat: DateFormat
     public var members: [MemberBinding]
@@ -7631,6 +8057,83 @@ public func FfiConverterTypePortError_lower(_ value: PortError) -> RustBuffer {
 }
 
 
+/**
+ * Which spending the page shows.
+ */
+
+public enum SpendingView: Equatable, Hashable {
+    
+    /**
+     * Your own ledger only: personal expenses (no group), each at its full
+     * amount.
+     */
+    case justMe
+    /**
+     * Just me plus YOUR SHARE of every group expense (what you paid for
+     * others is a loan, not spending, so it never counts).
+     */
+    case all
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension SpendingView: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSpendingView: FfiConverterRustBuffer {
+    typealias SwiftType = SpendingView
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SpendingView {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .justMe
+        
+        case 2: return .all
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: SpendingView, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .justMe:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .all:
+            writeInt(&buf, Int32(2))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSpendingView_lift(_ buf: RustBuffer) throws -> SpendingView {
+    return try FfiConverterTypeSpendingView.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSpendingView_lower(_ value: SpendingView) -> RustBuffer {
+    return FfiConverterTypeSpendingView.lower(value)
+}
+
+
+
 
 public enum SplitSpecInput: Equatable, Hashable {
     
@@ -8559,6 +9062,31 @@ fileprivate struct FfiConverterSequenceTypeCurrencyBalanceOut: FfiConverterRustB
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeCurrencyBalanceOut.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeCurrencySpendingOut: FfiConverterRustBuffer {
+    typealias SwiftType = [CurrencySpendingOut]
+
+    public static func write(_ value: [CurrencySpendingOut], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeCurrencySpendingOut.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [CurrencySpendingOut] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [CurrencySpendingOut]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeCurrencySpendingOut.read(from: &buf))
         }
         return seq
     }
@@ -9592,6 +10120,81 @@ fileprivate struct FfiConverterSequenceTypeShareOut: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeSpendingExpenseIn: FfiConverterRustBuffer {
+    typealias SwiftType = [SpendingExpenseIn]
+
+    public static func write(_ value: [SpendingExpenseIn], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSpendingExpenseIn.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [SpendingExpenseIn] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [SpendingExpenseIn]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSpendingExpenseIn.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeSpendingGroupIn: FfiConverterRustBuffer {
+    typealias SwiftType = [SpendingGroupIn]
+
+    public static func write(_ value: [SpendingGroupIn], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSpendingGroupIn.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [SpendingGroupIn] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [SpendingGroupIn]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSpendingGroupIn.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeSpendingRowOut: FfiConverterRustBuffer {
+    typealias SwiftType = [SpendingRowOut]
+
+    public static func write(_ value: [SpendingRowOut], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSpendingRowOut.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [SpendingRowOut] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [SpendingRowOut]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSpendingRowOut.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeStatsExpenseIn: FfiConverterRustBuffer {
     typealias SwiftType = [StatsExpenseIn]
 
@@ -9817,6 +10420,24 @@ public func ffiCheckExpense(expense: ExpenseInput)throws   {try rustCallWithErro
         uniffiCallStatus in
     uniffi_skipti_core_fn_func_ffi_check_expense(
         FfiConverterTypeExpenseInput_lower(expense),uniffiCallStatus
+    )
+}
+}
+/**
+ * D-249 (decision 208): [`ffi_check_expense`], then the people: the payer
+ * and every share's id must be in `members`, the ledger's people as the
+ * writing phone holds them (a group's members; for Just me, your own ids).
+ * Both shells run it on every expense write path before anything is
+ * written (Add, Edit's new money, import); ingest does not (a peer's record
+ * is not refused for it: CLAUDE.md 10's cursor rule). A money rule broken
+ * is that rule's error; a member that is not an id is `InvalidInput`; an
+ * id not in `members` (an empty list holds nobody) is `UnknownParticipant`.
+ */
+public func ffiCheckExpenseMembers(expense: ExpenseInput, members: [String])throws   {try rustCallWithError(FfiConverterTypeCoreError_lift) {
+        uniffiCallStatus in
+    uniffi_skipti_core_fn_func_ffi_check_expense_members(
+        FfiConverterTypeExpenseInput_lower(expense),
+        FfiConverterSequenceString.lower(members),uniffiCallStatus
     )
 }
 }
@@ -10398,6 +11019,18 @@ public func ffiSnapshotForGroup(snapshot: LedgerSnapshot, group: String) -> Ledg
     )
 })
 }
+/**
+ * D-248: the Just me slice of a snapshot, for "Export Just me" (see
+ * `flutningr::snapshot_personal`).
+ */
+public func ffiSnapshotPersonal(snapshot: LedgerSnapshot) -> LedgerSnapshot  {
+    return try!  FfiConverterTypeLedgerSnapshot_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_skipti_core_fn_func_ffi_snapshot_personal(
+        FfiConverterTypeLedgerSnapshot_lower(snapshot),uniffiCallStatus
+    )
+})
+}
 public func ffiSplitCompute(totalMinor: Int64, currencyCode: String, members: [String], spec: SplitSpecInput)throws  -> [ShareOut]  {
     return try  FfiConverterSequenceTypeShareOut.lift(try rustCallWithError(FfiConverterTypeCoreError_lift) {
         uniffiCallStatus in
@@ -10515,6 +11148,21 @@ public func ffiOverview(groups: [OverviewGroupIn], expenses: [ExpenseInput], set
 })
 }
 /**
+ * The "Your spending" card and page (D-248).
+ */
+public func ffiSpending(expenses: [SpendingExpenseIn], groups: [SpendingGroupIn], fromMs: UInt64, untilMs: UInt64, view: SpendingView)throws  -> SpendingOut  {
+    return try  FfiConverterTypeSpendingOut_lift(try rustCallWithError(FfiConverterTypeCoreError_lift) {
+        uniffiCallStatus in
+    uniffi_skipti_core_fn_func_ffi_spending(
+        FfiConverterSequenceTypeSpendingExpenseIn.lower(expenses),
+        FfiConverterSequenceTypeSpendingGroupIn.lower(groups),
+        FfiConverterUInt64.lower(fromMs),
+        FfiConverterUInt64.lower(untilMs),
+        FfiConverterTypeSpendingView_lower(view),uniffiCallStatus
+    )
+})
+}
+/**
  * The Expenses tab's "you lent" / "you owe" (D-181).
  */
 public func ffiYourEffect(expense: ExpenseInput, viewer: String)throws  -> CurrencyAmountOut  {
@@ -10576,6 +11224,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_skipti_core_checksum_func_ffi_check_expense() != 62679) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_skipti_core_checksum_func_ffi_check_expense_members() != 57253) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_skipti_core_checksum_func_ffi_check_settlement() != 49524) {
@@ -10722,6 +11373,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_skipti_core_checksum_func_ffi_snapshot_for_group() != 49791) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_skipti_core_checksum_func_ffi_snapshot_personal() != 41946) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_skipti_core_checksum_func_ffi_split_compute() != 43791) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -10747,6 +11401,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_skipti_core_checksum_func_ffi_overview() != 11671) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_skipti_core_checksum_func_ffi_spending() != 10839) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_skipti_core_checksum_func_ffi_your_effect() != 55797) {

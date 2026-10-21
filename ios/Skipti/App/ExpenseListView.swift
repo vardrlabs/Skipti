@@ -14,7 +14,10 @@ import SwiftUI
 /// D-181: the Expenses tab's words; Android's twin is `ExpenseCopy`.
 enum ExpenseCopy {
     static let allGroups = "All groups"
-    static let personal = "Personal"
+    /// D-249 (U10): the no-group section and its chip (was "Personal"), still last.
+    static let justMe = SpendingCopy.justMe
+    /// D-249: a Just me row's payer is always you.
+    static let you = "You"
     static let notInvolved = "not involved"
     /// "you lent ₹9,000.00" / "you owe ₹1,200.00" / "not involved".
     static func effect(_ minor: Int64, _ formatted: String) -> String {
@@ -26,9 +29,30 @@ enum ExpenseCopy {
 /// D-181: the Expenses tab, grouped by group (the founder, 2026-09-29: "right
 /// now it's all mixed up"). A section per group, the group with the newest
 /// expense first; within a section, newest first; expenses in no group last,
-/// as "Personal". A chip narrows the tab to one group. Android's twin:
+/// as "Just me" (D-249). A chip narrows the tab to one group, or to Just me. Android's twin:
 /// `ExpenseSections` in ExpenseListScreen.kt.
 enum ExpenseSections {
+    /// D-249: what a chip narrows the tab to.
+    enum Filter: Hashable {
+        case all
+        case justMe
+        case group(String)
+    }
+
+    /// D-249 fix wave (M4): All and Just me always end with the Just me section, empty when there is no Just me
+    /// expense, so its header (Your spending's door, decision 190) is there with Spending on Home off. Android's twin.
+    static func build(_ expenses: [ProjectedExpenseOut], filter: Filter) -> [Section] {
+        switch filter {
+        case .all: return withJustMe(build(expenses, only: nil))
+        case .group(let id): return build(expenses, only: id)
+        case .justMe: return withJustMe(build(expenses, only: nil).filter { $0.groupID == nil })
+        }
+    }
+
+    private static func withJustMe(_ sections: [Section]) -> [Section] {
+        sections.contains { $0.groupID == nil } ? sections : sections + [Section(groupID: nil, expenses: [])]
+    }
+
     struct Section {
         let groupID: String?
         let expenses: [ProjectedExpenseOut]
@@ -54,8 +78,10 @@ enum ExpenseSections {
 
 struct ExpenseListView: View {
     @State private var expenses: [ProjectedExpenseOut] = []
-    /// D-181: the chip that narrows the tab to one group (nil: all groups).
-    @State private var only: String?
+    /// D-181: the chip that narrows the tab to one group (D-249: or to Just me).
+    @State private var filter: ExpenseSections.Filter = .all
+    /// D-249 (decision 190): the Just me header opens Your spending (reachable with Home's card hidden).
+    @State private var openSpending = false
     @State private var loadError: String?
 
     /// D-135: payer names come from the groups each record belongs to; you are
@@ -66,6 +92,9 @@ struct ExpenseListView: View {
     @State private var editing: ExpenseEditTarget?
     @State private var confirmingDelete: ProjectedExpenseOut?
     @State private var actionError: String?
+    /// D-249: your name and picture for the Just me section's tile.
+    @State private var myName: String?
+    @State private var myAvatar: Avatar = .none
 
     private func name(_ id: String) -> String {
         for named in groups where named.members.contains(where: { $0.id == id }) {
@@ -125,9 +154,10 @@ struct ExpenseListView: View {
                         }
 
                         chips
-                        ForEach(ExpenseSections.build(expenses, only: only), id: \.groupID) { section in
+                        ForEach(ExpenseSections.build(expenses, filter: filter), id: \.groupID) { section in
                             sectionHeader(section)
-                            VStack(spacing: 0) {
+                            // D-249 fix wave (M4): an empty Just me section is its header alone (no count, no card).
+                            if !section.expenses.isEmpty { VStack(spacing: 0) {
                                 ForEach(Array(section.expenses.enumerated()), id: \.element.id) { index, expense in
                                     if index > 0 { Divider().overlay(Tokens.hairline) }
                                     NavigationLink {
@@ -166,13 +196,13 @@ struct ExpenseListView: View {
                                         Button("Delete expense", role: .destructive) { delete(expense) }
                                         Button("Cancel", role: .cancel) {}
                                     } message: {
-                                        Text("It leaves your balances. You can undo it right after.")
+                                        Text(verbatim: ExpenseDeleteCopy.message(justMe: expense.expense.group == nil))
                                     }
                                     // D-224 (Design 3): the warning as this row's question opens.
                                     .hapticWarning(when: confirmingDelete?.id == expense.id)
                                 }
                             }
-                            .glassCard(padding: 14)
+                            .glassCard(padding: 14) }
                         }
                     }
                     .padding(16)
@@ -183,6 +213,7 @@ struct ExpenseListView: View {
         }
         .navigationTitle("Expenses")
         .navigationBarTitleDisplayMode(.large)
+        .navigationDestination(isPresented: $openSpending) { SpendingScreen(fromJustMeHeader: true) } // decision 206
         .sheet(item: $editing) { target in
             NavigationStack {
                 AddExpenseScreen(onSaved: { editing = nil; load() }, editing: target)
@@ -201,17 +232,21 @@ struct ExpenseListView: View {
     private var chips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                chip(ExpenseCopy.allGroups, nil)
+                chip(ExpenseCopy.allGroups, .all)
+                // D-249: a Just me chip beside All groups once there is a Just me expense.
+                if expenses.contains(where: { $0.expense.group == nil }) {
+                    chip(ExpenseCopy.justMe, .justMe)
+                }
                 ForEach(groups.filter { g in expenses.contains { $0.expense.group == g.group.id } }, id: \.group.id) { g in
-                    chip(g.group.name, g.group.id)
+                    chip(g.group.name, .group(g.group.id))
                 }
             }
         }
     }
 
-    private func chip(_ title: String, _ id: String?) -> some View {
-        let on = only == id
-        return Button { only = id } label: {
+    private func chip(_ title: String, _ value: ExpenseSections.Filter) -> some View {
+        let on = filter == value
+        return Button { filter = value } label: {
             Text(verbatim: title)
                 .font(TypeRole.label(14))
                 .padding(.horizontal, 14).padding(.vertical, 8)
@@ -221,21 +256,38 @@ struct ExpenseListView: View {
         .accessibilityAddTraits(on ? .isSelected : [])
     }
 
+    @ViewBuilder
     private func sectionHeader(_ section: ExpenseSections.Section) -> some View {
         let named = groups.first { $0.group.id == section.groupID }
-        return HStack(spacing: 10) {
+        let header = HStack(spacing: 10) {
             if let named {
                 GroupTile(group: named.group, size: 30)
+            } else if section.groupID == nil {
+                SpendingTile(name: myName, avatar: myAvatar, size: 30)
             }
-            Text(verbatim: named?.group.name ?? ExpenseCopy.personal)
+            Text(verbatim: named?.group.name ?? ExpenseCopy.justMe)
                 .font(TypeRole.name(17)).foregroundStyle(Tokens.text)
             Spacer()
-            Text(verbatim: Self.countLabel(section.expenses.count))
-                .font(TypeRole.body(TypeScale.groupCount)).foregroundStyle(Tokens.textDim)
+            if !section.expenses.isEmpty {
+                Text(verbatim: Self.countLabel(section.expenses.count))
+                    .font(TypeRole.body(TypeScale.groupCount)).foregroundStyle(Tokens.textDim)
+            }
+            if section.groupID == nil { RowChevron(color: Tokens.textDim) }
         }
         .padding(.top, 6)
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isHeader)
+        .contentShape(Rectangle())
+        if section.groupID == nil {
+            // D-249 (decision 190): the Just me header opens Your spending.
+            Button { openSpending = true } label: { header }
+                .buttonStyle(.plain)
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityHint(Text(verbatim: SpendingCopy.hint))
+        } else {
+            header
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(.isHeader)
+        }
     }
 
     /// The long-press menu: the detail page's two actions, in place.
@@ -246,7 +298,7 @@ struct ExpenseListView: View {
         } label: {
             Label("Edit", systemImage: "pencil")
         }
-        .disabled(group(of: expense) == nil)
+        .disabled(!ExpenseDeleteCopy.canEdit(group: expense.expense.group, named: group(of: expense)))
         Button(role: .destructive) {
             confirmingDelete = expense
         } label: {
@@ -255,7 +307,8 @@ struct ExpenseListView: View {
     }
 
     private func startEdit(_ expense: ProjectedExpenseOut) {
-        guard let named = group(of: expense) else { return }
+        let named = group(of: expense)
+        guard ExpenseDeleteCopy.canEdit(group: expense.expense.group, named: named) else { return }
         editing = ExpenseEditTarget(expense: expense, named: named, store: store)
     }
 
@@ -310,13 +363,16 @@ struct ExpenseListView: View {
         // to you (core's your_effect) above the whole amount.
         let viewer = group(of: projected)?.selfId
         let effect = viewer.flatMap { try? ffiYourEffect(expense: expense, viewer: $0) }
-        let effectText = effect.map {
+        let justMe = expense.group == nil
+        // D-249: a Just me row says what it cost you ("spent ₹381.00"), core's own amount; a group's row, its effect.
+        let effectText = justMe ? SpendingCopy.spentAmount(amount) : effect.map {
             ExpenseCopy.effect($0.amountMinor, (try? ffiMoneyFormat(
                 minorUnits: Int64($0.amountMinor.magnitude), currencyCode: $0.currencyCode, locale: AppLocale.current
             )) ?? Placeholder.none)
         }
-        let effectColour = (effect?.amountMinor ?? 0) > 0 ? Tokens.owing
-            : ((effect?.amountMinor ?? 0) < 0 ? Tokens.owed : Tokens.textDim)
+        let effectColour = justMe ? Tokens.textDim : ((effect?.amountMinor ?? 0) > 0 ? Tokens.owing
+            : ((effect?.amountMinor ?? 0) < 0 ? Tokens.owed : Tokens.textDim))
+        let payerName = justMe ? ExpenseCopy.you : name(expense.payer)
         let title = projected.note?.isEmpty == false ? projected.note! : (Self.categoryLabel(for: projected.category) ?? String(localized: "Expense"))
         // D-234 (L12-d): 8 between the words and the effect (the 8 minimum alone, as Android's row), the effect measured
         // first (Android measures it before the weighted words).
@@ -324,7 +380,7 @@ struct ExpenseListView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(verbatim: title)
                     .font(TypeRole.name(15)).foregroundStyle(Tokens.text).lineLimit(2)
-                Text(verbatim: ExpenseCopy.paidBy(name(expense.payer), amount))
+                Text(verbatim: ExpenseCopy.paidBy(payerName, amount))
                     .font(TypeRole.body(13)).foregroundStyle(Tokens.textDim)
                 // One line of text, so it wraps as a sentence, not as columns.
                 let detail = [
@@ -354,7 +410,7 @@ struct ExpenseListView: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
-            "\(projected.note ?? "Expense"). Paid by \(name(expense.payer)). \(spoken)."
+            "\(projected.note ?? "Expense"). Paid by \(payerName). \(spoken)."
                 + (effectText.map { " \($0)." } ?? "")
                 + (projected.moneyConflict.isEmpty ? "" : " Devices entered different versions; choose one.")
         )
@@ -386,7 +442,11 @@ struct ExpenseListView: View {
                 } catch LedgerStore.GroupStoreError.needsYourName {
                     named = []
                 }
+                let me = try? store.loadSelf()
+                let avatar = (try? store.loadAvatar()) ?? .none
                 DispatchQueue.main.async {
+                    myName = me?.name
+                    myAvatar = avatar
                     groups = named
                     expenses = loaded
                     loadError = nil

@@ -665,9 +665,12 @@ final class GroupRecordsTests: XCTestCase {
         _ = try p.appendExpense(dinner(F.new))
         XCTAssertEqual(try JSONDecoder().decode(LedgerStore.ExpenseDTO.self,
                                                 from: try last(p, LedgerStore.Sync.expenseType).blob), dinner(F.new))
-        _ = try p.appendExpense(dinner(nil))
+        // Decision 208: a personal (Just me) expense is yours alone.
+        var mine = dinner(nil)
+        mine.shares = [.init(id: F.y, amountMinor: 1_200)]
+        _ = try p.appendExpense(mine)
         XCTAssertEqual(try JSONDecoder().decode(LedgerStore.ExpenseDTO.self,
-                                                from: try last(p, LedgerStore.Sync.expenseType).blob), dinner(nil))
+                                                from: try last(p, LedgerStore.Sync.expenseType).blob), mine)
     }
 
     /// Test 3: a payment from y in Old is recorded from x; one whose ends both become x is refused before anything

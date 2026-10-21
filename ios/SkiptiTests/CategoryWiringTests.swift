@@ -6,28 +6,15 @@ import XCTest
 /// through the §9.2 envelope (schema v2), and renders as the list's
 /// micro-label via the SAME default-tree lookup the screen uses.
 final class CategoryWiringTests: XCTestCase {
-    /// D-225 (Design 11): Add expense's Group row. A new expense with more than one group offers the chooser; one
-    /// group or any edit (an edit stays in its own group, D-142) shows it plainly; no group, no row (Android's
-    /// AddExpenseTest pins the same).
-    func testTheGroupRowOffersAChooserOnlyToANewExpenseWithAChoice() {
-        XCTAssertEqual(AddExpenseRows.groupRow(editing: true, groupCount: 2), .plain, "an edit never moves group")
-        XCTAssertEqual(AddExpenseRows.groupRow(editing: true, groupCount: 1), .plain)
-        XCTAssertEqual(AddExpenseRows.groupRow(editing: false, groupCount: 2), .chooser)
-        XCTAssertEqual(AddExpenseRows.groupRow(editing: false, groupCount: 5), .chooser)
-        XCTAssertEqual(AddExpenseRows.groupRow(editing: false, groupCount: 1), .plain)
-        XCTAssertEqual(AddExpenseRows.groupRow(editing: false, groupCount: 0), .none)
-    }
-
-    /// D-234 (L7, decision 87): Add expense's line when no group can take a new expense: no groups at all, or only groups
-    /// this phone can't add to (the D-229 look's lost-place group); none when one can. Android's twin:
-    /// AddExpenseTest.add_expenses_empty_line_says_why.
-    func testAddExpensesEmptyLineSaysWhy() {
-        XCTAssertEqual(AddExpenseRows.emptyLine(groupCount: 0, writableCount: 0), "Expenses belong to a group. Make one on Groups first.")
-        XCTAssertEqual(AddExpenseRows.emptyLine(groupCount: 1, writableCount: 0),
-                       "You can't add to your groups from this phone. Make a new group on Groups to add one.")
-        XCTAssertEqual(AddExpenseRows.emptyLine(groupCount: 3, writableCount: 0), AddExpenseRows.noneWritable)
-        XCTAssertNil(AddExpenseRows.emptyLine(groupCount: 1, writableCount: 1))
-        XCTAssertNil(AddExpenseRows.emptyLine(groupCount: 4, writableCount: 2))
+    /// D-225 (Design 11), D-249 (U10): Add expense's Ledger row. Just me plus any writable group is a choice for a new
+    /// expense; Just me alone, or any edit (an edit stays in its own ledger, D-142), shows it plainly. There is always a
+    /// row (D-234's "belong to a group" lines went: Just me takes the expense). Android's AddExpenseTest pins the same.
+    func testTheLedgerRowOffersAChooserOnlyToANewExpenseWithAChoice() {
+        XCTAssertEqual(AddExpenseRows.ledgerRow(editing: true, writableCount: 2), .plain, "an edit never moves ledger")
+        XCTAssertEqual(AddExpenseRows.ledgerRow(editing: true, writableCount: 0), .plain)
+        XCTAssertEqual(AddExpenseRows.ledgerRow(editing: false, writableCount: 2), .chooser)
+        XCTAssertEqual(AddExpenseRows.ledgerRow(editing: false, writableCount: 1), .chooser)
+        XCTAssertEqual(AddExpenseRows.ledgerRow(editing: false, writableCount: 0), .plain)
     }
 
     /// D-135: an expense row shows day, month and year. The template carried a
@@ -70,6 +57,7 @@ final class CategoryWiringTests: XCTestCase {
     /// Assign → append → CLOSE → reopen → the category is ON the record.
     func testAssignedCategorySurvivesTheVaultLoop() throws {
         let store = try tempStore()
+        try HeldLedgers.me(store, id: String(repeating: "a", count: 31) + "1") // decision 208: a Just me expense is yours
         _ = try store.appendExpense(dto(category: groceriesId))
 
         let reloaded = try store.loadExpenses()
@@ -94,6 +82,7 @@ final class CategoryWiringTests: XCTestCase {
     /// §9.2: the category rides the envelope (schema v2 on) losslessly.
     func testCategoryRoundTripsThroughTheJsonEnvelope() throws {
         let store = try tempStore()
+        try HeldLedgers.me(store, id: String(repeating: "a", count: 31) + "1") // decision 208: a Just me expense is yours
         _ = try store.appendExpense(dto(category: groceriesId))
         let snapshot = try store.snapshot()
 
@@ -170,15 +159,15 @@ final class CategoryWiringTests: XCTestCase {
                      "listRowSeparator", "CurrencyCopy.allCurrencies", "TextField(\"Amount for", "TextField(AddSheetCopy.whatFor"] {
             XCTAssertEqual(t6Count(screen, gone), 0, "AddExpenseScreen.swift still has \(gone)")
         }
-        // The five choice pages, each opened from its value row.
-        for title in ["CategoryCopy.category", "CategoryCopy.subcategory", "AddSheetCopy.group", "AddSheetCopy.splitType",
-                      "AddSheetCopy.paidBy"] {
+        // The four choice pages, each opened from its value row; D-249: the Ledger row opens decision 193's rich page.
+        for title in ["CategoryCopy.category", "CategoryCopy.subcategory", "AddSheetCopy.splitType", "AddSheetCopy.paidBy"] {
             XCTAssertEqual(t6Count(flat, "ChoicePage(title: \(title),"), 1, "a choice page for \(title)")
-            XCTAssertEqual(t6Count(flat, "ListRow(title: \(title), trailing: .value("), title == "AddSheetCopy.group" ? 2 : 1,
-                           "the value row for \(title)")
+            XCTAssertEqual(t6Count(flat, "ListRow(title: \(title), trailing: .value("), 1, "the value row for \(title)")
         }
+        XCTAssertEqual(t6Count(flat, "ListRow(title: AddSheetCopy.ledger, trailing: .value("), 2, "the Ledger row, chooser and plain")
+        XCTAssertEqual(t6Count(flat, "LedgerChoicePage(options: LedgerOptions.build("), 1, "the Ledger page")
         XCTAssertEqual(t6Count(screen, "NavigationLink {"), 5, "every chooser row pushes its page")
-        XCTAssertTrue(screen.contains("switch AddExpenseRows.groupRow(editing: editing != nil, groupCount: groups.count) {"))
+        XCTAssertTrue(screen.contains("switch AddExpenseRows.ledgerRow(editing: editing != nil, writableCount: groups.count) {"))
         // The fields, each a FieldRow with today's placeholder, the share fields in the one share face.
         for field in ["FieldRow(AddSheetCopy.whatFor, text: $note)", "FieldRow(\"Amount for \\(m.name)\"",
                       "FieldRow(\"Percent for \\(m.name)\"", "FieldRow(\"Shares for \\(m.name)\"",
@@ -198,7 +187,7 @@ final class CategoryWiringTests: XCTestCase {
         // The page: list cards on the ground, the keyboard put away by a scroll, the action bar as before.
         for kept in ["ScrollView {", ".auroraBackground()", ".scrollDismissesKeyboard(.interactively)", ".formActionBar {",
                      "Button(editing == nil ? \"Add expense\" : \"Save changes\") { save() }",
-                     ".disabled(amountText.isEmpty || saved || named == nil)", "header(AddSheetCopy.split)"] {
+                     ".disabled(amountText.isEmpty || saved || (named == nil && !justMe))", "header(AddSheetCopy.split)"] {
             XCTAssertEqual(t6Count(screen, kept), 1, kept)
         }
         XCTAssertEqual(t6Count(screen, "ListCard {"), 4, "what and where, the split, an item line, tax and tip")

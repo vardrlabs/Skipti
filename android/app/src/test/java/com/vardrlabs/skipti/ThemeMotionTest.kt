@@ -1397,7 +1397,8 @@ class ThemeMotionTest {
         // D-225 fix wave A3 (decision 26): 9, Settle all's "Fastest way" and a redistribute section's currency code are
         // section labels and take `textDim` (no_section_label_anywhere_takes_a_faint_colour).
         // D-248 (U29.4): 10, Add expense's "0" hint on the page ground (it was textFaint at 45%, about 2:1 in Norse).
-        assertEquals(10, count("Tok.groundFaint("))
+        // D-249: 11, the expense detail's "Only you. Nothing to split." for a Just me expense (iOS's `micro(..., ground: true)`).
+        assertEquals(11, count("Tok.groundFaint("))
         // D-217 Task 6: 16, the group page's and expense detail's "Back" text buttons (two) are the bar's round button now.
         // D-217 Task 7: 6, nine "Back" text buttons (About x3, You, Activity, Export, Profile, the waiting expense,
         // ScreenHeader's) are the bar's round button, and the dead group list's check mark went with it; the six left

@@ -159,6 +159,9 @@ class MainActivity : ComponentActivity() {
         ScreenPrivacy.apply(window)
         // D-165: the default currency (D-244: once chosen, it follows the account).
         DefaultCurrency.load(applicationContext)
+        // D-249 fix wave (M6): Your spending's view and Spending on Home, before the first frame (no flip from the
+        // defaults on Home or the page).
+        SpendingPrefs.load(applicationContext)
         setContent {
             // The phone's configuration with the chosen mode's night bit, so
             // every screen's `isSystemInDarkTheme()` follows the setting, and
@@ -640,6 +643,15 @@ internal object ActivityExpenseRoute {
     }
 }
 
+/** D-249: where Your spending's page is open, and whether it covers the shown tab's root. */
+internal object SpendingOpen {
+    const val CARD = "card"
+    const val HEADER = "header"
+
+    fun covers(open: String?, tab: HomeTab): Boolean =
+        (open == CARD && tab == HomeTab.BALANCE) || (open == HEADER && tab == HomeTab.EXPENSES)
+}
+
 /** D-143: where system Back goes from each route over the tabs. Pure, so a
  *  JVM test pins it. Null is the tabs. */
 internal object HomeRoutes {
@@ -712,6 +724,12 @@ private fun HomeShell(
     val selectedTab = HomeTab.valueOf(selectedName)
     /** D-180: the group whose page is open over Balance or Groups. */
     var openGroup by rememberSaveable { mutableStateOf<String?>(null) }
+    /** D-249: Your spending's page, inside the tab it was opened from: [SpendingOpen.CARD] over Balance (Home's card),
+     *  [SpendingOpen.HEADER] over Expenses (the Just me header, decision 206); null: not open. */
+    var spendingOpen by rememberSaveable { mutableStateOf<String?>(null) }
+    /** D-249 fix wave (I2): the page's place, above the route switch (an expense or Export opened from the page replaces
+     *  it on screen, and Back finds it as it was); a fresh one each time the page opens. */
+    val spendingKeep = remember(vaultPath, spendingOpen) { SpendingKeep() }
     /** D-221 (Design 12; fix wave S8): each group's page memory between loads, kept per group for as long as the app
      *  runs (a pushed page, another tab or another group replaces the page, and this keeps its last settled state and a
      *  waiting celebration), so a group settled while its page was off screen plays when the page is next on screen.
@@ -841,6 +859,7 @@ private fun HomeShell(
     }
     BackHandler(enabled = route != null) { route = HomeRoutes.parent(route) }
     BackHandler(enabled = route == null && openGroup != null) { openGroup = null }
+    BackHandler(enabled = route == null && openGroup == null && SpendingOpen.covers(spendingOpen, selectedTab)) { spendingOpen = null }
     // C2: a sign-in's confirmation and step belong to the sign-in route;
     // leaving it any way (Back, a push, an invite) forgets both.
     LaunchedEffect(route) {
@@ -1062,9 +1081,9 @@ private fun HomeShell(
         }
         // D-179: the Groups tab replaced the group list route; its People
         // page is a route over the tabs.
-        "add" -> {
+        "add", "add/justme" -> {
             // D-179: the raised + opens a fresh form every time; a save lands
-            // on Balance, which reads the new expense.
+            // on Balance, which reads the new expense. D-249: the + over Your spending opens on Just me.
             AddExpenseScreen(
                 vaultPath = vaultPath,
                 onSaved = {
@@ -1073,6 +1092,7 @@ private fun HomeShell(
                     SyncStatus.changed()
                 },
                 onBack = { route = null },
+                startOnJustMe = route == "add/justme",
             )
             return
         }
@@ -1237,6 +1257,11 @@ private fun HomeShell(
                 )
                 return
             }
+            // D-249: Your spending's "Export Just me" (the personal scope only); back to the page.
+            if (r == "export-justme") {
+                ExportScreen(LedgerStore(vaultPath), onBack = { route = null }, justMe = true)
+                return
+            }
             // D-210: a read-only copy exports its own group.
             if (r != null && r.startsWith("export-group/")) {
                 ExportScreen(LedgerStore(vaultPath), onBack = { route = HomeRoutes.parent(r) }, group = r.removePrefix("export-group/"))
@@ -1322,7 +1347,16 @@ private fun HomeShell(
                                 onExport = { route = "export-group/$it" },
                                 celebration = celebrations.getOrPut(id) { CelebrationState() },
                             )
-                        } ?: if (selectedTab == HomeTab.BALANCE) {
+                        } ?: if (selectedTab == HomeTab.BALANCE && spendingOpen == SpendingOpen.CARD) {
+                            // D-249: Your spending, opened from Home's card, under the tab bar as a group's page.
+                            SpendingScreen(
+                                vaultPath = vaultPath, dark = dark, fromJustMeHeader = false,
+                                onBack = { spendingOpen = null },
+                                onOpenExpense = { route = "expense/$it" },
+                                onExport = { route = "export-justme" },
+                                keep = spendingKeep,
+                            )
+                        } else if (selectedTab == HomeTab.BALANCE) {
                             OverviewScreen(
                                 vaultPath = vaultPath,
                                 dark = dark,
@@ -1340,6 +1374,7 @@ private fun HomeShell(
                                 onOpenExpense = { route = "expense/$it" },
                                 onSeeAllActivity = { route = "activity" },
                                 keep = homeKeep,
+                                onOpenSpending = { spendingOpen = SpendingOpen.CARD },
                             )
                         } else {
                             GroupsTab(
@@ -1361,14 +1396,25 @@ private fun HomeShell(
                                 keep = groupsKeep,
                             )
                         }
-                        HomeTab.EXPENSES ->
+                        HomeTab.EXPENSES -> if (spendingOpen == SpendingOpen.HEADER) {
+                            // D-249 (decisions 190, 206): from the Just me header, always in Just me.
+                            SpendingScreen(
+                                vaultPath = vaultPath, dark = dark, fromJustMeHeader = true,
+                                onBack = { spendingOpen = null },
+                                onOpenExpense = { route = "expense/$it" },
+                                onExport = { route = "export-justme" },
+                                keep = spendingKeep,
+                            )
+                        } else {
                             ExpenseListScreen(
                                 vaultPath = vaultPath,
                                 onOpen = { route = "expense/$it" },
                                 onEdit = { route = "expense-edit/$it/list" },
                                 onOpenAccount = ::openYou,
                                 keep = expensesKeep,
+                                onOpenSpending = { spendingOpen = SpendingOpen.HEADER },
                             )
+                        }
                         // D-182: every group at once (the founder's canvas).
                         HomeTab.SETTLE ->
                             SettleAllScreen(vaultPath = vaultPath, dark = dark, onOpenAccount = ::openYou, keep = settleKeep)
@@ -1388,20 +1434,25 @@ private fun HomeShell(
             dark = dark,
             selected = selectedTab,
             onSelect = { tapped ->
-                // D-205 (TabTap): a group's page is the only page under the bar.
-                val covered = if (openGroup != null) setOf(selectedTab) else emptySet()
+                // D-205 (TabTap): a group's page and (D-249) Your spending are the pages under the bar.
+                val covered = if (openGroup != null || SpendingOpen.covers(spendingOpen, selectedTab)) setOf(selectedTab) else emptySet()
                 when (val tap = TabTap.decide(selectedTab, tapped, covered)) {
                     is TabTap.SwitchTo -> {
                         // D-224 (Design 3): a tap that switches tabs, and only that, plays the light haptic.
                         Haptics.play(view, HapticKind.LIGHT)
                         selectedName = tap.tab.name
                         openGroup = null
+                        spendingOpen = null
                     }
-                    is TabTap.PopToRoot -> openGroup = null
+                    is TabTap.PopToRoot -> {
+                        openGroup = null
+                        spendingOpen = null
+                    }
                     is TabTap.ScrollToTop -> scrollTop = scrollTop + (tap.tab to ((scrollTop[tap.tab] ?: 0) + 1))
                 }
             },
-            onAdd = { route = "add" },
+            // D-249: the + over Your spending opens Add expense on Just me.
+            onAdd = { route = if (SpendingPresence.shown) "add/justme" else "add" },
         )
         }
       }
