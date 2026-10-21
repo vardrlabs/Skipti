@@ -1184,6 +1184,45 @@ out with the rest at 0.5.0 in 126's order; no new index, no rules change).
 - **Risk if wrong:** the live page lags until 0.5.1's Hosting deploy (your yes, a CLOUD-SECURITY row that day).
 - **Overturn:** your words.
 - **Status:** merged in the repo; NOT deployed.
+
+### Session 11's opening round, 159 to 176: your answers (pop-ups, 2026-10-20)
+
+Mock-ups: welcome and profile https://claude.ai/artifact/4gSbSAQy4QmwtXwZ5UfKr2 (v1), Just me
+https://claude.ai/artifact/FwwzuzRkyyxiuGvJKNMPCG (v1); briefs `.drafts/u9/brief.md`, `.drafts/u10/brief.md`,
+`.drafts/u29/calls.md`. Every one is yours; listed so the chains that build them read whole. Overturn: your words.
+
+- **159 (U9):** first run is shape A, a short guide then you (welcome and what's where, pick a look, your name, your
+  picture, done), every screen skippable, no account word; **centred and spread out, far fewer words on the welcome
+  screen** (yours: v1 "looks like an excel sheet").
+- **160 (U9):** "Pick a look" stays, centred, and the whole screen takes the tapped theme at once, so the person sees it
+  while choosing.
+- **161 (U17):** the picture confirms through a sheet (big preview, the groups line when signed in, "Use this
+  picture" / "Not now"); nothing saves or shares until it is confirmed. The name keeps "Save name".
+- **162 (U9):** You > About SKIPTI gains "Show the welcome again".
+- **163 (U10):** Just me ships WITH "All my spending" (Just me plus your share of every group expense) in 0.5.1, as a
+  full-width "Your spending" section below Your ledgers on Home (never on the balance card), with a Just me / All my
+  spending switch, and a switch to show or hide it on Home.
+- **164 (U10):** the tile is ᛁ in Norse and your picture or initial in Aurora and Vardr Labs.
+- **165 (U10):** Home keeps its hero; with no group yet the hero asks the person to create one (if they want to).
+- **166 (U10):** the CSV export gains a `category` column, appended last.
+- **167 (U29):** Settle up gains "Another amount" under each card (prefilled with the debt, capped at it).
+- **168 (U29, D-221 a and b):** "all settled" only when the whole group is; when you owe nothing but others still owe
+  each other: "You're settled in Flat 4B" / "You don't owe anything here."; the payment count follows the
+  fewest-payments plan.
+- **169 (U29, D-221 h):** on a phone with no passcode the ring drops the app-lock step (comes back once one is set).
+- **170 (D-210 o):** a display-only "this phone made this group" fall-back until the server's roles answer; the
+  Functions still decide every action; no rule changes.
+- **171 (GUARANTEES #5):** clarified: "Sharing a group with other people's phones needs an account, because shared
+  groups live in the cloud for everyone in them." Nothing about the app changes (ADR-0013's fork, taken by you).
+- **172 (U33):** the video is made as a Motion artifact (claude.ai; real recordings and screenshots; you export the MP4);
+  nothing installed.
+- **173 (U32, U33):** the sample "you" in public shots is "Sam".
+- **174:** the sweep's other calls stay parked after 0.5.1 (own iOS dialogs, real FX, picking groups at sign-in, Night,
+  iPad, Vardr Labs tab icons).
+- **175 (U32):** the nine store captions as drafted in `.drafts/u29/calls.md` Part 3, plus "Your own spending, next to
+  your groups." for a Just me shot.
+- **176:** build with the drafted words, adapted to these answers; the revised pages show the final set, and you can
+  redirect from them.
 ---
 
 ## High: user-visible behaviour or a privacy surface

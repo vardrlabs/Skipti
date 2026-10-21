@@ -10,7 +10,32 @@ Newest session log entries go at the bottom.
 
 ---
 
-## NOW: 2026-10-20 (session 10, Opus; opener `.drafts/stop/fable-opener-3.md`'s successor): FINISH D-239, THEN 0.5.1 U27, U26, U24, U25
+## NOW: 2026-10-20 (session 11, Opus; opener `.drafts/stop/opus-opener-6.md`): 0.5.1 U9+U17, U29-U31, U10, U32/U33
+
+**RESUME (session 11, start):** main = 80c7a2d (vardrlabs/Skipti's starting commit), tree clean. Step now: the
+founder's up-front round. Three Opus research agents write `.drafts/u9/brief.md` (onboarding + name/picture),
+`.drafts/u10/brief.md` (Just me), `.drafts/u29/calls.md` (U29-U31 triage, his queued calls, store pages, video tool:
+no ffmpeg on this Mac; Keynote and Affinity are). Then mock-ups as private Artifacts (U9/U17, U10, store-page style),
+then ONE round of pop-ups for every call of his, then build in his order with decisions from 159.
+- Briefs DONE: `.drafts/u9/brief.md` (findings: no first run exists at all; the name already has "Save name" + toast,
+  only the picture saves on tap (with an account: one shareProfile per tap); core name max 64 vs share rule 60: a 61-64
+  name is silently not shared (BUG, fix in U17); Android IME return does not save the name (twin defect); Norse chamfer
+  is 10 since D-226, CLAUDE.md's "8" stale; GUARANTEES #5 says "Groups need an account" though local groups work: flag
+  to him). `.drafts/u10/brief.md` (Just me = existing Expense record with group None = personal scope; core, sync,
+  export already carry it; NO rules/Functions change, no deploy; shape A recommended = his 2026-10-13 decision).
+- Mock-up builders (Opus) writing `.drafts/mock/u9-welcome.html` and `.drafts/mock/u10-just-me.html` from
+  `.drafts/mock/spec.md`; I publish them. Video tool finding: the **Motion Artifact type** (claude.ai) composes real
+  screen recordings and screenshots into a film and exports MP4 from its page: no install. Recommend it for U33.
+- **HIS ANSWERS ARE IN (five pop-ups): decisions 159 to 176 in DECISIONS-TAKEN** (U9 shape A centred with few words;
+  live-theme Pick a look; U17 picture confirm SHEET; replay row; U10 = Just me + All my spending NOW, a full-width
+  "Your spending" section below Your ledgers with a Just me / All switch and a show/hide-on-Home switch; tile ᛁ Norse /
+  picture elsewhere; hero kept, asks to create a group when none; CSV category column; Settle "Another amount"; "You're
+  settled in Flat 4B" / "You don't owe anything here."; ring drops app lock without passcode; creator fall-back;
+  GUARANTEES #5 clarified (his wording yes); video = Motion artifact; shots name "Sam"; parked calls stay parked;
+  captions approved; build to the redraw, show him after). My own calls start at **177**.
+- NEXT: redraw both mock pages to his answers (agent), meanwhile plan U9 (D-245, branch d245-welcome) and build.
+
+## SESSION 10 (closed): 2026-10-20 (Opus; opener `.drafts/stop/fable-opener-3.md`'s successor): FINISH D-239, THEN 0.5.1 U27, U26, U24, U25
 
 **THE REPO MOVED (2026-10-20, end of session 10, the founder's pop-up):** `origin` = **vardrlabs/Skipti** (private
 until 0.5.1 makes it public), started from ONE clean starting commit (today's tree without the never-public files; the
