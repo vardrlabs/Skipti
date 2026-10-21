@@ -240,7 +240,6 @@ object RolesCopy {
     /** The review sheet's banner, when the person has a balance. */
     fun reviewBanner(name: String, plan: Map<String, Long>): Pair<String, String>? =
         balanceHere(name, plan)?.let { it to REVIEW_CHOOSE_NEXT }
-    fun deletedByYou(date: String) = "You deleted this group on $date"
     const val REMOVE_CONFIRM = "Remove"
     const val REMOVE_UNJOINED_BODY = "They are in no expense or payment here. You can add them again later."
 
@@ -370,6 +369,110 @@ object RolesCopy {
             else -> InviteCopy.OFFLINE
         }
     }
+}
+
+// ---- D-252: the words of a group that ended (iOS's twin: GroupEndCopy in Roles.swift) ----
+
+/**
+ * D-252 (decision 218): the words of a group that ended on this phone: one that left the account's listing and the
+ * server no longer gives ([ReadOnlyDTO.VANISHED]: a removal and a deletion read the same from outside), a deletion
+ * this account made (on this phone or another of its phones), and a write refused in any read-only copy. iOS's
+ * `GroupEndCopy` is the one table; `GroupEndTest.the_copy_table_is_read_from_the_swift_one` reads it line by line.
+ */
+object GroupEndCopy {
+    /** The banner's one line for a vanished group (its second is [RolesCopy.DELETED_BANNER_BODY]). */
+    const val NO_LONGER_SHARED = "This group is no longer shared with you."
+
+    /** The banner's line for a group this account deleted, on every one of its phones. */
+    fun youDeleted(group: String) = "You deleted $group."
+
+    /** A write into a read-only copy, refused before anything is written ([Placing.ReadOnlyCopy]). */
+    const val REFUSED_VANISHED = "This group is no longer shared with you. Nothing new can be added."
+    const val REFUSED_YOU_DELETED = "You deleted this group. Nothing new can be added."
+    const val REFUSED_DELETED = "This group was deleted. Nothing new can be added."
+    const val REFUSED_REMOVED = "You were removed from this group. Nothing new can be added."
+
+    /** The refusal's words for a copy's mark (a lost place has its own, [RolesCopy.PLACE_LOST_BANNER]). */
+    fun refused(mark: ReadOnlyDTO): String = when (mark.kind) {
+        ReadOnlyDTO.VANISHED -> REFUSED_VANISHED
+        "removed" -> REFUSED_REMOVED
+        ReadOnlyDTO.PLACE_LOST -> RolesCopy.PLACE_LOST_BANNER
+        else -> if (mark.byYou == true) REFUSED_YOU_DELETED else REFUSED_DELETED
+    }
+}
+
+// ---- D-252: a group that left the account's listing ----
+
+/**
+ * D-252 (decision 218): a group this phone holds that the account's listing no longer has, and no removal or deletion
+ * notice explained: the phone asks the server once (a read of `groups/{g}`). Pure, so every case is tested alone;
+ * [CloudSync]'s `checkVanished` does the reading. iOS's twin is `GroupGone` in Roles.swift.
+ */
+object GroupGone {
+    /** What the one read said. */
+    enum class Read {
+        /** The document is there and this account may read it (a member, or a removed person: their notice says why). */
+        EXISTS,
+
+        /** The rules refused it: the account is no longer in it, or it is gone (a deleted group refuses every read). */
+        REFUSED,
+        NOT_FOUND,
+
+        /** No answer from the server (offline, a timeout, auth trouble): it says nothing about the group. */
+        NETWORK_ERROR,
+    }
+
+    enum class Outcome {
+        /** Nothing changes (it is still there). */
+        KEEP,
+
+        /** The local copy becomes read-only ("This group is no longer shared with you."). */
+        READ_ONLY,
+
+        /** Nothing changes now; asked again at the next listing change or launch. */
+        RETRY,
+    }
+
+    fun decide(read: Read): Outcome = when (read) {
+        Read.REFUSED, Read.NOT_FOUND -> Outcome.READ_ONLY
+        Read.NETWORK_ERROR -> Outcome.RETRY
+        Read.EXISTS -> Outcome.KEEP
+    }
+
+    /** The read as `CloudSync.groupRead` gives it (the D-210 removal read: permission-denied and not-found are
+     *  [Notices.GroupRead.Refused], null is no answer). */
+    fun read(answer: Notices.GroupRead?): Read = when (answer) {
+        is Notices.GroupRead.Found -> Read.EXISTS
+        Notices.GroupRead.Missing -> Read.NOT_FOUND
+        Notices.GroupRead.Refused -> Read.REFUSED
+        null -> Read.NETWORK_ERROR
+    }
+
+    /** The groups to ask about, sorted: held on this phone AND in the cloud from here (`sync/groups-up`: a group that
+     *  never left this phone is not in any listing, and asking about it would end it wrongly), not listed now, not
+     *  already a copy, no removal or deletion notice waiting for it (that notice says why), and not already asked this
+     *  session ([asked]: a read that said keep, or one still in flight). The first listing of a session sweeps every
+     *  such group (0.5.0's groups deleted on another phone of the account, decision 218 point 4). */
+    fun toCheck(
+        held: Set<String>,
+        groupsUp: Set<String>,
+        listed: Set<String>,
+        copies: Set<String>,
+        noticed: Set<String>,
+        asked: Set<String>,
+    ): List<String> = (held intersect groupsUp).minus(listed).minus(copies).minus(noticed).minus(asked).sorted()
+
+    /** Whether the vanished mark may be written over what the copy already says: only an unmarked group or a lost
+     *  place (derived, never stored). A removal or a deletion already says more, and is never made vaguer. */
+    fun marks(over: ReadOnlyDTO?): Boolean = over == null || over.kind == ReadOnlyDTO.PLACE_LOST
+
+    /** The mark itself. */
+    fun mark(atMs: Long): ReadOnlyDTO = ReadOnlyDTO(ReadOnlyDTO.VANISHED, "", atMs)
+
+    /** A vanished group listed again (the account is in it once more: a false alarm, or a new invite) is shared again:
+     *  its vanished mark lifts. Only that mark: a removal or a deletion lifts only through an accepted invite. */
+    fun lifts(mark: ReadOnlyDTO?, listedConfirmed: Boolean): Boolean =
+        listedConfirmed && mark?.kind == ReadOnlyDTO.VANISHED
 }
 
 // ---- The main thread, as a seam ----
@@ -767,6 +870,9 @@ object Notices {
         val groupId: String,
         val groupName: String,
         val byName: String,
+        /** D-252: the account that did it (a deletion's notice names its deleter): the same account as this phone's
+         *  reads "You deleted". Absent on notices written before D-252 and on every other kind. */
+        val byUid: String? = null,
         val memberId: String? = null,
         val memberName: String? = null,
         val role: String? = null,
@@ -861,6 +967,17 @@ object Notices {
         return if (at != null && at <= formerAt) RemovalBound.UpTo(at) else RemovalBound.UpTo(formerAt)
     }
 
+    /** D-252: the mark a deletion's notice leaves, or null when the copy already says it. A copy already marked
+     *  deleted keeps its mark (the deleting phone's own, or an earlier notice's: a second phone of the deleting account
+     *  handles the same notice once, and the deleting phone ignores its own); a vanished, removed, lost-place or
+     *  unmarked group becomes a deleted copy. The notice's [Item.byUid] against this account's uid says whose delete it
+     *  was: "You deleted". iOS: `Notices.deletedMark`. */
+    fun deletedMark(item: Item, uid: String?, existing: ReadOnlyDTO?): ReadOnlyDTO? {
+        if (existing?.kind == "deleted") return null
+        val yours = !uid.isNullOrEmpty() && item.byUid == uid
+        return ReadOnlyDTO("deleted", item.byName, item.atMs, byYou = if (yours) true else null)
+    }
+
     /** D-191's rule: Compose state made on the main thread before any frame. */
     fun createState() = Unit
 
@@ -895,12 +1012,16 @@ object Notices {
         if (data.containsKey("memberName")) {
             memberName = data["memberName"] as? String ?: return null
         }
+        var byUid: String? = null
+        if (data.containsKey("byUid")) {
+            byUid = (data["byUid"] as? String)?.takeIf { it.isNotEmpty() } ?: return null
+        }
         var role: String? = null
         if (data.containsKey("role")) {
             role = (data["role"] as? String)?.takeIf { it == "admin" || it == "owner" } ?: return null
         }
         return Item(
-            id = id, kind = kind, groupId = groupId, groupName = groupName, byName = byName,
+            id = id, kind = kind, groupId = groupId, groupName = groupName, byName = byName, byUid = byUid,
             memberId = memberId, memberName = memberName, role = role,
             atMs = millis(data["at"]) ?: 0L,
             removedAtMs = millis(data["removedAt"]),

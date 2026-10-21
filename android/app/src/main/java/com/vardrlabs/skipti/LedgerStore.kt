@@ -177,6 +177,11 @@ data class ReadOnlyDTO(
          *  lifts by itself when the group's owner sets People right. */
         const val PLACE_LOST = "placeLost"
 
+        /** D-252 (decision 218): a group that left the account's listing and the server no longer gives this account
+         *  ([GroupGone]). Stored, like a removal or a deletion; a deletion's notice later says more
+         *  ([Notices.deletedMark]). Stored in the vault: never renamed (iOS: `ReadOnly.vanishedKind`). */
+        const val VANISHED = "vanished"
+
         /** The marks as the phone reads them (pure): the stored ones (removed,
          *  deleted; they win), and every group core says the place is lost in. */
         fun withPlaceLost(stored: Map<String, ReadOnlyDTO>, p: GroupsProjectionOut): Map<String, ReadOnlyDTO> {
@@ -214,12 +219,23 @@ class Placing internal constructor(
      *  place claimed in another group is someone else's id here (a group's maker can name any id as a member), so
      *  it is never written as this account's place: [mineIn] leaves it out. */
     private val claimed: Map<String, Set<String>> = emptyMap(),
+    /** D-252: the stored read-only marks (removed, deleted, vanished), by group: a write into one is refused with its
+     *  words ([ReadOnlyCopy]) before anything is written, as a lost place is. Empty for [NONE] and [of]. */
+    private val copies: Map<String, ReadOnlyDTO> = emptyMap(),
 ) {
     /** A payment whose two ends become one id (you paying your own place). */
     class SameEnds : Exception("a payment cannot go from a person to themselves")
 
     /** D-229 decision 45: a record for a group whose place is lost. */
     class PlaceLost : Exception(RolesCopy.PLACE_LOST_BANNER)
+
+    /** D-252 (decision 218, point 3): a record for a group that is a read-only copy on this phone (removed, deleted,
+     *  or no longer shared): refused here with the copy's words, never saved, refused by the cloud and parked as
+     *  before ("One change could not sync"). iOS: `Placing.ReadOnlyCopy`. */
+    class ReadOnlyCopy(val mark: ReadOnlyDTO) : Exception(GroupEndCopy.refused(mark)) {
+        override fun equals(other: Any?): Boolean = other is ReadOnlyCopy && other.mark == mark
+        override fun hashCode(): Int = mark.hashCode()
+    }
 
     companion object {
         /** Maps nothing. */
@@ -233,7 +249,8 @@ class Placing internal constructor(
             return if (places.isEmpty() && lost.isEmpty()) NONE else Placing(places, listOf(you.id) + p.otherYouIds, lost, claimed)
         }
 
-        fun load(store: LedgerStore): Placing = of(store.projectGroups())
+        /** D-252: with the stored marks, strictly (an unreadable list throws: nothing is written on a guess). */
+        fun load(store: LedgerStore): Placing = of(store.projectGroups()).withCopies(store.storedReadOnly())
 
         /** The group a group operation is in; none for a personal one. */
         fun groupOf(op: GroupOpIn): String? = when (op) {
@@ -258,7 +275,16 @@ class Placing internal constructor(
      *  throw [PlaceLost] for it. */
     fun refuses(group: String?): Boolean = group != null && group in lost
 
+    /** D-252: the pure rule for a copy: a record in a group with a stored read-only mark is refused. */
+    fun copyRefusal(group: String?): ReadOnlyCopy? = group?.let { copies[it] }?.let { ReadOnlyCopy(it) }
+
+    /** D-252: this placing with the stored marks ([load]). */
+    private fun withCopies(marks: Map<String, ReadOnlyDTO>): Placing =
+        if (marks.isEmpty()) this else Placing(places, mine, lost, claimed, marks)
+
+    /** A stored mark first (it says why, as the banner does: a stored mark wins), then a lost place. */
     private fun check(group: String?) {
+        copyRefusal(group)?.let { throw it }
         if (refuses(group)) throw PlaceLost()
     }
 
@@ -320,11 +346,14 @@ class Placing internal constructor(
     }
 
     /** Only `renameMember` and `removeMember` name a person to map; every
-     *  other operation is returned as it is. */
-    fun op(op: GroupOpIn): GroupOpIn = if (refuses(groupOf(op))) throw PlaceLost() else when (op) {
-        is GroupOpIn.RenameMember -> op.copy(memberId = id(op.memberId, op.groupId))
-        is GroupOpIn.RemoveMember -> op.copy(memberId = id(op.memberId, op.groupId))
-        else -> op
+     *  other operation is returned as it is. Any operation in a read-only copy (D-252) or a lost place is refused. */
+    fun op(op: GroupOpIn): GroupOpIn {
+        check(groupOf(op))
+        return when (op) {
+            is GroupOpIn.RenameMember -> op.copy(memberId = id(op.memberId, op.groupId))
+            is GroupOpIn.RemoveMember -> op.copy(memberId = id(op.memberId, op.groupId))
+            else -> op
+        }
     }
 }
 
@@ -1619,10 +1648,12 @@ class LedgerStore(
         writeKv(SELF_KEY, json.encodeToString(SelfDTO.serializer(), me))
         appendGroupOps(listOf(GroupOpIn.You(me.id, name)), Placing.NONE, nowMs)
         // D-229 decision 45: a group whose place is lost takes no rename (its
-        // Placing refuses every record there); every other group does.
+        // Placing refuses every record there); every other group does. D-252: nor does a read-only copy (removed,
+        // deleted, no longer shared): its Placing refuses the rename too, and the whole name change with it.
         val placing = Placing.load(this)
         val renamed = namedGroups().map { named ->
-            if (named.members.any { it.id == me.id } && !placing.refuses(named.group.id)) ffiRenameMember(named, me.id, name) else named
+            val frozen = placing.refuses(named.group.id) || placing.copyRefusal(named.group.id) != null
+            if (named.members.any { it.id == me.id } && !frozen) ffiRenameMember(named, me.id, name) else named
         }
         saveNamed(renamed, nowMs)
         return me
@@ -1849,8 +1880,9 @@ class LedgerStore(
      *  decision 45: with every group whose place is lost. */
     fun readOnlyChecked(): Map<String, ReadOnlyDTO> = ReadOnlyDTO.withPlaceLost(storedReadOnly(), projectGroups())
 
-    /** The stored marks only (removed, deleted): the list the marks below rewrite. */
-    private fun storedReadOnly(): Map<String, ReadOnlyDTO> {
+    /** The stored marks only (removed, deleted, D-252 vanished): the list the marks below rewrite, and the copies
+     *  [Placing.load] refuses. Unreadable THROWS. */
+    internal fun storedReadOnly(): Map<String, ReadOnlyDTO> {
         val data = rawKvGet(READ_ONLY_KEY)
         if (data == null || data.isEmpty()) return emptyMap()
         return try {

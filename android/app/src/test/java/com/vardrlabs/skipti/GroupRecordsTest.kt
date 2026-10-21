@@ -557,7 +557,7 @@ class GroupRecordsTest {
         assertEquals(null, p.rawKvGet(LedgerStore.READ_ONLY_KEY))
         assertEquals(
             "You can't add to this group from this phone: someone else holds your place in it. Ask the group's owner to check People.",
-            ReadOnlyBanner.title(mark, "1 Jan"),
+            ReadOnlyBanner.title(mark, "1 Jan", "Old"),
         )
         assertEquals("one line only", null, ReadOnlyBanner.body(mark, "Old"))
         // What the group page, its settings and People read: the banner, no settings, no People.

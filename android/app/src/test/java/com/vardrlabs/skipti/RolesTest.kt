@@ -1155,10 +1155,11 @@ class RolesTest {
         assertEquals(InviteCopy.OFFLINE, RolesCopy.failure(CloudFunctions.Failure.Offline()))
     }
 
-    /** L4: the phone that deleted the group says "You deleted". */
+    /** L4: the phone that deleted the group says "You deleted". D-252: "You deleted {group}." (GroupEndCopy), the
+     *  same words on the account's other phones (its notice now reaches them; GroupEndTest). */
     @Test
     fun the_deleting_phone_says_you_deleted() {
-        assertEquals("You deleted this group on October 13, 2026", RolesCopy.deletedByYou("October 13, 2026"))
+        assertEquals("You deleted Goa.", GroupEndCopy.youDeleted("Goa"))
         assertEquals("Asha deleted this group on October 13, 2026", RolesCopy.deletedBanner("Asha", "October 13, 2026"))
         assertEquals("Asha removed you on October 13, 2026", RolesCopy.removedBanner("Asha", "October 13, 2026"))
         // A mark stored before the field existed still reads, and a new one round-trips.
@@ -1984,14 +1985,14 @@ class RolesTest {
         try { GroupPeople.load(s, g); fail("an unreadable mark is an error, never 'not a copy'") } catch (_: LedgerCorruptException) {}
     }
 
-    /** L4: the deleting phone says "You deleted"; twin of the Swift banner test. */
+    /** L4: the deleting phone says "You deleted"; twin of the Swift banner test. D-252: "You deleted {group}.". */
     @Test
     fun the_banner_names_who_did_it() {
         val day = "October 13, 2026"
         val at = 1_800_000_000_000L
-        assertEquals("You deleted this group on $day", ReadOnlyBanner.title(ReadOnlyDTO("deleted", "Prithvi", at, byYou = true), day))
-        assertEquals("Asha deleted this group on $day", ReadOnlyBanner.title(ReadOnlyDTO("deleted", "Asha", at), day))
-        assertEquals("Asha removed you on $day", ReadOnlyBanner.title(ReadOnlyDTO("removed", "Asha", at), day))
+        assertEquals("You deleted Goa.", ReadOnlyBanner.title(ReadOnlyDTO("deleted", "Prithvi", at, byYou = true), day, "Goa"))
+        assertEquals("Asha deleted this group on $day", ReadOnlyBanner.title(ReadOnlyDTO("deleted", "Asha", at), day, "Goa"))
+        assertEquals("Asha removed you on $day", ReadOnlyBanner.title(ReadOnlyDTO("removed", "Asha", at), day, "Goa"))
     }
 
     @Test

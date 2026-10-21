@@ -456,10 +456,12 @@ object CloudSync {
         // group this phone just created changes nothing else ([GroupListeners.update]).
         groupsListener = Cloud.db().collection("groups").whereArrayContains("memberUids", uid)
             .addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, _ ->
-                val groups = snapshot?.documents?.map {
+                if (snapshot == null) return@addSnapshotListener
+                val groups = snapshot.documents.map {
                     Triple(it.id, it.data ?: emptyMap(), !it.metadata.hasPendingWrites())
-                } ?: return@addSnapshotListener
-                listenToGroups(groups, uid, store)
+                }
+                val fromCache = snapshot.metadata.isFromCache
+                listenToGroups(groups, uid, store, fromCache)
             }
     }
 
@@ -471,12 +473,20 @@ object CloudSync {
     /** What the Firestore groups listener says: listen to each group's
      *  records, ask who owns and administers a group when that changed on
      *  another phone, and let go of a group that left the list. */
-    private fun listenToGroups(groups: List<Triple<String, Map<String, Any?>, Boolean>>, uid: String, store: LedgerStore) {
+    private fun listenToGroups(
+        groups: List<Triple<String, Map<String, Any?>, Boolean>>,
+        uid: String,
+        store: LedgerStore,
+        fromCache: Boolean,
+    ) {
         val askFor = mutableListOf<Pair<String, String>>()
         synchronized(listenLock) {
             if (personalListener == null) return
             val listeners = groupListeners ?: return
             val ids = groups.map { it.first }.toSet()
+            // D-252: what the server lists now; a group that left it is asked about (never from the cache).
+            listedNow = ids
+            if (!fromCache) checkVanished(groups.map { it.first to it.third }, uid, store)
             // D-210: a group that left this account's list (removed, or deleted):
             // stop listening to its records and nothing else. The notice says why
             // and brings in what was written up to then ([handle]).
@@ -492,6 +502,84 @@ object CloudSync {
             roleAsking.keep(only = ids)
         }
         for ((groupId, signature) in askFor) askRoles(groupId, signature, store)
+    }
+
+    // ---- D-252: a group that left the account's listing ----
+
+    /** The groups the latest listing holds ([checkVanished] asks again before it marks). Guarded by [listenLock]. */
+    private var listedNow: Set<String> = emptySet()
+
+    /** Groups asked about this listening session whose answer was keep, or whose read is in flight; cleared by
+     *  [stopListening], and for a group the listing holds again (it is asked again if it leaves again). Guarded by
+     *  [listenLock]. */
+    private val vanishAsked = mutableSetOf<String>()
+
+    /** D-252 (decision 218): on every listing from the server, a vanished mark lifts from a group listed again, and each
+     *  held group the listing no longer has, with no notice to say why, is asked about once ([GroupGone]): a refusal or
+     *  no document makes the copy read-only ("This group is no longer shared with you."), no answer changes nothing
+     *  (asked again at the next listing or launch). A session's first listing is the sweep: groups that ended while
+     *  this phone was away, 0.5.0's deleted groups on the deleting account's other phones included. Nothing local is
+     *  ever deleted (CLAUDE.md 10). Called under [listenLock]; the vault work runs off the main thread. */
+    private fun checkVanished(listed: List<Pair<String, Boolean>>, uid: String, store: LedgerStore) {
+        val ids = listed.map { it.first }.toSet()
+        vanishAsked.removeAll(ids)
+        // The notices that say why a group ended (read here, where the screens' list is current).
+        val noticed = Notices.items.filter { it.kind.endsSync }.map { it.groupId }.toSet()
+        scope.launch {
+            class Held(val lifted: Boolean, val held: Set<String>, val up: Set<String>, val copies: Set<String>)
+            val seen = withContext(serial) {
+                val marks = runCatching { store.readOnlyChecked() }.getOrNull() ?: return@withContext null
+                var lifted = false
+                for ((groupId, confirmed) in listed) {
+                    if (GroupGone.lifts(marks[groupId], listedConfirmed = confirmed) && runCatching { store.clearReadOnly(groupId) }.isSuccess) {
+                        lifted = true
+                    }
+                }
+                runCatching { Held(lifted, store.loadGroups().map { it.id }.toSet(), CloudRecords.groupsUp(store), marks.keys) }
+                    .getOrDefault(Held(lifted, emptySet(), emptySet(), emptySet()))
+            } ?: return@launch
+            if (seen.lifted) withContext(Dispatchers.Main) { SyncStatus.changed() }
+            val ask = synchronized(listenLock) {
+                if (groupsListener == null) return@launch
+                GroupGone.toCheck(seen.held, seen.up, ids, seen.copies, noticed, vanishAsked).also { vanishAsked += it }
+            }
+            for (groupId in ask) askVanished(groupId, uid, store)
+        }
+    }
+
+    /** The one read for a group [checkVanished] chose: the removal's own ([groupRead]), no new server read. */
+    private fun askVanished(groupId: String, uid: String, store: LedgerStore) {
+        scope.launch {
+            val outcome = GroupGone.decide(GroupGone.read(groupRead(groupId)))
+            val mark = synchronized(listenLock) {
+                // Signed out, or listening as someone else, while it was asked: what it said does not count.
+                if (groupsListener == null || Account.uid() != uid) return@launch
+                when (outcome) {
+                    GroupGone.Outcome.KEEP -> return@launch
+                    GroupGone.Outcome.RETRY -> {
+                        vanishAsked.remove(groupId)
+                        return@launch
+                    }
+                    GroupGone.Outcome.READ_ONLY -> {
+                        vanishAsked.remove(groupId)
+                        // Listed again meanwhile: the newer word stands.
+                        groupId !in listedNow
+                    }
+                }
+            }
+            if (!mark) return@launch
+            val marked = withContext(serial) {
+                runCatching {
+                    // A notice marked it first: the newer word stands.
+                    if (!GroupGone.marks(over = store.readOnlyChecked()[groupId])) return@runCatching false
+                    store.markReadOnly(groupId, GroupGone.mark(System.currentTimeMillis()))
+                    true
+                }.getOrDefault(false)
+            }
+            if (!marked) return@launch
+            synchronized(listenLock) { groupListeners?.remove(groupId) }
+            withContext(Dispatchers.Main) { SyncStatus.changed() }
+        }
     }
 
     /** One `groupRoles` call the listener decided on ([RoleAsking.shouldAsk]).
@@ -565,6 +653,9 @@ object CloudSync {
         IncomingInvites.stop()
         Notices.stop()
         roleAsking.clear()
+        // D-252: a new session asks again (its first listing is the sweep).
+        vanishAsked.clear()
+        listedNow = emptySet()
         phoneListener?.remove()
         phoneListener = null
         personalListener?.remove()
@@ -660,9 +751,15 @@ object CloudSync {
                         }
                     }
                     Notices.Kind.DELETED -> {
+                        // D-252: the deleting account's own notice reaches its other phones ("You deleted"); a phone
+                        // whose copy already says deleted keeps it (the deleting phone's own mark), and a vanished copy
+                        // says more.
+                        val uid = Account.uid()
                         try {
                             withContext(serial) {
-                                store.markReadOnly(item.groupId, ReadOnlyDTO("deleted", item.byName, item.atMs))
+                                Notices.deletedMark(item, uid, store.readOnlyChecked()[item.groupId])?.let {
+                                    store.markReadOnly(item.groupId, it)
+                                }
                             }
                         } catch (_: Exception) {
                             return@launch
