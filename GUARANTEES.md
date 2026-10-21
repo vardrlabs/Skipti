@@ -17,10 +17,10 @@ a fork, not a quiet edit.
    tap.** No row caps, no watermark, no "we'll email it to you."
 
 5. **Your own ledger is fully functional offline and with no account.** An
-   account is opt-in and is never created, implied, or nudged for. Groups
-   need an account, because they live in the cloud for everyone in them.
-   Sync requires an account, is on once you have one, and can be turned off
-   at any time in one tap.
+   account is opt-in and is never created, implied, or nudged for. Sharing a
+   group with other people's phones needs an account, because shared groups
+   live in the cloud for everyone in them. Sync requires an account, is on
+   once you have one, and can be turned off at any time in one tap.
 
 6. **No third-party network origin except SKIPTI's cloud and the services it
    needs.** The app talks to SKIPTI's cloud, which runs on Google Firebase;
@@ -74,3 +74,9 @@ decided it.
   Firebase and the push services; #5 says groups need an account. No build
   that made the old #7 promise was ever released publicly (internal testing
   only). [ADR-0040](docs/adr/0040-firebase-replaces-the-relay.md) records it.
+- **2026-10-20: #5 wording clarified, no behaviour change.** "Groups need an
+  account" read as if a group on this phone alone needed one, which it never
+  has. It now says what needs the account: sharing a group with other
+  people's phones, because shared groups live in the cloud for everyone in
+  them. The founder chose the words (decision 171); nothing about the app
+  changes, so ADR-0013's fork is a clarification of the same promise.

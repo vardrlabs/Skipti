@@ -177,6 +177,8 @@ final class AboutTests: XCTestCase {
             // D-224: AccountOwner's signed-in symbol became the drawn done check (DoneCheck), so one site is left.
             "AccountOwner.swift": (1, sf), "RemovalFlow.swift": (1, sf),
             "GroupPictures.swift": (1, emoji), "Profile.swift": (2, emoji), "GroupsScreen.swift": (1, emoji),
+            // D-245: the welcome's emoji choices (W4) draw their cells as Profile's grid does.
+            "ProfileConfirm.swift": (1, emoji),
         ]
         let app = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("Skipti/App")
@@ -319,14 +321,15 @@ final class AboutTests: XCTestCase {
     }
 
     /// The About copy is Android's, word for word: both pin the same hash,
-    /// derived independently (.drafts/d146/copy_golden.py; D-196: .drafts/d196/copy_golden.py; D-197: .drafts/d197/copy_golden.py).
+    /// derived independently (.drafts/d146/copy_golden.py; D-196: .drafts/d196/copy_golden.py; D-197: .drafts/d197/copy_golden.py;
+    /// D-245, promise 5 after decision 171: .drafts/d245/about_golden.py).
     func testTheAboutCopyMatchesAndroid() {
         XCTAssertEqual(AboutInfo.promises.count, 7, "GUARANTEES.md has seven")
         let joined = (AboutInfo.promises + AboutInfo.privacy + [
             AboutInfo.securityNote, AboutInfo.disclaimer, AboutInfo.maker, AboutInfo.securityEmail,
         ]).joined(separator: "\n")
         let digest = SHA256.hash(data: Data(joined.utf8)).map { String(format: "%02x", $0) }.joined()
-        XCTAssertEqual(digest, "9218fdd5c098d5adbb7463c821a20031a84ff65b9a03227f6bc8fbbdb9b4d1ae")
+        XCTAssertEqual(digest, "0efa2d26a8486466afd7ff1a6caed1a46de3dd99f1e9adf2bc9e032fcb088b60")
         XCTAssertEqual(AboutInfo.versionLine(app: "0.1.0", build: "1"), "Version 0.1.0 (1)")
         XCTAssertEqual(AboutInfo.coreLine("0.1.0"), "Core 0.1.0")
         let current = AboutInfo.current()

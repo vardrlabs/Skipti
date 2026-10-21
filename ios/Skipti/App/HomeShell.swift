@@ -87,6 +87,8 @@ struct HomeShell: View {
     /// D-179: the + opens Add as a sheet, a fresh form every time (D-172's
     /// complaint, a saved expense still on the form, cannot come back).
     @State private var adding = false
+    /// D-245 (U9): the welcome's "Start a group" opens New group over Balance.
+    @State private var startingGroup = false
     /// D-180: where the bar shows (see ShellChrome).
     @State private var chrome = ShellChrome()
     @Environment(\.motionReduced) private var reduceMotion
@@ -189,6 +191,21 @@ struct HomeShell: View {
                     }
                 }
             }
+        }
+        // D-245 (U9): New group from the welcome's last screen, over Balance at its root.
+        .sheet(isPresented: $startingGroup) {
+            NavigationStack {
+                let store = LedgerStore.defaultStore()
+                CreateGroupSheet(store: store, needsYourName: (try? store.ensureSelf())?.name == nil) { _ in
+                    startingGroup = false
+                    OverviewActions.changed()
+                }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .skiptiStartGroup)) { _ in
+            selectedRaw = HomeTab.balance.rawValue
+            roots[.balance, default: 0] += 1
+            startingGroup = true
         }
         // D-187: group pictures, read again on every sync.
         .task(id: SyncStatus.shared.revision) {

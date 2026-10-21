@@ -19,7 +19,7 @@ enum AboutInfo {
         "No limit on logging expenses: no caps, meters or waiting.",
         "No feature is behind a payment. There is no paid tier.",
         "Export all your data, in an open format, any time, in one tap.",
-        "Your own ledger works fully offline and without an account. You are never pushed to make one; groups need one.",
+        "Your own ledger works fully offline and without an account. You are never pushed to make one; sharing a group with others needs one.",
         "The app talks only to SKIPTI's cloud, which runs on Google Firebase, and to Apple or Google to sign you in and deliver notifications.",
         "Only you can read your ledger, and only a group's members can read the group. It is not end-to-end encrypted.",
     ]
@@ -178,6 +178,9 @@ enum Licences {
 struct AboutScreen: View {
     @Environment(\.openURL) private var openURL
     @State private var mailError = false
+    /// D-245 (decision 162): the welcome again, without touching its first-run flag.
+    @State private var replaying = false
+    @State private var replayExit: WelcomeExit?
 
     var body: some View {
         let version = AboutInfo.current()
@@ -196,6 +199,14 @@ struct AboutScreen: View {
                     Text(verbatim: AboutInfo.coreLine(skiptiCoreVersion()))
                         .font(TypeRole.numeric(14))
                         .foregroundStyle(Tokens.textDim)
+                }
+
+                // D-245 (decision 162): one row under the version card; no summary (the settings width tables untouched).
+                ListCard {
+                    Button { replaying = true } label: {
+                        ListRow(title: WelcomeCopy.replay, trailing: .chevron)
+                    }
+                    .buttonStyle(.plain)
                 }
 
                 aboutSection("Promises") {
@@ -265,6 +276,16 @@ struct AboutScreen: View {
         .auroraBackground()
         .navigationTitle("About")
         .navigationBarTitleDisplayMode(.inline)
+        .fullScreenCover(isPresented: $replaying, onDismiss: {
+            WelcomeLook.after(replayExit)
+            replayExit = nil
+        }) {
+            WelcomeView(store: LedgerStore.defaultStore(), mode: .replay) { exit in
+                replayExit = exit
+                WelcomeGate.closed(mode: .replay) { try WelcomeGate.clear(LedgerStore.defaultStore()) }
+                replaying = false
+            }
+        }
     }
 }
 

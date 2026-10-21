@@ -626,9 +626,11 @@ final class SettingsSyncTests: XCTestCase {
         XCTAssertEqual(callers("SettingsSync.launched("), ["SkiptiApp.swift": 1])
         XCTAssertEqual(callers("SettingsSync.frontMoment(locked:"), ["SkiptiApp.swift": 1], "one helper in the app")
         XCTAssertEqual(callers("settingsFrontMoment()"), ["SkiptiApp.swift": 3], "the helper, the scene's return and the unlock")
-        XCTAssertEqual(callers("SettingsSync.pageClosed()"), ["AccountHubScreen.swift": 1])
-        XCTAssertEqual(callers("SettingsSync.set("), ["AccountHubScreen.swift": 8],
-                       "theme, mode, text size, Haptics, Less motion, the icon's switch and rows, the currency (and none elsewhere)")
+        // D-245 (U9, decision 160): the welcome's Pick a look writes the theme through the same funnel and its close is
+        // Appearance's close (`WelcomeLook.choose` / `WelcomeLook.closed`), one site each.
+        XCTAssertEqual(callers("SettingsSync.pageClosed()"), ["AccountHubScreen.swift": 1, "Welcome.swift": 1])
+        XCTAssertEqual(callers("SettingsSync.set("), ["AccountHubScreen.swift": 8, "Welcome.swift": 1],
+                       "theme, mode, text size, Haptics, Less motion, the icon's switch and rows, the currency, and the welcome's theme tile")
         let app = try XCTUnwrap(text["SkiptiApp.swift"])
         let gate = try XCTUnwrap(app.components(separatedBy: "private func loadGate(retry: Bool = false) {").dropFirst().first)
         let start = try XCTUnwrap(gate.range(of: "LaunchFirebase.run("))

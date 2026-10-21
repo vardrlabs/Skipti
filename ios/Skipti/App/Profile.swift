@@ -320,15 +320,21 @@ struct ProfileScreen: View {
     @State private var avatar: Avatar = .none
     @State private var photoItem: PhotosPickerItem?
     @State private var error: String?
+    /// D-245 (U17): the name the done row confirms; the row shows while the field still holds it.
+    @State private var nameDoneFor: String?
+    /// D-245 (decision 161): a tapped emoji or picked photo waits in the sheet; nothing is written before "Use this
+    /// picture". The done row under the picture says what the last confirm wrote.
+    @State private var stage = PictureStage()
+    @State private var confirming: StagedPicture?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                HStack {
-                    Spacer()
+                VStack(spacing: 10) {
                     AvatarView(avatar: avatar, name: savedName, size: 96)
-                    Spacer()
+                    if let done = stage.done { DoneRow(text: done) }
                 }
+                .frame(maxWidth: .infinity)
 
                 card {
                     micro("Your name")
@@ -338,15 +344,36 @@ struct ProfileScreen: View {
                         .submitLabel(.done)
                         .onSubmit { saveName() }
                         .hairlineField()
-                    if let shown = savedName {
-                        Text("Shown as “\(shown) (You)” in your groups.")
-                            .font(TypeRole.body(14))
+                    // D-245 (U17): signed in, who sees the name.
+                    if account.isSignedIn {
+                        Text(verbatim: WelcomeCopy.groupsName)
+                            .font(TypeRole.body(TypeScale.detail))
                             .foregroundStyle(Tokens.textDim)
                     }
-                    // D-224 (Design 8): no "Saved" label (it never reset); the toast says it.
-                    Button("Save name") { saveName() }
-                        .buttonStyle(SecondaryButtonStyle())
-                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || name == savedName)
+                    if let shown = savedName {
+                        Text("Shown as “\(shown) (You)” in your groups.")
+                            .font(TypeRole.body(TypeScale.detail))
+                            .foregroundStyle(Tokens.textDim)
+                    }
+                    // D-245 (U17, decision 179): the rules in words, as the field is typed.
+                    if let problem = NameRule.liveProblem(name, saved: savedName) {
+                        Text(verbatim: problem.message)
+                            .font(TypeRole.body(TypeScale.detail))
+                            .foregroundStyle(Tokens.owed)
+                    }
+                    // D-224 (Design 8): the toast says it; D-245 (U17): and the done row, until the field changes.
+                    if nameDoneFor != nil && nameDoneFor == NameRule.trimmed(name) {
+                        DoneRow(text: DoneCopy.nameSaved)
+                    }
+                    // D-245 (U17): the primary style when there is a name to save; the secondary, dimmed, when not.
+                    if nameSavable {
+                        Button { saveName() } label: { Text(verbatim: WelcomeCopy.saveName) }
+                            .buttonStyle(PrimaryButtonStyle())
+                    } else {
+                        Button { saveName() } label: { Text(verbatim: WelcomeCopy.saveName) }
+                            .buttonStyle(SecondaryButtonStyle())
+                            .disabled(true)
+                    }
                 }
 
                 card {
@@ -357,7 +384,8 @@ struct ProfileScreen: View {
                     }
                     .buttonStyle(SecondaryButtonStyle())
                     if avatar != .none {
-                        Button { setAvatar(.none) } label: { Text("Remove picture").font(TypeRole.label()) }
+                        // D-245: removing keeps today's flow (no confirm), through the one save.
+                        Button { usePicture(.none) } label: { Text("Remove picture").font(TypeRole.label()) }
                             .buttonStyle(SecondaryButtonStyle())
                     }
                 }
@@ -383,6 +411,11 @@ struct ProfileScreen: View {
         .auroraBackground() // D-176
         .navigationTitle("Profile")
         .navigationBarTitleDisplayMode(.inline)
+        // D-245 (decision 161; CLAUDE.md 10.1): the confirm hangs on the always-present scroll view.
+        .sheet(item: $confirming) { staged in
+            PictureConfirmSheet(avatar: staged.avatar, name: savedName, signedIn: account.isSignedIn,
+                                onUse: { usePicture(staged.avatar) }, onNotNow: { stage.notNow(); confirming = nil })
+        }
         .task { load() }
         .onChange(of: photoItem) { _, item in
             guard let item else { return }
@@ -390,9 +423,9 @@ struct ProfileScreen: View {
                 let data = try? await item.loadTransferable(type: Data.self)
                 await MainActor.run {
                     if let data, let stored = ProfileRules.storedPhoto(from: data) {
-                        setAvatar(.photo(stored))
+                        stagePicture(.photo(stored))
                     } else {
-                        error = String(localized: "That photo could not be read.")
+                        error = WelcomeCopy.photoUnreadable
                     }
                     photoItem = nil
                 }
@@ -425,7 +458,7 @@ struct ProfileScreen: View {
                     ForEach(line, id: \.self) { e in
                         let paint = EmojiCell.paint(chosen: avatar == .emoji(e))
                         Button {
-                            setAvatar(.emoji(e))
+                            stagePicture(.emoji(e))
                         } label: {
                             Color.clear
                                 .aspectRatio(1, contentMode: .fit)
@@ -452,35 +485,40 @@ struct ProfileScreen: View {
         }
     }
 
+    /// D-245 (U17): a name differs from the stored one and passes the rules.
+    private var nameSavable: Bool { NameRule.dirty(name, saved: savedName) && NameRule.check(name) == nil }
+
+    /// D-245 (decision 179): the rules in words, then the one save (D-211: your other phones and your groups; D-224's
+    /// toast).
     private func saveName() {
         error = nil
-        do {
-            let me = try store.setYourName(name)
-            savedName = me.name
-            name = me.name ?? name
-            revision += 1
-            // D-211: the name reaches your other phones and your groups.
-            CloudSync.shared.ledgerChanged()
-            ProfileShare.request()
-            // D-224 (Design 7).
-            DoneCenter.shared.post(DoneMoments.line(DoneCopy.nameSaved))
-        } catch {
-            self.error = String(localized: "That name cannot be used: \(String(describing: error))")
+        switch ProfileSave.name(name, store: store) {
+        case .saved(let stored):
+            savedName = stored
+            name = stored
+            nameDoneFor = stored
+        case .refused(let words):
+            error = words
         }
     }
 
-    private func setAvatar(_ new: Avatar) {
+    /// D-245 (decision 161): a tap or a pick only stages the picture and opens the confirm.
+    private func stagePicture(_ new: Avatar) {
         error = nil
+        stage.choose(new)
+        confirming = StagedPicture(avatar: new)
+    }
+
+    /// The confirmed picture (or the removal): written once (D-211: one record, one share request; D-224's toast).
+    private func usePicture(_ new: Avatar) {
+        error = nil
+        confirming = nil
         do {
-            try store.saveAvatar(new)
+            try ProfileSave.picture(new, store: store)
             avatar = new
-            revision += 1
-            // D-211: the picture reaches your other phones; your groups get a preview.
-            CloudSync.shared.ledgerChanged()
-            ProfileShare.request()
-            // D-224 (Design 7): no picture (the initial) is a removal.
-            DoneCenter.shared.post(DoneMoments.line(new == .none ? DoneCopy.pictureRemoved : DoneCopy.pictureSaved))
+            stage.used(new)
         } catch {
+            stage.notNow()
             self.error = "\(error)"
         }
     }

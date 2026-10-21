@@ -395,6 +395,8 @@ final class TypeThemeTests: XCTestCase {
             ("toast", 15),
             // D-225 (art.py 41 to 44): About's prose, a licence's text, the lock screen's title, About's wordmark.
             ("prose", 15), ("footnote", 13), ("lockTitle", 28), ("wordmark", 32),
+            // D-245: the welcome's wordmark (W1).
+            ("welcomeMark", 52),
         ]
         let constants: [CGFloat] = [
             TypeScale.largeTitle, TypeScale.inlineTitle, TypeScale.dateLine, TypeScale.heroAmount, TypeScale.heroLine,
@@ -405,6 +407,7 @@ final class TypeThemeTests: XCTestCase {
             TypeScale.ledgerName, TypeScale.feedLine, TypeScale.emptyTitle,
             TypeScale.toast,
             TypeScale.prose, TypeScale.footnote, TypeScale.lockTitle, TypeScale.wordmark,
+            TypeScale.welcomeMark,
         ]
         XCTAssertEqual(TypeScale.all.count, agreed.count)
         for (i, (name, value)) in agreed.enumerated() {

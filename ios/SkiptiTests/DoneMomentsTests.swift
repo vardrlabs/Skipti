@@ -466,7 +466,8 @@ final class DoneMomentsTests: XCTestCase {
             "GroupSettings.swift": (4, ["DoneCopy.groupNameSaved", "DoneCopy.groupPictureRemoved", "DoneCopy.groupPictureSaved",
                                         "DoneCopy.groupDeleted"]),
             "OverviewScreen.swift": (1, ["DoneCopy.groupPictureRemoved", "DoneCopy.groupPictureSaved"]),
-            "Profile.swift": (2, ["DoneCopy.nameSaved", "DoneCopy.pictureRemoved", "DoneCopy.pictureSaved"]),
+            // D-245: Profile and the welcome save through the one confirm (ProfileSave), which posts.
+            "ProfileConfirm.swift": (2, ["DoneCopy.nameSaved", "DoneCopy.pictureRemoved", "DoneCopy.pictureSaved"]),
             "UsernameStep.swift": (2, ["DoneCopy.usernameSaved, PeopleCopy.handle(h)", "DoneCopy.usernameSaved, PeopleCopy.handle(saved)"]),
             "AccountHubScreen.swift": (1, ["DoneCopy.signedOut"]),
             "SettleAll.swift": (1, ["DoneCopy.settledWith("]),

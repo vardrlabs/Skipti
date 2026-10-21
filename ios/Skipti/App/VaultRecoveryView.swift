@@ -82,8 +82,13 @@ enum VaultRecovery {
         }
     }
 
+    /// D-245 (decision 177): a first launch marks the welcome pending BEFORE it marks the phone launched, so a launch
+    /// killed between the two still welcomes (the next launch is a first launch again).
     static func launch(_ store: LedgerStore) -> Launch {
-        launch(read: { try store.kvFlag(key: launchedFlag) }, mark: { try store.setKvFlag(key: launchedFlag) })
+        launch(read: { try store.kvFlag(key: launchedFlag) }, mark: {
+            try WelcomeGate.mark(store)
+            try store.setKvFlag(key: launchedFlag)
+        })
     }
 
     /// After "Try again": nil when the ledger opened (the app goes on as a normal launch), else the screen with the

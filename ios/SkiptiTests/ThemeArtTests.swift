@@ -121,6 +121,9 @@ final class ThemeArtTests: XCTestCase {
             ("ThemeMotion.swift", "Text(verbatim: Runes.futhark[i]).font(TypeRole.rune(SettledBurst.norseRune))"), // D-221: the burst's runes
             ("YouProgress.swift", ".font(TypeRole.rune(size))"), // D-221: Norse's rune ring round You's picture
             ("AccountHubScreen.swift", #".font(TypeRole.rune(ThemeArt.m("swatchRune")))"#), // D-222: Norse's theme swatch
+            // D-245 (decision 192): the welcome's progress runes, and W1's places in Norse (the bar's own runes).
+            ("Welcome.swift", ".font(TypeRole.rune(size))"),
+            ("Welcome.swift", #"Text(verbatim: tab.rune).font(TypeRole.rune(ThemeArt.m("seal") * 0.6))"#),
         ]
         for site in sites {
             let text = try appSource(site.file)
@@ -131,7 +134,7 @@ final class ThemeArtTests: XCTestCase {
             .appendingPathComponent("Skipti/App")
         for file in try FileManager.default.contentsOfDirectory(atPath: dir.path).filter({ $0.hasSuffix(".swift") })
         where !["ThemeArt.swift", "ThemeMotion.swift", "SkiptiTabBar.swift", "TypeSystem.swift", "YouProgress.swift",
-                 "AccountHubScreen.swift"].contains(file) {
+                 "AccountHubScreen.swift", "Welcome.swift"].contains(file) {
             XCTAssertFalse(try appSource(file).contains("TypeRole.rune("), "\(file) draws runes itself")
         }
     }
@@ -1751,8 +1754,10 @@ final class ThemeArtTests: XCTestCase {
             .appendingPathComponent("Skipti/App")
         let files = try FileManager.default.contentsOfDirectory(atPath: dir.path).filter { $0.hasSuffix(".swift") }
         let users = try files.filter { try appSource($0).contains("TitleOrnament(") }.sorted()
-        XCTAssertEqual(users, ["ExpenseListView.swift", "GroupsScreen.swift", "OverviewScreen.swift", "SettleAll.swift"],
-                       "the ornament belongs to the four tab roots (not You)")
+        // D-245 (U9, the approved mock-up v2): the welcome's centred titles carry it in Norse too (a full-screen page with
+        // its own large titles, not a pushed page).
+        XCTAssertEqual(users, ["ExpenseListView.swift", "GroupsScreen.swift", "OverviewScreen.swift", "SettleAll.swift", "Welcome.swift"],
+                       "the ornament belongs to the four tab roots and the welcome (not You)")
     }
 
     /// D-217 (the Look Book's `.orn`): each rule is 42% of the width, the rune takes the 16% between them, and the

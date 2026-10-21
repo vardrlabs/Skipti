@@ -1567,14 +1567,20 @@ final class AppearanceTests: XCTestCase {
         XCTAssertEqual(occurrences(all, "setAlternateIconName("), 1, "one call in the app")
         let switcher = try between(try appFile("Appearance.swift"), from: "enum AppIconSwitcher {", to: "\n}\n")
         XCTAssertEqual(occurrences(switcher, "setAlternateIconName("), 1, "inside AppIconSwitcher")
-        XCTAssertEqual(occurrences(all, "AppIconSwitcher.applyIfNeeded("), 1, "called once in the app")
+        // D-245 (U9, plan 1.3 W2): the welcome's close is Appearance's close: a third named site, `WelcomeLook.closed`,
+        // the only call in Welcome.swift (it runs once the welcome's cover has gone, first run or replay).
+        XCTAssertEqual(occurrences(all, "AppIconSwitcher.applyIfNeeded("), 2, "Appearance's leave and the welcome's close")
+        let welcomeClose = try between(try appFile("Welcome.swift"), from: "    static func closed(defaults: UserDefaults = .standard,", to: "\n    }\n")
+        XCTAssertTrue(welcomeClose.contains("{ AppIconSwitcher.applyIfNeeded(choice: $0, theme: $1) }"), welcomeClose)
+        XCTAssertEqual(occurrences(try appFile("Welcome.swift"), "AppIconSwitcher."), 1, "one call in the welcome")
         // D-244 (ADR-0043; ADR-0041's App icon section amended), amended ON PURPOSE to exactly two named call sites: the
         // Appearance page's leave (`applyIfNeeded`, below) and the front moment of a change that arrived from the account
         // (`applyArrived`, once, in SettingsSync's `changeIfPending`), which acts only on the arrival's pending mark, with
         // SKIPTI in front and unlocked (SettingsSyncTests pin the decision and where the moment is called from).
         XCTAssertEqual(occurrences(all, "AppIconSwitcher.applyArrived("), 1, "the arrival's one call")
         let callers = files.filter { $0.text.contains("AppIconSwitcher.") }.map(\.name).sorted()
-        XCTAssertEqual(callers, ["AccountHubScreen.swift", "SettingsSync.swift"], "the Appearance page and the front moment")
+        XCTAssertEqual(callers, ["AccountHubScreen.swift", "SettingsSync.swift", "Welcome.swift"],
+                       "the Appearance page, the front moment and the welcome's close")
         let sync = try appFile("SettingsSync.swift")
         XCTAssertEqual(occurrences(sync, "AppIconSwitcher."), 1, "one call in SettingsSync")
         let pending = try between(sync, from: "@MainActor private static func changeIfPending(store: LedgerStore, locked: Bool) {", to: "\n    }\n")

@@ -149,6 +149,11 @@ struct SkiptiApp: App {
     @AppStorage(ScreenPrivacy.storageKey) private var hideWhenCaptured = false
     /// D-159/D-195: an invite link the system handed the app.
     @State private var openedInvite: OpenedInvite?
+    /// D-245 (U9, decision 177): the vault's `welcome/pending` as this launch read it; the cover while it shows; and the
+    /// way it was closed, for after the cover has gone.
+    @State private var welcomePending = false
+    @State private var welcomeShown = false
+    @State private var welcomeExit: WelcomeExit?
 
     struct OpenedInvite: Identifiable {
         let link: String
@@ -195,6 +200,22 @@ struct SkiptiApp: App {
             // root, closed by the same one tap (OK) the alert had.
             .fullScreenCover(isPresented: $erasedNotice) {
                 ErasedScreen { erasedNotice = false }
+            }
+            // D-245 (U9): the welcome covers the app once the vault opened and the lock (on a relaunch) is open, and after
+            // an erase's notice. Once shown it stays until closed (a lock that comes back draws its curtain over it).
+            .onChange(of: welcomeReady, initial: true) { _, ready in
+                if ready { welcomeShown = true }
+            }
+            .fullScreenCover(isPresented: $welcomeShown, onDismiss: {
+                WelcomeLook.after(welcomeExit)
+                welcomeExit = nil
+            }) {
+                WelcomeView(store: LedgerStore.defaultStore(), mode: .firstRun) { exit in
+                    welcomeExit = exit
+                    welcomePending = false
+                    WelcomeGate.closed(mode: .firstRun) { try WelcomeGate.clear(LedgerStore.defaultStore()) }
+                    welcomeShown = false
+                }
             }
                 // D-192: coming to the front and leaving reach the cloud
                 // sync (Firestore listeners from unit 4; nothing yet).
@@ -317,6 +338,11 @@ struct SkiptiApp: App {
     /// opens, then `lock.launch()` runs, then `onboardingComplete`), and then for the unlock: a cold launch from one
     /// never shows it before the lock exists.
     private var held: Bool { onboardingComplete != true || lock.locked }
+
+    /// D-245 (U9): the welcome may cover the app now: pending, the vault open, the lock open, no erase notice up, no proof.
+    private var welcomeReady: Bool {
+        welcomePending && !held && vaultError == nil && !erasedNotice && !verificationArg
+    }
 
     /// D-235 (C1): what the curtain is drawn from.
     private struct CurtainInputs: Equatable {
@@ -520,6 +546,15 @@ struct SkiptiApp: App {
             let signedInMark = Account.signedInMark(store)
             // D-235 final wave (I-1): a push token delete that an offline sign-out could not finish.
             let deleteOwed = Push.deleteOwed(store)
+            // D-245 (U9, decision 177): whether the welcome is pending (a first launch has just marked it).
+            let welcome: Bool = {
+                guard case .opened(let launchedBefore) = launch else { return false }
+                #if DEBUG
+                // `--welcome`: the ordinary app with the welcome forced (a look's tool; Debug builds only).
+                if ProcessInfo.processInfo.arguments.contains("--welcome") { return true }
+                #endif
+                return WelcomeGate.atLaunch(launchedBefore: launchedBefore) { try WelcomeGate.pending(store) }
+            }()
             Task { @MainActor in
                 if retry { vaultAttempts.end() }
                 switch launch {
@@ -546,6 +581,7 @@ struct SkiptiApp: App {
                         // build could not apply is applied now), then an icon change still pending, at the front only.
                         SettingsSync.launched(locked: lock.locked, active: scenePhase == .active)
                     }
+                    welcomePending = welcome
                     onboardingComplete = true
                 case .unavailable(let reason):
                     vaultError = reason

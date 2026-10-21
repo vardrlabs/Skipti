@@ -579,7 +579,8 @@ final class ThemeMotionTests: XCTestCase {
         // 1 text site on the ground (RemovalFlow's Edit amounts) and `barTint()` (F1, every toolbar item). D-221: You's
         // "Edit" is gone (Q11 a, the progress pill took its place). D-223 (D21): Lately's "See all" sits on the card's
         // surface, so it takes `accent` like every in-card link, not the ground token.
-        XCTAssertEqual(try count("Tokens.groundAccent"), 2)
+        // D-245: the welcome's Skip and its "Welcome to" lead sit on the ground: 4.
+        XCTAssertEqual(try count("Tokens.groundAccent"), 4)
     }
 
     /// D-225 fix wave (decision 26, review I3, look F4): a section label names what follows and is not faint text, so
@@ -1022,7 +1023,9 @@ final class ThemeMotionTests: XCTestCase {
         // D-243 (amended on purpose): ThemeMotion.swift's third reader is `ArtTurn` (You's turning ring), beside ArtCanvas
         // and RuneLayer.
         XCTAssertEqual(readers, ["AccountHubScreen.swift": 1, "DoneMoments.swift": 4, "HomeShell.swift": 1, "ListRows.swift": 1,
-                                 "OverviewScreen.swift": 1, "Settled.swift": 1, "SkiptiTabBar.swift": 2, "ThemeMotion.swift": 3],
+                                 "OverviewScreen.swift": 1, "Settled.swift": 1, "SkiptiTabBar.swift": 2, "ThemeMotion.swift": 3,
+                                 // D-245: the welcome's step change and its progress (a moment) read the door.
+                                 "Welcome.swift": 2],
                        "every reader reads the door")
         let applier = try XCTUnwrap(try appSource("Appearance.swift").components(separatedBy: "struct AppearanceApplier: ViewModifier {").last)
         XCTAssertTrue(applier.contains("@Environment(\\.accessibilityReduceMotion) private var systemReduceMotion"))
