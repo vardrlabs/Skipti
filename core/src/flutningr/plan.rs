@@ -560,6 +560,13 @@ mod tests {
             "zero-decimal refused"
         );
         assert_eq!(parse_money_cell("-1900", "JPY").unwrap(), Some(-1900));
+        // D-248 (decision 184): the entry fields read one comma as the decimal
+        // mark; import does NOT. A CSV "1,234" is a grouped thousand or a
+        // decimal depending on who wrote it, so it stays refused, even in KWD
+        // where the typed parser would take it as 1.234.
+        assert!(parse_money_cell("1,234", "INR").is_err());
+        assert!(parse_money_cell("1,234", "KWD").is_err());
+        assert!(parse_money_cell("12,50", "EUR").is_err());
     }
 
     #[test]

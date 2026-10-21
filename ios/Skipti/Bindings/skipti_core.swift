@@ -10169,6 +10169,21 @@ public func ffiMoneyParseMinor(digits: String, currencyCode: String)throws  -> I
     )
 })
 }
+/**
+ * D-248 (decision 184): THE parser for every amount a person types (Add,
+ * Edit, exact and itemised rows, tax and tip, Settle up's other amount,
+ * removal's settle-first): one ',' and no '.' is the decimal mark, else the
+ * strict rule. Import never calls it (see `money_parse_typed`).
+ */
+public func ffiMoneyParseTyped(text: String, currencyCode: String)throws  -> Int64  {
+    return try  FfiConverterInt64.lift(try rustCallWithError(FfiConverterTypeCoreError_lift) {
+        uniffiCallStatus in
+    uniffi_skipti_core_fn_func_ffi_money_parse_typed(
+        FfiConverterString.lower(text),
+        FfiConverterString.lower(currencyCode),uniffiCallStatus
+    )
+})
+}
 public func ffiMoneySpoken(minorUnits: Int64, currencyCode: String, locale: LocaleTag)throws  -> String  {
     return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeCoreError_lift) {
         uniffiCallStatus in
@@ -10631,6 +10646,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_skipti_core_checksum_func_ffi_money_parse_minor() != 26879) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_skipti_core_checksum_func_ffi_money_parse_typed() != 32718) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_skipti_core_checksum_func_ffi_money_spoken() != 1431) {

@@ -789,6 +789,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_skipti_core_checksum_func_ffi_money_parse_minor(
     ): Int
+    external fun uniffi_skipti_core_checksum_func_ffi_money_parse_typed(
+    ): Int
     external fun uniffi_skipti_core_checksum_func_ffi_money_spoken(
     ): Int
     external fun uniffi_skipti_core_checksum_func_ffi_named_group(
@@ -991,6 +993,8 @@ internal object UniffiLib {
     external fun uniffi_skipti_core_fn_func_ffi_money_input_digits(`minorUnits`: Long,`currencyCode`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_skipti_core_fn_func_ffi_money_parse_minor(`digits`: RustBuffer.ByValue,`currencyCode`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Long
+    external fun uniffi_skipti_core_fn_func_ffi_money_parse_typed(`text`: RustBuffer.ByValue,`currencyCode`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Long
     external fun uniffi_skipti_core_fn_func_ffi_money_spoken(`minorUnits`: Long,`currencyCode`: RustBuffer.ByValue,`locale`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1286,6 +1290,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_skipti_core_checksum_func_ffi_money_parse_minor() != 26879) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_skipti_core_checksum_func_ffi_money_parse_typed() != 32718) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_skipti_core_checksum_func_ffi_money_spoken() != 1431) {
@@ -11340,6 +11347,25 @@ public object FfiConverterSequenceTypeCondition: FfiConverterRustBuffer<List<Con
     
         
         FfiConverterString.lower(`digits`),
+        FfiConverterString.lower(`currencyCode`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * D-248 (decision 184): THE parser for every amount a person types (Add,
+         * Edit, exact and itemised rows, tax and tip, Settle up's other amount,
+         * removal's settle-first): one ',' and no '.' is the decimal mark, else the
+         * strict rule. Import never calls it (see `money_parse_typed`).
+         */
+    @Throws(CoreException::class) fun `ffiMoneyParseTyped`(`text`: kotlin.String, `currencyCode`: kotlin.String): kotlin.Long {
+            return FfiConverterLong.lift(
+    uniffiRustCallWithError(CoreException) { _status ->
+    UniffiLib.uniffi_skipti_core_fn_func_ffi_money_parse_typed(
+    
+        
+        FfiConverterString.lower(`text`),
         FfiConverterString.lower(`currencyCode`),_status)
 }
     )

@@ -442,6 +442,28 @@ pub fn money_parse_minor(digits: &str, code: &str) -> Result<i64, CoreError> {
     narrow(signed)
 }
 
+/// D-248 (decision 184): parses an amount a person TYPED into an entry field.
+/// A decimal-comma keyboard (de, fr, es, it, pt-BR, id...) offers ',' where
+/// an English one offers '.', so text with exactly one ',' and no '.' reads
+/// the comma as the decimal mark ("12,50" → 12.50); everything else goes
+/// through `money_parse_minor`'s strict rule unchanged, so grouping
+/// separators ("1,234.56", "1.234,56", "1,234,567") stay refused and too many
+/// decimals are refused, never rounded. Text with no digit at all ("," or
+/// ".") is refused. Import keeps `money_parse_minor`
+/// itself: a CSV cell "1,234" must stay refused, never become 1.234.
+pub fn money_parse_typed(text: &str, code: &str) -> Result<i64, CoreError> {
+    // The strict rule reads a lone "." as 0 (older than D-248; import keeps
+    // it). A field holding only a mark has no amount in it: refuse it.
+    if !text.bytes().any(|b| b.is_ascii_digit()) {
+        return Err(CoreError::InvalidInput("no digits in amount".to_string()));
+    }
+    let commas = text.bytes().filter(|b| *b == b',').count();
+    if commas == 1 && !text.contains('.') {
+        return money_parse_minor(&text.replacen(',', ".", 1), code);
+    }
+    money_parse_minor(text, code)
+}
+
 /// Parses a manually-entered decimal rate ("83.25") into the exact
 /// rational the record freezes (8325/100). Same discipline as
 /// money_parse_minor: digits and one dot, no floats, denominator capped
@@ -1636,6 +1658,15 @@ pub fn ffi_convert_minor(
 #[uniffi::export]
 pub fn ffi_money_parse_minor(digits: String, currency_code: String) -> Result<i64, CoreError> {
     money_parse_minor(&digits, &currency_code)
+}
+
+/// D-248 (decision 184): THE parser for every amount a person types (Add,
+/// Edit, exact and itemised rows, tax and tip, Settle up's other amount,
+/// removal's settle-first): one ',' and no '.' is the decimal mark, else the
+/// strict rule. Import never calls it (see `money_parse_typed`).
+#[uniffi::export]
+pub fn ffi_money_parse_typed(text: String, currency_code: String) -> Result<i64, CoreError> {
+    money_parse_typed(&text, &currency_code)
 }
 
 /// D-165: every currency code core accepts, sorted: the shells' "All
@@ -7091,6 +7122,63 @@ mod tests {
         assert!(money_parse_minor("12.", "INR").is_ok());
         // Overflow past i64 refuses rather than wrapping.
         assert!(money_parse_minor("99999999999999999999", "INR").is_err());
+    }
+
+    /// D-248 (decision 184): the typed-amount parser. Goldens re-derived in
+    /// Python with exact Fractions (`.drafts/d248/typed_goldens.py`, run with
+    /// `python3 -I`), not read back out of the code.
+    #[test]
+    fn money_parse_typed_reads_one_comma_as_the_decimal_mark() {
+        let goldens: &[(&str, &str, Option<i64>)] = &[
+            ("12,50", "EUR", Some(1250)),
+            ("12,5", "EUR", Some(1250)),
+            ("0,99", "EUR", Some(99)),
+            (",5", "EUR", Some(50)),
+            ("12,", "EUR", Some(1200)),
+            ("1234,56", "INR", Some(123456)),
+            ("1,005", "KWD", Some(1005)),
+            ("0,1", "KWD", Some(100)),
+            ("2,25", "BHD", Some(2250)),
+            (" 7,10 ", "USD", Some(710)),
+            ("-12,40", "INR", Some(-1240)),
+            ("12.50", "EUR", Some(1250)),
+            ("1.005", "KWD", Some(1005)),
+            ("1005", "JPY", Some(1005)),
+            ("0.1", "INR", Some(10)),
+            ("1,234,567", "INR", None),
+            ("1,234.56", "USD", None),
+            ("1.234,56", "EUR", None),
+            ("12,505", "EUR", None),
+            ("1,0005", "KWD", None),
+            ("10,5", "JPY", None),
+            ("1,234", "INR", None),
+            ("1,234", "KWD", Some(1234)),
+            ("1,234", "JPY", None),
+            ("１２,５", "EUR", None),
+            (",", "EUR", None),
+            (".", "EUR", None),
+            ("", "EUR", None),
+            ("12,5a", "EUR", None),
+            ("12 ,50", "EUR", None),
+            ("99999999999999999999,00", "INR", None),
+        ];
+        for (text, code, want) in goldens {
+            assert_eq!(
+                ffi_money_parse_typed((*text).into(), (*code).into()).ok(),
+                *want,
+                "{code} {text:?}"
+            );
+        }
+        // The strict parser is untouched: a comma never reaches the ledger
+        // through it, whatever the currency.
+        assert!(money_parse_minor("12,50", "EUR").is_err());
+        assert!(money_parse_minor("1,234", "KWD").is_err());
+        // An unknown currency is refused, never given a guessed exponent.
+        assert!(ffi_money_parse_typed("12,50".into(), "XYZ".into()).is_err());
+        // A lone mark is no amount (the strict rule's "." as 0 is older and
+        // stays for import).
+        assert!(ffi_money_parse_typed(".".into(), "EUR".into()).is_err());
+        assert_eq!(money_parse_minor(".", "EUR"), Ok(0));
     }
 
     #[test]
