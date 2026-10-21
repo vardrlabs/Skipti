@@ -145,6 +145,10 @@ final class SpendingTests: XCTestCase {
         let slice = String(row[body...].prefix(600))
         XCTAssertTrue(slice.contains("@AppStorage(SpendingPrefs.onHomeKey) private var on = true"))
         XCTAssertFalse(slice.contains("SettingsSync"))
+        // The card's switch remembers a tap through the same key (sabotage J6: a setter that dropped it survived; the
+        // page's setter is pinned by the decision 206 test).
+        let home = try appSource("OverviewScreen.swift")
+        XCTAssertTrue(home.contains("Binding(get: { SpendingPrefs.view(spendingViewRaw) }, set: { spendingViewRaw = SpendingPrefs.raw($0) })"))
     }
 
     /// Decision 206: the page opened from the Expenses tab's Just me header always starts in Just me, whatever is
@@ -365,5 +369,49 @@ final class SpendingTests: XCTestCase {
         XCTAssertEqual(ExpenseSections.build(list, filter: .justMe).first?.expenses.map(\.id), ["1", "3"])
         XCTAssertEqual(ExpenseSections.build(list, filter: .all).map(\.groupID), ["g", nil], "Just me still last")
         XCTAssertEqual(ExpenseSections.build(list, filter: .group("g")).map(\.groupID), ["g"])
+    }
+
+    // MARK: - Sabotage pins (D-249 iOS lane, .drafts/d249/sab-ios)
+
+    /// Export Just me on the shell's own path: the model hands the flag to `Exporter.write`, so the file is
+    /// `skipti-just-me-YYYY-MM` (the whole ledger keeps `skipti-export-`), and the page reads core's personal slice, never
+    /// the whole snapshot (a group expense would leave in a "Just me" file).
+    func testExportJustMeWritesTheJustMeFileOfThePersonalSlice() throws {
+        let model = ExportFlowModel()
+        model.acknowledge()
+        let empty = LedgerSnapshot(groups: [], expenses: [], settlements: [], redistributions: [], profile: nil)
+        let justMe = try model.export(format: .csv, snapshot: empty, justMe: true)
+        defer { try? FileManager.default.removeItem(at: justMe) }
+        XCTAssertTrue(justMe.lastPathComponent.hasPrefix(Exporter.justMePrefix), justMe.lastPathComponent)
+        // Negative: the whole ledger's export keeps its own name.
+        let whole = try model.export(format: .csv, snapshot: empty)
+        defer { try? FileManager.default.removeItem(at: whole) }
+        XCTAssertTrue(whole.lastPathComponent.hasPrefix(Exporter.filePrefix), whole.lastPathComponent)
+        XCTAssertFalse(whole.lastPathComponent.hasPrefix(Exporter.justMePrefix))
+        // The page's snapshot for Export Just me is core's personal slice (`ffiSnapshotPersonal`, pinned above by its
+        // own test), taken once, and the whole or one group's snapshot only otherwise.
+        let page = try appSource("ExportFlow.swift")
+        XCTAssertTrue(page.contains("let s = justMe ? ffiSnapshotPersonal(snapshot: try store.snapshot())\n"
+                                    + "                    : try group.map { try store.snapshot(group: $0) } ?? store.snapshot()"), page)
+        XCTAssertEqual(page.components(separatedBy: "ffiSnapshotPersonal(").count - 1, 1)
+        XCTAssertTrue(try appSource("Spending.swift").contains("ExportScreen(store: store, justMe: true)"), "the page's export item")
+    }
+
+    /// Spending on Home draws the number of summary lines the width tables measure (decision 82): the app row and
+    /// DoneMomentsTests' row say the same, two.
+    func testSpendingOnHomeDrawsTheLinesTheWidthTableMeasures() throws {
+        let app = try appSource("Spending.swift")
+        let table = try String(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("DoneMomentsTests.swift"), encoding: .utf8)
+        func lines(_ text: String, _ pattern: String) throws -> Int? {
+            let re = try NSRegularExpression(pattern: pattern)
+            guard let m = re.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+                  let r = Range(m.range(at: 1), in: text) else { return nil }
+            return Int(text[r])
+        }
+        let drawn = try XCTUnwrap(lines(app, #"parts: \[SpendingCopy\.homeSummary\], summaryLines: (\d+),"#))
+        let measured = try XCTUnwrap(lines(table, #"label: "Spending on Home", parts: \[SpendingCopy\.homeSummary\], lines: (\d+),"#))
+        XCTAssertEqual(drawn, measured, "the row draws what the width table measures")
+        XCTAssertEqual(drawn, 2)
     }
 }
