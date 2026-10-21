@@ -528,6 +528,11 @@ class ChangeMotionTest {
         // A card that is done slides out to the trailing edge (iOS's cardLeaves), fading, the rows closing up.
         val rows = body("fun <T> MovingRows(")
         assertTrue("RowLeave.SLIDE -> slideOutHorizontally(" in rows)
+        // D-250 sabotage pin (row A21 survived): the slide goes to the TRAILING edge, a positive offset left to right and
+        // a negative one right to left (iOS's `.move(edge: .trailing)`), never to the leading edge.
+        assertTrue("val ltr = LocalLayoutDirection.current == LayoutDirection.Ltr" in rows)
+        assertTrue("to the trailing edge", "slideOutHorizontally(androidx.compose.animation.core.tween(ms, easing = ease)) { w -> if (ltr) w else -w }" in rows)
+        assertFalse("never to the leading edge", "{ w -> if (ltr) -w else w }" in rows)
         assertTrue("exit = if (motion.reduce) ExitTransition.None else when (leave)" in rows)
         // A row on its way out keeps looking as it last did (Settle up's card keeps "Recording…", from the look).
         assertTrue("CompositionLocalProvider(LocalRowLeaving provides !state.targetState)" in rows)
