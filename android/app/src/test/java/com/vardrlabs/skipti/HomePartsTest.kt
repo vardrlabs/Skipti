@@ -377,7 +377,7 @@ class HomePartsTest {
         val card = fn("HomeParts.kt", "fun LedgerCard(")
         for (s in listOf(
             "ThemeArt.m(\"ledgerTileGap\")", "ThemeArt.m(\"ledgerCardGap\")",
-            "Type.name(dark, TypeScale.ledgerName.toInt())", "SettledMeter(SettledMeters.fraction(bps), big = false, dark)",
+            "Type.name(dark, TypeScale.ledgerName.toInt())", "basisPoints?.let { SettledMeter(meter, big = false, dark) }",
             ".glassCard(dark)", ".clip(ThemeArt.cardShape(Appearance.theme))", "onClickLabel = GroupsCopy.OPEN_HINT",
             "maxLines = 1, overflow = TextOverflow.Ellipsis", "maxLines = 2", "LedgerCards.spoken(name, line, basisPoints)",
             ".clearAndSetSemantics { contentDescription = spoken }",
@@ -657,7 +657,7 @@ class HomePartsTest {
         val shell = kt("AppRoot.kt")
         val decl = "var tabBarPx by rememberSaveable { mutableIntStateOf(0) }"
         assertEquals("declared once", 1, shell.split(decl).size - 1)
-        assertTrue("above the route switch", shell.indexOf(decl) in 0 until shell.indexOf("    when (route) {"))
+        assertTrue("above the route switch", shell.indexOf(decl) in 0 until shell.indexOf("    when (shown) {"))
         assertTrue("beside Home's kept scroll", shell.indexOf(decl) > shell.indexOf("val homeKeep = remember(vaultPath) { HomeKeep(homeScroll) }"))
         assertFalse("no second, per-entry one", "var tabBarPx by remember {" in shell)
         assertTrue("the shell provides it", "LocalShellBarInset provides tabBarInset" in shell)
@@ -674,7 +674,7 @@ class HomePartsTest {
         val keep = "val homeKeep = remember(vaultPath) { HomeKeep(homeScroll) }"
         assertTrue(keep in shell)
         assertTrue("val homeScroll = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) }" in shell)
-        assertTrue("above the route switch", shell.indexOf(keep) < shell.indexOf("    when (route) {"))
+        assertTrue("above the route switch", shell.indexOf(keep) < shell.indexOf("    when (shown) {"))
         assertTrue("Home is handed it", "keep = homeKeep," in shell.substringAfter("OverviewScreen(").substringBefore("\n                            )"))
         val home = overviewScreen()
         for (v in listOf("groups", "overview", "progress", "latelyRead", "needsName", "loaded", "error")) {
@@ -699,7 +699,7 @@ class HomePartsTest {
     @Test
     fun every_tab_keeps_its_place() {
         val shell = kt("AppRoot.kt")
-        val routeSwitch = shell.indexOf("    when (route) {")
+        val routeSwitch = shell.indexOf("    when (shown) {")
         for ((tab, screen) in listOf("expenses" to "ExpenseListScreen.kt", "groups" to "GroupsTab.kt", "settle" to "SettleAll.kt")) {
             val scroll = "val ${tab}Scroll = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) }"
             val keep = "val ${tab}Keep = remember(vaultPath) { TabKeep(${tab}Scroll) }"

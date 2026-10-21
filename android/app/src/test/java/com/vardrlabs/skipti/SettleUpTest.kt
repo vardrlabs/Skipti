@@ -521,7 +521,8 @@ class SettleUpTest {
     @Test
     fun each_settled_state_draws_its_own_words() {
         val screen = src("SettleAll.kt").substringAfter("fun SettleAllScreen(").substringBefore("fun OtherAmountSheet(")
-        assertEquals(1, count(screen, "val all = section.state == SettleState.ALL_SETTLED"))
+        // D-250 fix wave (twin 5): the panel is a MovingRows of the settled state (it fades in and out, as iOS's).
+        assertEquals(1, count(screen, "val all = state == SettleState.ALL_SETTLED"))
         assertEquals("the title", 1, count(screen, "if (all) SettleAllCopy.settled(named.group.name) else SettleAllCopy.youSettled(named.group.name),"))
         assertEquals("the detail", 1, count(screen, "if (all) SettleAllCopy.SETTLED_DETAIL else SettleAllCopy.YOU_SETTLED_DETAIL,"))
         assertEquals("the all-settled detail only on its own branch", 1, count(screen, "SettleAllCopy.SETTLED_DETAIL"))

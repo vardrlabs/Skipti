@@ -25,6 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,6 +58,7 @@ import uniffi.skipti_core.BalanceLineOut
 import uniffi.skipti_core.NamedGroupWire
 import uniffi.skipti_core.SettledProgressOut
 import uniffi.skipti_core.ShareOut
+import uniffi.skipti_core.TransferOut
 import uniffi.skipti_core.ffiBalanceLine
 import uniffi.skipti_core.ffiCheckSettlement
 import uniffi.skipti_core.ffiSettledProgress
@@ -141,6 +143,15 @@ enum class SettleState {
 data class SettleKey(val group: String, val currency: String, val entry: ShareOut)
 
 object SettleAll {
+    /** D-250: a card's identity on the screen: the group, the currency and the other person (never its place in the
+     *  list, never its amount: a partial settle keeps the card and rolls the amount). The twin of iOS's
+     *  `SettleAll.cardID`. */
+    fun cardId(group: String, currency: String, entry: ShareOut): String = "$group/$currency/${entry.id}"
+
+    /** D-250 fix wave (M14): a payment of the plan's identity, for its row: the currency, who pays and who is paid (never
+     *  its place, never its amount). The twin of iOS's `SettleAll.transferID`. */
+    fun transferId(currency: String, transfer: TransferOut): String = "$currency/${transfer.from}/${transfer.to}"
+
     /** Every group, each with core's lines for this device's self in it.
      *  The same read the screen makes; iOS's twin is `SettleAll.sections`. D-247: [held], a settle waiting out its Undo
      *  window ([SettleHold]), counts as recorded, so the screen shows what the write will leave (core's sums, never the
@@ -519,11 +530,12 @@ fun SettleAllScreen(
         }
         // D-247: the toast says a settle is done (with its Undo); a write that failed says so here (the group page shows
         // the same line).
-        (error ?: hold.failure)?.let { Text(it, style = Type.body(dark).copy(color = Tok.owed(dark))) }
+        // D-250: the line rises in (iOS's `.reveal`).
+        (error ?: hold.failure)?.let { RevealOnEnter { Text(it, style = Type.body(dark).copy(color = Tok.owed(dark))) } }
         if (loaded && sections.isEmpty() && error == null) {
             Text(SettleAllCopy.empty(groupCount), style = Type.bodyDim(dark), modifier = Modifier.glassCard(dark))
         }
-        sections.forEach { section ->
+        sections.forEach { section -> key(section.named.group.id) {
             val named = section.named
             Row(
                 Modifier
@@ -535,9 +547,11 @@ fun SettleAllScreen(
                 Spacer(Modifier.width(10.dp))
                 Text(named.group.name, style = Type.name(dark, 17))
             }
-            if (section.state != SettleState.OPEN) {
+            // D-250: the group turning settled brings its panel in as the last card leaves. Fix wave (twin 5): it fades in
+            // and out in place, as iOS's crossfade does (it rose before), an Undo taking it away the same way.
+            MovingRows(listOfNotNull(section.state.takeIf { it != SettleState.OPEN }), key = { "settled" }) { state, _ ->
                 // D-247 (decision 168): "all settled" only when core says the whole group is.
-                val all = section.state == SettleState.ALL_SETTLED
+                val all = state == SettleState.ALL_SETTLED
                 Row(
                     Modifier
                         .fillMaxWidth()
@@ -559,8 +573,13 @@ fun SettleAllScreen(
                         )
                     }
                 }
-            } else {
-                section.lines.flatMap { line -> line.entries.map { line.currencyCode to it } }.forEach { (currency, entry) ->
+            }
+            // D-250: keyed by the card's person and currency (`SettleAll.cardId`), never its place: the card that leaves
+            // is the one settled (it slides out, the cards below close up), an Undo brings it back, and a partial keeps
+            // its card while the amount rolls.
+            val debts = if (section.state != SettleState.OPEN) emptyList() else
+                section.lines.flatMap { line -> line.entries.map { Triple(SettleAll.cardId(named.group.id, line.currencyCode, it), line.currencyCode, it) } }
+            MovingRows(debts, key = { it.first }, leave = RowLeave.SLIDE, spacing = BarDecisions.CONTENT_SPACING.dp) { (_, currency, entry), _ ->
                     val youOwe = entry.minorUnits < 0
                     val other = LedgerStore.label(entry.id, named)
                     val amount = abs(entry.minorUnits)
@@ -578,9 +597,11 @@ fun SettleAllScreen(
                             PersonAvatar(other, dark, 44)
                             Spacer(Modifier.width(12.dp))
                             Text(SettleAllCopy.sentence(youOwe, other), style = Type.body(dark), modifier = Modifier.weight(1f))
-                            Text(formatted, style = Type.numericColored(19, if (youOwe) Tok.owed(dark) else Tok.owing(dark)), maxLines = 1)
+                            // D-250: another amount leaves the remainder: it rolls down.
+                            MoneyText(formatted, entry.minorUnits, style = Type.numericColored(19, if (youOwe) Tok.owed(dark) else Tok.owing(dark)), maxLines = 1)
                         }
-                        if (latch.settling(key)) {
+                        // D-250: a card sliding out after its settle keeps "Recording…" (the latch lets go as it leaves).
+                        if (latch.settling(key) || LocalRowLeaving.current) {
                             Text(SettleAllCopy.RECORDING, style = Type.bodyDim(dark))
                         } else {
                             PrimaryAction(SettleAllCopy.action(youOwe, other), dark, enabled = !latch.busy) {
@@ -592,13 +613,15 @@ fun SettleAllScreen(
                             }
                         }
                     }
-                }
+            }
+            if (section.state == SettleState.OPEN) {
                 val transfers = section.lines.flatMap { line -> line.transfers.map { line.currencyCode to it } }
                 if (transfers.isNotEmpty()) {
                     Column(Modifier.padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         SectionLabel(SettleAllCopy.FASTEST, dark)
                         val names = named.members.associate { it.id to LedgerStore.label(it.id, named) }
-                        transfers.forEach { (currency, t) ->
+                        // D-250 fix wave (M14): keyed by the payment, in and out as Settle up's cards are (iOS's rows).
+                        MovingRows(transfers, key = { (currency, t) -> SettleAll.transferId(currency, t) }, spacing = 6.dp) { (currency, t), _ ->
                             val row = SettleUi.planRow(t.from, t.to, named.selfId, names).replaceFirstChar { it.uppercase() }
                             Text(
                                 "$row ${BalanceUi.moneyFormat(t.amountMinor, currency, AppLocale.current)}",
@@ -608,7 +631,7 @@ fun SettleAllScreen(
                     }
                 }
             }
-        }
+        } }
         Spacer(Modifier.height(8.dp))
     }
     // D-247 (decision 167): the sheet, owned here (always composed while Settle up is), never by a card that can go.
@@ -735,8 +758,9 @@ fun OtherAmountSheet(
                                 .themePill(PillTone.ACCENT, inDark, onPage = false)
                                 .padding(horizontal = 12.dp, vertical = 4.dp),
                         )
+                        // D-250: the cap's words rise in.
                         OtherAmount.capWords(verdict, refused, rested)?.let { words ->
-                            Text(words, style = Type.body(inDark).copy(fontSize = TypeScale.detail.sp, color = Tok.owed(inDark)))
+                            RevealOnEnter { Text(words, style = Type.body(inDark).copy(fontSize = TypeScale.detail.sp, color = Tok.owed(inDark))) }
                         }
                         // Section 11.6, verbatim.
                         Text(

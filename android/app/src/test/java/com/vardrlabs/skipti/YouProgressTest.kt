@@ -260,7 +260,7 @@ class YouProgressTest {
     fun you_hero_draws_the_ring_and_pill() {
         val h = hero()
         // D-243 (amended on purpose): Norse's ring takes the art's turn (Modifier.artTurn); the choice is the same.
-        assertTrue("the ring is chosen by theme", Regex("""if \(Appearance\.theme == AppTheme\.NORSE\) \{\s*RuneRing\(done, total, dark, Modifier\.artTurn \{ RingTurn\.degrees\(it\) \}\)\s*\} else \{\s*CompletionRing\(done, total, dark\)\s*\}""").containsMatchIn(h))
+        assertTrue("the ring is chosen by theme", Regex("""if \(Appearance\.theme == AppTheme\.NORSE\) \{\s*RuneRing\(done, total, dark, Modifier\.artTurn \{ RingTurn\.degrees\(it\) \}, sweep = ringFill\)\s*\} else \{\s*CompletionRing\(done, total, dark, sweep = ringFill\)\s*\}""").containsMatchIn(h))
         assertTrue("the pill", "ProgressPill(done, total, dark)" in h)
         assertTrue("the ring's box", "Modifier.size(ThemeArt.m(\"ringBox\").dp)" in h)
         assertTrue("the picture stays 104", "AvatarView(avatar, name, 104.dp, dark)" in h)
@@ -284,7 +284,7 @@ class YouProgressTest {
         val runes = body("YouProgress.kt", "fun RuneRing(")
         for (key in listOf("ringBox", "runeRingRadius", "runeRingSize")) assertTrue("runes read $key", "\"$key\"" in runes)
         assertTrue("the 24 runes", "Runes.FUTHARK.forEachIndexed" in runes)
-        assertTrue("lit by the rule", "RuneRing.lit(done, total)" in runes)
+        assertTrue("lit by the rule (D-250: at rest; the share mid-sweep)", "RuneRing.litAt(sweep, done, total)" in runes)
         assertTrue("in the rune face", "Type.rune(runeSize(\"runeRingSize\", density))" in runes)
         assertTrue("lit in ring, else unlit", "if (i < lit) Tok.ring(dark) else ThemeArt.color(\"runeUnlit\")" in runes)
         assertTrue("turned by its angle", ".rotate(angle)" in runes)

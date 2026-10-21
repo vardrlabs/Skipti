@@ -1,5 +1,7 @@
 package com.vardrlabs.skipti
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.snap
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.compose.foundation.background
@@ -391,19 +393,31 @@ const val SPENDING_RUNE = "ᛁ"
 @Composable
 fun SpendingSwitch(view: SpendingView, dark: Boolean, compact: Boolean = false, modifier: Modifier = Modifier, onPick: (SpendingView) -> Unit) {
     val shape = ThemeArt.pillShape(Appearance.theme)
-    Row(
+    // D-250: one chosen pill that slides to the other half (iOS's matchedGeometryEffect pill), the words' colours easing.
+    val reduce = rememberMotionState().reduce
+    val places = remember { PillPlaces() }
+    val options = listOf(SpendingView.JUST_ME, SpendingView.ALL)
+    Box(
         modifier
             .then(if (compact) Modifier else Modifier.fillMaxWidth())
             .background(Tok.surfaceRaised(dark), shape)
-            .padding(3.dp),
+            .padding(3.dp)
+            .pillTrack(places),
     ) {
-        listOf(SpendingView.JUST_ME, SpendingView.ALL).forEach { option ->
+    SlidingPill(places, options.indexOf(view), shape, Tok.accent(dark))
+    Row(if (compact) Modifier else Modifier.fillMaxWidth()) {
+        options.forEachIndexed { i, option ->
             val chosen = option == view
+            val words by animateColorAsState(
+                if (chosen) Tok.onAccent(dark) else Tok.textDim(dark),
+                if (reduce) snap() else ChangeMotion.tween(ChangeMotion.Kind.CHANGE),
+                label = "spendingSwitch",
+            )
             Box(
                 Modifier
                     .then(if (compact) Modifier else Modifier.weight(1f))
+                    .pillPlace(places, i)
                     .clip(shape)
-                    .then(if (chosen) Modifier.background(Tok.accent(dark), shape) else Modifier)
                     .selectable(selected = chosen, role = Role.Tab, onClick = { onPick(option) })
                     .padding(horizontal = if (compact) 10.dp else 8.dp, vertical = if (compact) 6.dp else 10.dp),
                 contentAlignment = Alignment.Center,
@@ -411,7 +425,7 @@ fun SpendingSwitch(view: SpendingView, dark: Boolean, compact: Boolean = false, 
                 Text(
                     option.label,
                     style = Type.name(dark, if (compact) TypeScale.footnote.toInt() else TypeScale.segment.toInt())
-                        .copy(color = if (chosen) Tok.onAccent(dark) else Tok.textDim(dark)),
+                        .copy(color = words),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     autoSize = TextAutoSize.StepBased(
@@ -422,6 +436,7 @@ fun SpendingSwitch(view: SpendingView, dark: Boolean, compact: Boolean = false, 
                 )
             }
         }
+    }
     }
 }
 
@@ -484,10 +499,15 @@ fun SpendingCard(
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(Type.kicker(SpendingCopy.THIS_MONTH), style = Type.microLabel(dark).copy(color = Tok.textDim(dark)))
-                    if (first != null) {
+                    // D-250: Just me to All crosses the card over (iOS's card-level RowsMotion): the amount or the empty
+                    // line fades in as the other fades out (fix wave, twin 6: as iOS's crossfade; it rose before); between
+                    // two amounts it rolls.
+                    MovingRows(listOfNotNull(first), key = { "amount" }) { first, _ ->
                         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(
+                            // D-250: Just me to All (or a new expense) rolls the month's amount.
+                            MoneyText(
                                 RolesMoney.format(first.totalMinor, first.currencyCode) ?: Placeholder.NONE,
+                                first.totalMinor,
                                 style = Type.numericColored(TypeScale.displayName + 4, Tok.text(dark), FontWeight.Bold),
                                 maxLines = 1,
                                 softWrap = false,
@@ -506,8 +526,9 @@ fun SpendingCard(
                                 )
                             }
                         }
-                    } else {
-                        Text(SpendingCopy.cardEmpty(failed), style = Type.bodyDim(dark).copy(fontSize = TypeScale.prose.sp))
+                    }
+                    MovingRows(listOfNotNull(SpendingCopy.cardEmpty(failed).takeIf { first == null }), key = { "empty" }) { line, _ ->
+                        Text(line, style = Type.bodyDim(dark).copy(fontSize = TypeScale.prose.sp))
                     }
                 }
                 RowChevron(Tok.textDim(dark))
@@ -521,24 +542,35 @@ fun SpendingCard(
 @Composable
 fun ChartTableSwitch(table: Boolean, dark: Boolean, onTable: (Boolean) -> Unit) {
     val shape = ThemeArt.pillShape(Appearance.theme)
-    Row(Modifier.background(Tok.surfaceRaised(dark), shape).padding(2.dp)) {
-        listOf(false, true).forEach { isTable ->
+    // D-250: one chosen pill that slides between Chart and Table, the words' colours easing.
+    val reduce = rememberMotionState().reduce
+    val places = remember { PillPlaces() }
+    Box(Modifier.background(Tok.surfaceRaised(dark), shape).padding(2.dp).pillTrack(places)) {
+    SlidingPill(places, if (table) 1 else 0, shape, Tok.accent(dark))
+    Row {
+        listOf(false, true).forEachIndexed { i, isTable ->
             val chosen = isTable == table
+            val words by animateColorAsState(
+                if (chosen) Tok.onAccent(dark) else Tok.textDim(dark),
+                if (reduce) snap() else ChangeMotion.tween(ChangeMotion.Kind.CHANGE),
+                label = "chartTable",
+            )
             Box(
                 Modifier
                     .heightIn(min = 32.dp)
+                    .pillPlace(places, i)
                     .clip(shape)
-                    .then(if (chosen) Modifier.background(Tok.accent(dark), shape) else Modifier)
                     .selectable(selected = chosen, role = Role.Tab, onClick = { onTable(isTable) })
                     .padding(horizontal = 10.dp, vertical = 5.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     if (isTable) SpendingCopy.TABLE else SpendingCopy.CHART,
-                    style = Type.name(dark, 12).copy(color = if (chosen) Tok.onAccent(dark) else Tok.textDim(dark)),
+                    style = Type.name(dark, 12).copy(color = words),
                 )
             }
         }
+    }
     }
 }
 
@@ -644,8 +676,10 @@ fun SpendingScreen(
                         SectionLabel(if (isCurrent) SpendingCopy.THIS_MONTH else month.label, dark, color = Tok.text(dark))
                         Text(SpendingCopy.SPENT, style = Type.bodyDim(dark).copy(fontSize = TypeScale.detail.sp))
                         l.out.currencies.firstOrNull()?.let { first ->
-                            Text(
+                            // D-250: the month's amount rolls (Just me to All, another month).
+                            MoneyText(
                                 RolesMoney.format(first.totalMinor, first.currencyCode) ?: Placeholder.NONE,
+                                first.totalMinor,
                                 style = Type.numericColored(TypeScale.largeTitle, Tok.text(dark), FontWeight.Bold),
                                 maxLines = 1,
                                 softWrap = false,
@@ -772,7 +806,8 @@ private fun WhereCard(c: CurrencySpendingOut, table: Boolean, tree: CategoryTree
                     modifier = Modifier.width(52.dp),
                 )
             }
-            c.categories.forEachIndexed { i, s ->
+            // D-250 fix wave (M14): keyed by the category, in and out (iOS's rows under the page's rowsMotion).
+            MovingRows(c.categories, key = { it.category ?: SpendingKeys.NONE }, spacing = 12.dp) { s, i ->
                 Row(
                     Modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
                     verticalAlignment = Alignment.CenterVertically,
@@ -793,7 +828,7 @@ private fun WhereCard(c: CurrencySpendingOut, table: Boolean, tree: CategoryTree
                 }
             }
         } else {
-            c.categories.forEachIndexed { i, s ->
+            MovingRows(c.categories, key = { it.category ?: SpendingKeys.NONE }, spacing = 12.dp) { s, i ->
                 Column(Modifier.fillMaxWidth().semantics(mergeDescendants = true) {}, verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Row {
                         Text(CategoryLevels.name(s.category, tree), style = Type.name(dark, TypeScale.detail.toInt()), modifier = Modifier.weight(1f))
@@ -907,4 +942,9 @@ fun LedgerChoicePage(
         }
       }
     }
+}
+
+/** D-250 fix wave (M14): the key of the slice for expenses with no category (core's None), a word no category id is. */
+internal object SpendingKeys {
+    const val NONE = "uncategorised"
 }

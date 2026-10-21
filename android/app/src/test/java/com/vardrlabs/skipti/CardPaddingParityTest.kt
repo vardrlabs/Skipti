@@ -31,13 +31,13 @@ class CardPaddingParityTest {
         ),
         Pair(
             "Overview's people",
-            Site("OverviewScreen.swift", "ForEach(Array(people.enumerated()), id: \\.offset) { i, p in", Side.AFTER),
-            Site("OverviewTab.kt", "people.forEachIndexed { i, p ->", Side.BEFORE),
+            Site("OverviewScreen.swift", "ForEach(Array(keyed.enumerated()), id: \\.element.0) { i, pair in", Side.AFTER),
+            Site("OverviewTab.kt", "val keys = MotionKeys.unique(people.map", Side.BEFORE),
         ),
         Pair(
             "a group's recent expenses",
-            Site("OverviewScreen.swift", "ForEach(Array(recent.enumerated()), id: \\.offset) { i, e in", Side.AFTER),
-            Site("OverviewTab.kt", "recent.forEachIndexed { i, e ->", Side.BEFORE),
+            Site("OverviewScreen.swift", "ForEach(Array(recent.enumerated()), id: \\.element.id) { i, e in", Side.AFTER),
+            Site("OverviewTab.kt", "MovingRows(recent, key = { it.id }) { e, i ->", Side.BEFORE),
         ),
         Pair(
             "Phones' list",
@@ -72,7 +72,7 @@ class CardPaddingParityTest {
         Pair(
             "the expense list's group card (D-234 L12-d)",
             Site("ExpenseListView.swift", "ForEach(Array(section.expenses.enumerated()), id: \\.element.id) { index, expense in", Side.AFTER),
-            Site("ExpenseListScreen.kt", "section.expenses.forEachIndexed { index, expense ->", Side.BEFORE),
+            Site("ExpenseListScreen.kt", "MovingRows(carded.expenses, key = { it.id }, leave = RowLeave.SLIDE) { expense, index ->", Side.BEFORE),
         ),
         Pair(
             "a licence's text panel (D-225 Design 6)",
@@ -82,7 +82,7 @@ class CardPaddingParityTest {
         Pair(
             "the shared list card (D-225 Design 1)",
             Site("ListRows.swift", "_VariadicView.Tree(ListCardRows()) { content }", Side.AFTER),
-            Site("ListRows.kt", "val rows = ListCardScope().apply(build).rows", Side.AFTER),
+            Site("ListRows.kt", "fun ListCardColumn(", Side.AFTER), // D-250: ListCard draws through it
         ),
         Pair(
             "Your spending's expenses (D-249)",

@@ -688,7 +688,7 @@ class ThemeMotionTest {
     @Test
     fun you_ring_turns_and_the_done_ring_keeps_its_own_clock() {
         val hub = src("AccountHubScreen.kt")
-        assertEquals("You's ring turns", 1, hub.split("RuneRing(done, total, dark, Modifier.artTurn { RingTurn.degrees(it) })").size - 1)
+        assertEquals("You's ring turns", 1, hub.split("RuneRing(done, total, dark, Modifier.artTurn { RingTurn.degrees(it) }, sweep = ringFill)").size - 1)
         assertEquals("one turning thing on You", 1, hub.split("artTurn").size - 1)
         val box = hub.substringAfter("Box(Modifier.size(ThemeArt.m(\"ringBox\").dp), contentAlignment = Alignment.Center) {")
         assertTrue("the picture after the ring, outside its turn",
@@ -697,7 +697,7 @@ class ThemeMotionTest {
         assertFalse("the done ring keeps its moment's turn", "artTurn" in done)
         assertTrue("its own clock", "Modifier.graphicsLayer { rotationZ = CheckMotion.pose(p.elapsed(CheckMotion.STILL_ELAPSED)).degrees.toFloat() }," in done)
         assertTrue("RuneRing(1, 1, dark)" in done)
-        val ring = src("YouProgress.kt").substringAfter("fun RuneRing(done: Int, total: Int, dark: Boolean, modifier: Modifier = Modifier) {").substringBefore("\n}\n")
+        val ring = src("YouProgress.kt").substringAfter("fun RuneRing(done: Int, total: Int, dark: Boolean, modifier: Modifier = Modifier, sweep: Double = RuneRing.share(done, total)) {").substringBefore("\n}\n")
         assertTrue("the turn reaches the ring's box", "Box(modifier.size(ThemeArt.m(\"ringBox\").dp).clearAndSetSemantics {}, contentAlignment = Alignment.Center) {" in ring)
         // D-246 (amended on purpose; D-243's was one remembered unit radial brush drawn behind the runes): each lit rune's
         // glow is its own glyph's cached mask (built in composition, once), in the ring's colour at LIT_GLOW, drawn behind
@@ -741,7 +741,7 @@ class ThemeMotionTest {
         assertFalse(drawsADisc(canvas))
         val norse = motion.substringAfter("        AppTheme.NORSE -> {").substringBefore("        AppTheme.VARDR -> {")
         assertFalse("the Norse hero's runes and ᚠ", drawsADisc(norse))
-        val ring = src("YouProgress.kt").substringAfter("fun RuneRing(done: Int, total: Int, dark: Boolean, modifier: Modifier = Modifier) {").substringBefore("\n}\n")
+        val ring = src("YouProgress.kt").substringAfter("fun RuneRing(done: Int, total: Int, dark: Boolean, modifier: Modifier = Modifier, sweep: Double = RuneRing.share(done, total)) {").substringBefore("\n}\n")
         assertFalse("the ring's lit runes glow from their glyphs", drawsADisc(ring))
         val main = java.io.File("src/main/java/com/vardrlabs/skipti").listFiles()!!.filter { it.name.endsWith(".kt") }.joinToString("\n") { it.readText() }
         for (gone in listOf("RuneGlow.HALO", "HALO_RADIUS", "LIT_HALO", "haloAlpha", "fehuHalo")) assertFalse("the disc's $gone is gone", gone in main)
@@ -1195,7 +1195,8 @@ class ThemeMotionTest {
         assertTrue("the hero cache refills only when stale", "fun DrawScope.fill() {\n                if (!cache.stale(this, shape)) return" in motion)
         assertTrue("throttled to the clock", "val INTERVAL_NANOS: Long = (1e9 / FPS).toLong()" in motion)
         assertTrue("the loop asks the gate", "val gate = FrameGate()" in motion && "if (gate.due(now)) t = now / 1e9" in motion)
-        assertTrue("the frame loop runs per tick", "LaunchedEffect(tick) {\n        if (!tick) return@LaunchedEffect" in motion)
+        // D-250 fix wave (I1): and holds while its page slides out.
+        assertTrue("the frame loop runs per tick", "LaunchedEffect(tick, held) {\n        if (!tick || held) return@LaunchedEffect" in motion)
         assertTrue("the runes' still rule reads both inputs", "RuneLayer.isStill(motion.reduce, motion.lowPower)" in motion)
         for (input in listOf(".semantics", "Semantics(", ".pointerInput", ".clickable", ".combinedClickable", "Modifier.clip(", ".clip(")) {
             assertFalse("the art is decoration: no $input", input in motion)
@@ -1237,7 +1238,8 @@ class ThemeMotionTest {
         // D-243: the ring's turn (artTurn) runs on the same gate and clock, from upright each start, in the layer alone.
         val turn = motion.substringAfter("fun Modifier.artTurn(state: MotionState? = null, degrees: (Double) -> Double): Modifier = composed {").substringBefore("\n}\n")
         assertTrue("the art's rule", "val tick = (state ?: rememberMotionState()).tick" in turn)
-        assertTrue("from upright each start", "LaunchedEffect(tick) {\n        turning = RingTurn.STILL\n        if (!tick) return@LaunchedEffect" in turn)
+        // D-250 fix wave (I1): held where it is (never upright) while its page slides out.
+        assertTrue("from upright each start", "LaunchedEffect(tick, held) {\n        if (held) return@LaunchedEffect\n        turning = RingTurn.STILL\n        if (!tick) return@LaunchedEffect" in turn)
         assertTrue("the loop asks the gate", "val gate = FrameGate()" in turn && "if (gate.due(now)) turning = now / 1e9 - start" in turn)
         assertTrue("layer-only", "graphicsLayer { rotationZ = degrees(ArtCanvas.seconds(tick, turning, RingTurn.STILL)).toFloat() }" in turn)
         assertTrue("pauses through shouldTick", "MotionClock.shouldTick(" in motion)
@@ -1702,8 +1704,8 @@ class ThemeMotionTest {
         val valueAnim = Regex("""animate\w*AsState\(""")
         val gate = Regex("""if \((reduce|still)\) snap\(\) else """)
         val scroll = Regex("""animateScroll\w*\(""")
-        val unlearned = listOf("Crossfade(", "AnimatedContent(", "updateTransition(", "rememberInfiniteTransition(", "animateContentSize(",
-            "Animatable(", "animateDecay(")
+        // D-250: AnimatedContent, animateContentSize and animateEnterExit are learned (below); the rest still fail.
+        val unlearned = listOf("Crossfade(", "updateTransition(", "rememberInfiniteTransition(", "Animatable(", "animateDecay(")
         var seen = 0
         for (f in files) {
             val t = f.readText()
@@ -1720,11 +1722,37 @@ class ThemeMotionTest {
             }
             for (m in Regex("""AnimatedVisibility\(""").findAll(t)) {
                 val call = t.substring(m.range.first).split(Regex("""\n\s*\) \{"""), 2)[0]
-                val enters = "if (motion.reduce) EnterTransition.None else" in call || "if (still) EnterTransition.None else" in call
-                // D-234 (A2): an exit is allowed when it is gated the same way (a closing must snap too).
+                // D-250 fix wave (I4): or the shell's own read of the door, `reduce` (the tab bar's AnimatedVisibility).
+                val enters = "if (motion.reduce) EnterTransition.None else" in call || "if (still) EnterTransition.None else" in call ||
+                    "enter = if (reduce) EnterTransition.None else" in call
+                // D-234 (A2): an exit is allowed when it is gated the same way (a closing must snap too). D-250: or none at
+                // all (`exit = ExitTransition.None`: a line that leaves at once, iOS's `.reveal`).
                 val exits = "exit =" !in call || "exit = if (still) ExitTransition.None else" in call ||
-                    "exit = if (motion.reduce) ExitTransition.None else" in call
+                    "exit = if (motion.reduce) ExitTransition.None else" in call || "exit = if (reduce) ExitTransition.None else" in call ||
+                    Regex("""exit = ExitTransition\.None,?\s*$""").containsMatchIn(call)
                 assertTrue("${f.name}: AnimatedVisibility enters and exits with nothing when reduced", enters && exits)
+                seen++
+            }
+            // D-250: a page's AnimatedContent moves only through `pageTransform(..., reduce)`, a cut when reduced (the
+            // transform's first line, ChangeMotionTest pins it).
+            for (m in Regex("""(?<![\w.])AnimatedContent\(""").findAll(t)) {
+                if (t.substring(t.lastIndexOf("\n", m.range.first) + 1).startsWith("import ")) continue
+                val call = t.substring(m.range.first).split(Regex("""\n\s*\) \{"""), 2)[0]
+                assertTrue("${f.name}: AnimatedContent moves through pageTransform(..., reduce)", Regex("""transitionSpec = \{ pageTransform\(.*, reduce\) \}""").containsMatchIn(call))
+                seen++
+            }
+            // D-250: a card that eases its height: `animateContentSize(if (reduce) snap() else ...)`.
+            for (m in Regex("""animateContentSize\(""").findAll(t)) {
+                if (t.substring(t.lastIndexOf("\n", m.range.first) + 1).startsWith("import ")) continue
+                assertTrue("${f.name}: an ungated animateContentSize", t.substring(m.range.first).startsWith("animateContentSize(if (reduce) snap() else "))
+                seen++
+            }
+            // D-250: a child's own way in and out of a page (the tab bar): both gated on the door.
+            for (m in Regex("""\.animateEnterExit\(""").findAll(t)) {
+                val call = t.substring(m.range.first).split(Regex("""\n\s*\),"""), 2)[0]
+                assertTrue("${f.name}: animateEnterExit enters and exits with nothing when reduced",
+                    Regex("""enter = if \(reduce[^)]*\) EnterTransition\.None else""").containsMatchIn(call) &&
+                        Regex("""exit = if \(reduce[^)]*\) ExitTransition\.None else""").containsMatchIn(call))
                 seen++
             }
             for (api in unlearned) assertFalse("${f.name} uses $api: gate it on rememberMotionState and teach this guard", api in t)
@@ -1741,7 +1769,13 @@ class ThemeMotionTest {
         // D-234 (A2): + ListRows.kt's disclosure turn and AccountHubScreen.kt's App icon rows and caption.
         // D-234 (L4): + SheetPage's large-title rest.
         // D-245: + the welcome's step fade (Welcome.kt).
-        assertEquals("the guard saw every gated animation", 14, seen)
+        // D-250 (the fluidity sweep, 18 more): MotionViews.kt's roll, fill, the pill's four, the theme fade and the button
+        // dimming (value animations, 8), Spending.kt's two and AccountHubScreen.kt's one segment colours (3), MovingRows',
+        // RevealOnEnter's and Reveal's AnimatedVisibility (3), AppRoot.kt's two page AnimatedContents and the tab bar's
+        // animateEnterExit (3), and movingSize's animateContentSize (1).
+        // D-250 fix wave: the tab bar's animateEnterExit became an AnimatedVisibility outside the pages (I4, one for
+        // one), and the group page's cards fade in when a first visit's read lands after the slide (M3, one more).
+        assertEquals("the guard saw every gated animation", 33, seen)
     }
 
     /** Fix wave I1 (final review): the tab bar holds still under reduced motion (the phone's remove animations OR Less

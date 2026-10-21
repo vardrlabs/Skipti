@@ -369,13 +369,14 @@ class SettledTest {
     @Test
     fun the_group_page_order() {
         val page = body("OverviewTab.kt", "fun GroupPage(")
-        val anchors = listOf("GroupHeader(n,", "SettledCard(", "StatsRow(", "MilestoneCard(", "GroupNextCard(", "cards.forEach { card ->")
+        val anchors = listOf("GroupHeader(n,", "SettledCard(", "StatsRow(", "MilestoneCard(", "GroupNextCard(", "MovingRows(cards, key = { it.id }")
         val at = anchors.map { a -> page.indexOf(a).also { assertTrue("the page draws $a", it >= 0) } }
         assertEquals("in order: $anchors at $at", at.sorted(), at)
         for (a in anchors) assertEquals("$a once", 1, page.split(a).size - 1)
         // The Settled card shows only when core returned a block; the milestone only when one shows.
-        assertTrue("the Settled card's condition", "if (progress.isNotEmpty()) SettledCard(" in page)
-        assertTrue("the milestone's condition", "milestone?.let { MilestoneCard(it, dark) }" in page)
+        // D-250 fix wave (M4): each comes and goes in place (MovingRows of one), on the same conditions.
+        assertTrue("the Settled card's condition", "MovingRows(listOfNotNull(progress.takeIf { it.isNotEmpty() }), key = { \"settled\" }) { p, _ -> SettledCard(" in page)
+        assertTrue("the milestone's condition", "MovingRows(listOfNotNull(milestone), key = { \"milestone\" }) { m, _ -> MilestoneCard(m, dark) }" in page)
     }
 
     /** Design 6 (L42): the meter is the theme's: C2's meter shape, the art table's heights (Vardr Labs thinner), Norse's
@@ -413,7 +414,7 @@ class SettledTest {
         assertTrue("core's percent", "\"\${SettledSummary.percent(b.basisPoints)}%\"" in card)
         assertTrue("the percent's size", "TypeScale.settledPercent" in card)
         assertTrue("the label", "SectionLabel(SettledCopy.LABEL" in card)
-        assertTrue("the big meter", "SettledMeter(SettledMeters.fraction(b.basisPoints), big = true, dark)" in card)
+        assertTrue("the big meter (D-250: sweeping)", "SettledMeter(rememberFill(SettledMeters.fraction(b.basisPoints).toDouble()), big = true, dark)" in card)
         val file = main("Settled.kt")
         for (banned in listOf("NumberFormat", "String.format", "DecimalFormat", "\"%.")) assertFalse("no $banned", banned in file)
     }
@@ -430,7 +431,7 @@ class SettledTest {
         assertFalse("Settle up writes nothing itself: the hold does", "SettleAll.record(" in screen || "SettleAll.append(" in screen)
         assertEquals("one append, in SettleAll", 1, main("SettleAll.kt").split("appendSettlement(").size - 1)
         for (f in listOf("Settled.kt", "OverviewTab.kt")) assertFalse("$f appends nothing itself", "appendSettlement(" in main(f) || "settlementFor(" in main(f))
-        assertTrue("never in a copy", "if (!isCopy && next != null) GroupNextCard(" in body("OverviewTab.kt", "fun GroupPage("))
+        assertTrue("never in a copy", "MovingRows(listOfNotNull(next?.takeIf { !isCopy }), key = { \"next\" }, leave = RowLeave.SLIDE) { pick, _ ->\n                    GroupNextCard(" in body("OverviewTab.kt", "fun GroupPage("))
         assertTrue("the compact button", "compact = true" in card)
         assertTrue("Settle, Settling", "if (settling) SettledCopy.SETTLING else SettledCopy.SETTLE" in card)
         assertTrue("the sentence", "SettleAllCopy.sentence(pick.youOwe, other)" in card)
@@ -451,7 +452,9 @@ class SettledTest {
         assertFalse("never cleared before the reload", "settlingKey" in settle)
         // D-247 (decision 168): the count is the plan's length, from the page's own lines (core's plan).
         val page = body("OverviewTab.kt", "fun GroupPage(")
-        assertTrue("the plan count", "GroupNext.planCount(l)" in page)
+        // D-250 fix wave (M3): the page's read lives in GroupPageKeep.read (the shell reads a first visit with it too).
+        assertTrue("the plan count", "GroupNext.planCount(l)" in body("OverviewTab.kt", "class GroupPageKeep {"))
+        assertTrue("runCatching { GroupPageKeep.read(vaultPath, groupId) }" in page)
         assertFalse("the pairwise count is gone", "GroupNext.remaining(" in page)
     }
 
@@ -523,7 +526,7 @@ class SettledTest {
         assertTrue("after the content", page.indexOf(".verticalScroll(scroll)") < drawn)
         assertTrue("before the bar", drawn < page.indexOf("PushedBar("))
         // The page's content dims (the art behind it does not): the alpha of the content column, from the timeline.
-        assertTrue("the content dims", ".graphicsLayer { alpha = play?.let { CelebrationTimeline.dim(it.elapsed, it.still) } ?: 1f }" in page)
+        assertTrue("the content dims", ".graphicsLayer { alpha = (play?.let { CelebrationTimeline.dim(it.elapsed, it.still) } ?: 1f) * arrival }" in page)
     }
 
     /** The burst is the motion engine's: drawn through `artCanvas` and `ArtDraw.burst`, only when
@@ -666,7 +669,8 @@ class SettledTest {
     @Test
     fun the_play_waits_until_visible() {
         val page = body("OverviewTab.kt", "fun GroupPage(")
-        val load = page.substringAfter("LaunchedEffect(vaultPath, groupId, SyncStatus.revision, requestIds) {").substringBefore("\n    }\n")
+        val load = page.substringAfter("LaunchedEffect(vaultPath, groupId, SyncStatus.revision, requestIds, SettleHold.shared.revision) {").substringBefore("\n    }\n")
+        assertTrue("the load found", load.length < page.length)
         assertTrue("the load decides", "Celebration.plays(celebration.before, after, isCopy = it.people.readOnly != null)" in load)
         assertTrue("and marks it pending", "celebration.pending = true" in load)
         assertTrue("then remembers the state", "celebration.before = after" in load)
@@ -681,7 +685,7 @@ class SettledTest {
         assertTrue("the shell holds one per group (S8), in memory", held >= 0)
         assertFalse("never saved", "rememberSaveable { HashMap<String, CelebrationState>" in root)
         assertFalse("no longer one per open group", "remember(openGroup) { CelebrationState() }" in root)
-        assertTrue("above the routes, so a pushed page, another tab or another group keeps it", held < root.indexOf("    when (route) {"))
+        assertTrue("above the routes, so a pushed page, another tab or another group keeps it", held < root.indexOf("    when (shown) {"))
         assertTrue("each group's own, handed to its page", "celebration = celebrations.getOrPut(id) { CelebrationState() }," in root)
         // S8: a pending play is dropped when a later load finds the group unsettled; the play ends on ON_PAUSE.
         assertTrue("a stale pending is cleared", "if (!after) celebration.pending = false" in load)

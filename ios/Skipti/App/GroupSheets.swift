@@ -191,7 +191,7 @@ struct CreateGroupSheet: View {
                                 // D-225 (Design 8): Lucide's x at `clearGlyph` in textFaint, in a 48 target; only the
                                 // glyph removes.
                                 Button {
-                                    withAnimation { people.remove(row.id) }
+                                    people.remove(row.id)
                                 } label: {
                                     LucideIcon(glyph: .x, size: ThemeArt.m("clearGlyph"))
                                         .foregroundStyle(Tokens.textFaint)
@@ -204,7 +204,8 @@ struct CreateGroupSheet: View {
                         }
                     }
                 }
-                Button(people.addLabel) { withAnimation { people.add() } }
+                // D-250: the rows move through RowsMotion (the door), no longer an ungated default spring.
+                Button(people.addLabel) { people.add() }
                     .buttonStyle(SecondaryButtonStyle())
                 CardCaption("Add people by name. They do not need SKIPTI; linking a name to their phone comes later.")
 
@@ -212,8 +213,13 @@ struct CreateGroupSheet: View {
                     Text(verbatim: error)
                         .font(TypeRole.body())
                         .foregroundStyle(Tokens.owed)
+                        .transition(.reveal)
                 }
             }
+            // D-250: a person's row in or out moves (it was an ungated default spring, which played under Reduce Motion
+            // and Less motion); the error line rises in.
+            .rowsMotion(people.rows.map(\.id))
+            .reveals(error)
             .padding(.horizontal, 16)
             .padding(.top, GroupSheetLayout.labelTop)
             .padding(.bottom, 16)

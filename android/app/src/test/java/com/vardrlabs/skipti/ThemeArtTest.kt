@@ -520,7 +520,7 @@ class ThemeArtTest {
         assertTrue("compact is a parameter", "compact: Boolean = false," in body)
         assertTrue("compact does not fill the width", "modifier: Modifier = if (compact) Modifier else Modifier.fillMaxWidth()," in body)
         assertTrue("the look still branches", "ButtonLook.of(Appearance.theme) == ButtonLook.OUTLINED" in body)
-        assertEquals("both looks dim", 2, body.split(".alpha(if (enabled) 1f else ButtonLook.DISABLED_ALPHA)").size - 1)
+        assertEquals("both looks dim", 2, body.split(".alpha(enabledAlpha(enabled))").size - 1)
         assertTrue("the shape", "shape = ThemeArt.controlShape(Appearance.theme)" in body)
         assertTrue("the compact padding", "PaddingValues(horizontal = 16.dp, vertical = 10.dp)" in body)
         assertTrue("the compact label", "if (compact) 15 else 17" in body)
@@ -2104,7 +2104,7 @@ class ThemeArtTest {
         assertFalse("no disabled content colour", "disabledContentColor = Tok.textFaint" in g)
         for (decl in listOf("internal fun PrimaryAction(", "internal fun TonalAction(")) {
             val body = funBody("GroupScreens.kt", decl)
-            assertEquals("$decl dims both looks", 2, body.split(".alpha(if (enabled) 1f else ButtonLook.DISABLED_ALPHA)").size - 1)
+            assertEquals("$decl dims both looks", 2, body.split(".alpha(enabledAlpha(enabled))").size - 1)
             assertFalse("$decl draws no faint colour", "Tok.textFaint" in body)
         }
     }
@@ -2148,12 +2148,15 @@ class ThemeArtTest {
         for (s in listOf("RowChevron(Tok.textDim(dark))", "ThemeSwitch(trailing.isOn, dark, enabled)", "TabIcons.Check", "tint = Tok.accent(dark)", "Type.bodyDim(dark)", "maxLines = 1")) {
             assertTrue("RowEnd: $s", s in end)
         }
-        val card = rows("fun ListCard(")
+        // D-250: ListCard draws through ListCardColumn (the card) and ListCardHairline (the divider), which New group's
+        // moving people rows share.
+        val card = rows("fun ListCard(") + rows("fun ListCardColumn(") + rows("fun ListCardHairline(")
         for (s in listOf("glassCard(dark, padding = 0)", "ThemeArt.m(\"listPadH\")", "ThemeArt.m(\"listPadV\")", "Tok.hairline(dark)")) {
             assertTrue("ListCard: $s", s in card)
         }
         assertEquals("one divider, between rows only", 1, Regex("""Tok\.hairline\(dark\)""").findAll(card).count())
-        assertTrue("the divider comes before every row but the first", Regex("""if \(i > 0\) Box\(Modifier\.fillMaxWidth\(\)\.height\(1\.dp\)\.background\(Tok\.hairline\(dark\)\)\)\s*row\(\)""").containsMatchIn(card))
+        assertTrue("the hairline", "Box(Modifier.fillMaxWidth().height(1.dp).background(Tok.hairline(dark)))" in card)
+        assertTrue("the divider comes before every row but the first", Regex("""if \(i > 0\) ListCardHairline\(dark\)\s*row\(\)""").containsMatchIn(card))
         // You's list: one card, a row per section, each a ListRow with its tile and chevron.
         val hub = src("AccountHubScreen.kt")
         val list = hub.substringAfter("SettingsSection.entries.forEach").substringBefore("return@PushedPage")
@@ -2211,7 +2214,7 @@ class ThemeArtTest {
     fun the_pushed_window_is_shared() {
         val window = rows("fun PushedWindow(")
         for (s in listOf(
-            "Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false))",
+            "Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false))",
             "window?.setDimAmount(0f)", "isAppearanceLightStatusBars = !dark", "SkiptiWindowLocals {",
         )) assertTrue("PushedWindow: $s", s in window)
         val currency = src("CurrencyChoice.kt")

@@ -284,6 +284,8 @@ struct ThemeSwatch: View {
 struct ModeControl: View {
     let theme: AppTheme
     @Binding var stored: AppearanceMode
+    /// D-250: the chosen pill slides to the next segment (one pill, `RowsMotion`, the switch's own travel).
+    @Namespace private var pill
 
     var body: some View {
         let shown = ModeChoice.shown(theme: theme, stored: stored)
@@ -309,6 +311,7 @@ struct ModeControl: View {
                                     .shadow(color: .black.opacity(ThemeArt.m("segmentShadowAlpha")),
                                             radius: ThemeArt.m("segmentShadowRadius"), y: ThemeArt.m("segmentShadowY"))
                                     .padding(.vertical, margin + inset)
+                                    .matchedGeometryEffect(id: "chosen", in: pill)
                             }
                         }
                         .contentShape(Rectangle())
@@ -318,6 +321,7 @@ struct ModeControl: View {
         }
         .padding(.horizontal, inset)
         .background { shape.fill(Tokens.accentSoft).padding(.vertical, margin) }
+        .rowsMotion(shown.chosen)
         .disabled(!shown.enabled)
         .compositingGroup()
         .opacity(shown.enabled ? 1 : ButtonLook.disabledAlpha)
@@ -1043,7 +1047,8 @@ struct SettingsSectionScreen: View {
                 HStack(spacing: 8) {
                     ForEach(AppTheme.allCases) { theme in
                         ThemeCard(theme: theme, selected: AppTheme.parse(themeRaw) == theme) {
-                            SettingsSync.set(AppTheme.storageKey, theme.rawValue)
+                            // D-250: the whole window crosses over to the new theme (the door decides).
+                            ThemeCrossfade.change { SettingsSync.set(AppTheme.storageKey, theme.rawValue) }
                         }
                     }
                 }
@@ -1057,7 +1062,7 @@ struct SettingsSectionScreen: View {
                 VStack(alignment: .leading, spacing: 6) {
                     ModeControl(theme: theme, stored: Binding(
                         get: { AppearanceMode.parse(appearanceRaw) },
-                        set: { SettingsSync.set(AppearanceMode.storageKey, $0.rawValue) }
+                        set: { mode in ThemeCrossfade.change { SettingsSync.set(AppearanceMode.storageKey, mode.rawValue) } }
                     ))
                     if theme.forcesDark {
                         Text(verbatim: AppearanceCopy.norseAlwaysDark)

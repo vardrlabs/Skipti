@@ -1456,6 +1456,48 @@ https://claude.ai/artifact/FwwzuzRkyyxiuGvJKNMPCG (v1); briefs `.drafts/u9/brief
   re-created; `ffi_check_expense` never checked membership. Listed for Fable's security pass (a peer could still write
   such a record; the rules and ingest do not refuse it).
 - **Status:** in D-249.
+
+### The D-250 chain, 209, 215: the fluidity sweep (your 194)
+
+#### 209: one motion vocabulary, pointing at what exists
+
+- **What:** `ChangeMotion` (iOS `enum`, Android `object` read from the Swift file) names the UI changes: change 0.2 s
+  (the switch's travel), number 0.2 s on the toast's ease, page 0.25 s, fill 0.9 s (the welcome's sweep), fade 0.15 s;
+  helpers on both phones (rows moving, lines rising in, amounts rolling by core's integers, meters and the ring
+  filling, pills sliding, the theme crossfade, buttons brightening, Android pages pushing and popping like iOS's).
+  Every one is a cut under Reduce Motion or Less motion; power saving never stills them (they are moments, not art).
+- **Why:** your sweep; no new numbers invented; a twin defect (Android pages cut where iOS slid) closed.
+- **Status:** in D-250.
+
+#### 215: Android's page slide ships; a real phone decides its cost
+
+- **What:** Android pages slide on their own layers, the leaving page recorded once and its art held, one opaque ground,
+  the tab bar outside the slide. On the host-GPU emulator a push still measures p90 27 to 32 ms against 20 to 21 with
+  no slide, and the experiments (leaving page not drawn at all: 32; both pages as textures: 30 to 32; the slide cut:
+  21 to 23) put the cost in any full-window slide on that emulator, not in our drawing.
+- **Why:** the twin rule (iOS slides); the remaining cost is the test device's.
+- **Risk if wrong:** a real Android phone stutters on every push.
+- **Overturn:** a real-phone check at release (your device list): if it stutters, the page change becomes the 0.15 s
+  crossfade on Android (cheap) and the twin difference is recorded.
+- **Status:** in D-250; the real-phone check is owed.
+
+### Siri and Gemini, 210 to 213: your answers (pop-up, 2026-10-21)
+
+- **210 (U15, U16):** Siri and Gemini come in **0.5.2**, not 0.5.1.
+- **211:** answers come from the phone only: the ledger on the phone and Apple's or Google's ON-DEVICE model; nothing
+  leaves the phone; phones without an on-device model get the fixed commands (add an expense, what do I owe a person).
+  Guarantees 6 and 7 stay as worded.
+- **212:** Android may use Google's ML Kit GenAI (Gemini Nano, on-device API only) once CONTRIBUTING rule 4's written
+  justification is done, its code read before the first build, Gradle checksums added and the Play manifest allowlist
+  passes.
+- **213:** the assistant is ON by default; the app lock still guards the answers (none while locked), and the
+  disclosure line ("Answers come from this phone. They can be read aloud and shown on the lock screen.") sits in About's
+  privacy section.
+- **214 (pop-up, 2026-10-21):** a themed pull-to-refresh in **0.5.2**: our own indicator on both phones in place of
+  Apple's spinner (iOS needs its own pull gesture) and Material's circle (Android's indicator slot); Norse's mark is
+  **ᛃ Jera** (the year's turn: a cycle coming round), carving itself in gold as you pull, then glowing from its own
+  shape and turning while it syncs, a short flare when done; Aurora a curtain-light arc, Vardr Labs a bracketed bar
+  that fills; Reduce Motion and Less motion show a still lit mark.
 ---
 
 ## High: user-visible behaviour or a privacy surface

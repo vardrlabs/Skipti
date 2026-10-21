@@ -180,6 +180,8 @@ private struct PrimaryButtonBody: View {
                 // D-234 (L13): dimmed once, as a group, as Android's `alpha` dims the finished button.
                 .compositingGroup()
                 .opacity(isEnabled ? 1 : ButtonLook.disabledAlpha)
+                // D-250: brightening as it enables (and dimming) moves; a press stays instant.
+                .rowsMotion(isEnabled)
                 .compactTouch(compact)
         } else {
             // D-174 (ADR-0038): taller, rounder and a weight heavier; the label
@@ -196,6 +198,8 @@ private struct PrimaryButtonBody: View {
                 // (Android's look); per layer the label sank into the dimmed fill.
                 .compositingGroup()
                 .opacity(isEnabled ? 1 : ButtonLook.disabledAlpha)
+                // D-250: brightening as it enables (and dimming) moves; a press stays instant.
+                .rowsMotion(isEnabled)
                 .compactTouch(compact)
         }
     }
@@ -243,6 +247,7 @@ private struct SecondaryButtonBody: View {
                 .contentShape(Rectangle())
                 .foregroundStyle(destructive ? Tokens.owed : Tokens.accent)
                 .opacity(isEnabled ? (configuration.isPressed ? 0.6 : 1) : ButtonLook.disabledAlpha)
+                .rowsMotion(isEnabled)
         } else {
             // D-174 (ADR-0038): tonal, not a hairline outline: the accent's
             // soft fill reads as a button without competing with the primary.
@@ -259,6 +264,8 @@ private struct SecondaryButtonBody: View {
                 // D-234 (L13): dimmed once, as a group.
                 .compositingGroup()
                 .opacity(isEnabled ? 1 : ButtonLook.disabledAlpha)
+                // D-250: brightening as it enables (and dimming) moves; a press stays instant.
+                .rowsMotion(isEnabled)
         }
     }
 }

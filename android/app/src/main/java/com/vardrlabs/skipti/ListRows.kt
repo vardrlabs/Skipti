@@ -2,6 +2,10 @@ package com.vardrlabs.skipti
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.first
 import androidx.compose.animation.core.EaseInOut
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animateFloatAsState
@@ -43,6 +47,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -172,15 +178,31 @@ class ListCardScope internal constructor() {
 /** D-225 (Design 1): S1's list card: the glass card at padding 0, its rows at the list padding, a hairline between rows
  *  and none after the last. [modifier] carries a group's semantics (a choice page's `selectableGroup()`). The twin of
  *  iOS's `ListCard`. */
+// D-250: [moves], a form card whose rows come and go as it is filled (Add expense's: iOS's `.rowsMotion(formShape)`):
+// its height eases over `ChangeMotion.CHANGE` instead of jumping ([movingSize]); a cut when motion is reduced.
 @Composable
-fun ListCard(dark: Boolean, modifier: Modifier = Modifier, build: ListCardScope.() -> Unit) {
+fun ListCard(dark: Boolean, modifier: Modifier = Modifier, moves: Boolean = false, build: ListCardScope.() -> Unit) {
     val rows = ListCardScope().apply(build).rows
-    Column(modifier.glassCard(dark, padding = 0).padding(horizontal = ThemeArt.m("listPadH").dp, vertical = ThemeArt.m("listPadV").dp)) {
+    ListCardColumn(dark, modifier, moves) {
         rows.forEachIndexed { i, row ->
-            if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(Tok.hairline(dark)))
+            if (i > 0) ListCardHairline(dark)
             row()
         }
     }
+}
+
+/** D-250: [ListCard]'s card around rows the caller draws itself (New group's people, which come and go through
+ *  [MovingRows]), each separated by [ListCardHairline]. */
+@Composable
+fun ListCardColumn(dark: Boolean, modifier: Modifier = Modifier, moves: Boolean = false, content: @Composable ColumnScope.() -> Unit) {
+    val sizing = if (moves) Modifier.movingSize() else Modifier
+    Column(modifier.glassCard(dark, padding = 0).then(sizing).padding(horizontal = ThemeArt.m("listPadH").dp, vertical = ThemeArt.m("listPadV").dp), content = content)
+}
+
+/** The hairline between two rows of a list card. */
+@Composable
+fun ListCardHairline(dark: Boolean) {
+    Box(Modifier.fillMaxWidth().height(1.dp).background(Tok.hairline(dark)))
 }
 
 /** D-225 (Design 1): the one list row. An optional [leading] piece (You's and Haptics' tile), `rowGap` 13, the title in
@@ -505,7 +527,24 @@ fun <T> ChoicePage(
  *  the bar, and the bar titled [title] with the page's backdrop. The currency list and [ChoicePage] draw in it. */
 @Composable
 fun PushedWindow(title: String, dark: Boolean, onClose: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
-    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+    val motion = rememberMotionState()
+    val shown = remember { MutableTransitionState(false) }
+    // D-250: it leaves as it came (iOS's pop): system Back, the bar's back or a pick slides it out to the trailing edge
+    // first, then closes the window; reduced, it closes at once.
+    var closing by remember { mutableStateOf(false) }
+    val close = {
+        if (motion.reduce) {
+            onClose()
+        } else {
+            closing = true
+            shown.targetState = false
+        }
+    }
+    LaunchedEffect(shown) {
+        snapshotFlow { closing && shown.isIdle && !shown.currentState }.first { it }
+        onClose()
+    }
+    Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         SkiptiWindowLocals {
             val view = LocalView.current
             val window = (view.parent as? DialogWindowProvider)?.window
@@ -520,15 +559,14 @@ fun PushedWindow(title: String, dark: Boolean, onClose: () -> Unit, content: @Co
                     }
                 }
             }
-            val motion = rememberMotionState()
-            val shown = remember { MutableTransitionState(false) }
             LaunchedEffect(Unit) { shown.targetState = true }
             val ltr = LocalLayoutDirection.current == LayoutDirection.Ltr
             AnimatedVisibility(
                 visibleState = shown,
-                enter = if (motion.reduce) EnterTransition.None else slideInHorizontally(tween(250)) { w -> if (ltr) w else -w },
+                enter = if (motion.reduce) EnterTransition.None else slideInHorizontally(ChangeMotion.tween(ChangeMotion.Kind.PAGE)) { w -> if (ltr) w else -w },
+                exit = if (motion.reduce) ExitTransition.None else slideOutHorizontally(ChangeMotion.tween(ChangeMotion.Kind.PAGE)) { w -> if (ltr) w else -w },
             ) {
-                PushedWindowPage(title, dark, onClose, content)
+                PushedWindowPage(title, dark, close, content)
             }
         }
     }

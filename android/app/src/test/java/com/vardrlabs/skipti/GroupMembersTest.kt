@@ -136,7 +136,9 @@ class GroupMembersTest {
         assertFalse("no outlined field", "OutlinedTextField" in file)
         assertTrue("the name field is a field row", "FieldRow(" in body("private fun NameField("))
         val create = body("fun CreateGroupScreen(")
-        assertEquals("Group, You and People cards", 3, create.split("ListCard(dark)").size - 1)
+        assertEquals("Group and You cards", 2, create.split("ListCard(dark)").size - 1)
+        // D-250: People is ListCard's look with its rows moving (MovingRows), the same padding and hairlines.
+        assertTrue("People's card", "ListCardColumn(dark) {\n                MovingRows(shownRows, key = { it.id }) { r, at ->" in create)
         for (s in listOf(
             "SectionLabel(\"Group\", dark)", "SectionLabel(\"You\", dark)", "SectionLabel(\"People\", dark)",
             "trailing = RowTrailing.Value(currency, chevron = true)", "CurrencyListDialog(", "RemoveGlyphButton(",

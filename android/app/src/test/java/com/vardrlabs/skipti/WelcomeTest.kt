@@ -420,13 +420,14 @@ class WelcomeTest {
         assertEquals(1, closes)
         // The same write Appearance's tiles make, and the same hooks its page's close runs.
         val hub = src("AccountHubScreen.kt")
-        assertTrue("Appearance.setTheme(context, theme)" in hub)
+        assertTrue("ThemeCrossfade.change(themeView, themeMotion.reduce) { Appearance.setTheme(context, theme) }" in hub)
         assertTrue("AppIconSwitcher.applyIfNeeded(context)" in hub)
         val welcome = src("Welcome.kt")
         assertTrue("fun choose(context: Context, theme: AppTheme) = choose(theme) { Appearance.setTheme(context, it) }" in welcome)
         assertTrue("closed(applyIcon = { AppIconSwitcher.applyIfNeeded(context) }, pageClosed = { SettingsSync.pageClosed(context) })" in welcome)
         assertTrue("ThemeCard(theme, current == theme, dark, Modifier.fillMaxWidth()) { onChoose(theme) }" in welcome)
-        assertTrue("WelcomeStep.LOOK -> LookPage(dark) { WelcomeLook.choose(context, it) }" in welcome)
+        // D-250: the same write, inside the window's crossfade (the twin of iOS's `ThemeCrossfade.change`).
+        assertTrue("WelcomeStep.LOOK -> LookPage(dark) { ThemeCrossfade.change(lookView, reduce) { WelcomeLook.choose(context, it) } }" in welcome)
     }
 
     @Test
@@ -750,7 +751,7 @@ class WelcomeTest {
      *  step, never the session's step ahead of it. */
     @Test
     fun the_step_change_is_ones_crossfade_like_ios() {
-        assertTrue("iOS's 0.25 s ease-in-out", ".animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: step)" in swift)
+        assertTrue("iOS's 0.25 s ease-in-out (D-250: ChangeMotion.page)", ".animation(ChangeMotion.animation(.page, reduced: reduceMotion), value: step)" in swift && "static let page = 0.25" in java.io.File("../../ios/Skipti/App/ThemeMotion.swift").readText())
         assertEquals(250, WelcomeFade.MILLIS)
         assertEquals(androidx.compose.animation.core.CubicBezierEasing(0.42f, 0f, 0.58f, 1f), WelcomeFade.EASING)
         assertEquals("no change yet: the drawn page is whole", 1f, WelcomeFade.progress(fade = 0f, turn = 0), 0f)

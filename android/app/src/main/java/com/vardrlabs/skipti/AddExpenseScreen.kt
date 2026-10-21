@@ -920,7 +920,7 @@ fun AddExpenseScreen(
         val parentNow = categoryParent ?: CategoryLevels.parent(selectedCategory, tree)
         val shown = named
         val ledgerRow = AddExpenseRows.ledgerRow(editingId != null, groups.size)
-        ListCard(dark) {
+        ListCard(dark, moves = true) {
             row { FieldRow(note, { note = AddExpenseUi.capNote(it) }, AddSheetCopy.WHAT_FOR, dark) }
             row {
                 ListRow(
@@ -951,8 +951,9 @@ fun AddExpenseScreen(
             }
         }
         if (justMe) CardCaption(SpendingCopy.ONLY_YOU_NOTHING_TO_SPLIT, dark)
-        if (parentNow != null && selectedCategory == null) {
-            CardCaption(CategoryCopy.hint(CategoryLevels.name(parentNow, tree)), dark)
+        // D-250: the hint rises in when a category asks for its subcategory.
+        Reveal(parentNow != null && selectedCategory == null) {
+            parentNow?.let { CardCaption(CategoryCopy.hint(CategoryLevels.name(it, tree)), dark) }
         }
 
         if (AddExpenseRows.showsSplit(justMe)) SplitSection(
@@ -964,13 +965,16 @@ fun AddExpenseScreen(
 
         // The live line already says it; Save's refusal does not repeat it.
         error?.takeIf { it != splitProblem }?.let { msg ->
-            Text(
-                msg,
-                style = Type.bodyDim(dark).copy(color = Tok.owed(dark)),
-                modifier = Modifier.semantics {
-                    contentDescription = "Could not save. $msg"
-                },
-            )
+            // D-250: the line rises in (iOS's `.reveal`).
+            RevealOnEnter {
+                Text(
+                    msg,
+                    style = Type.bodyDim(dark).copy(color = Tok.owed(dark)),
+                    modifier = Modifier.semantics {
+                        contentDescription = "Could not save. $msg"
+                    },
+                )
+            }
         }
 
         Text(
@@ -1062,7 +1066,8 @@ private fun SplitSection(
         // The split card: the kind and who paid (choice pages), one switch row per person (everyone in by default),
         // then the kind's own fields as field rows, only for people in the split, in the group's order (iOS's).
         // The shares themselves come from core at save time.
-        ListCard(dark) {
+        // D-250: a person switched in or out adds or takes away their field row; the card's height eases.
+        ListCard(dark, moves = true) {
             row {
                 ListRow(AddSheetCopy.SPLIT_TYPE, dark, trailing = RowTrailing.Value(draft.label, chevron = true)) { onChoose("split") }
             }
@@ -1089,21 +1094,27 @@ private fun SplitSection(
         SplitKindExtras(draft, members, dark, onDraft)
 
         // D-183: what this expense does for you, as it stands (core's).
-        summaryLine?.let {
-            Text(
-                it,
-                style = Type.body(dark).copy(color = Tok.textDim(dark), fontSize = TypeScale.prose.sp),
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
-            )
+        // D-250: the summary and the problem lines rise in when they appear and leave at once; their words change in
+        // place while typing (a crossfade per keystroke reads as mush), as on iOS.
+        Reveal(summaryLine != null) {
+            summaryLine?.let {
+                Text(
+                    it,
+                    style = Type.body(dark).copy(color = Tok.textDim(dark), fontSize = TypeScale.prose.sp),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         }
-        splitProblem?.let {
-            Text(
-                it,
-                style = Type.body(dark).copy(color = Tok.owed(dark), fontSize = TypeScale.prose.sp),
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
-            )
+        Reveal(splitProblem != null) {
+            splitProblem?.let {
+                Text(
+                    it,
+                    style = Type.body(dark).copy(color = Tok.owed(dark), fontSize = TypeScale.prose.sp),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         }
 }
 

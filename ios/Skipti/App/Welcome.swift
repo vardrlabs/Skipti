@@ -776,7 +776,8 @@ struct WelcomeView: View {
                 .padding(.horizontal, 20)
                 .padding(.bottom, 12)
         }
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: step)
+        // D-250: the page motion's own value (`ChangeMotion.page`, 0.25 s easeInOut, as before).
+        .animation(ChangeMotion.animation(.page, reduced: reduceMotion), value: step)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .auroraBackground()
         .task { load() }
@@ -942,7 +943,7 @@ struct WelcomeView: View {
             line(WelcomeCopy.lookLine)
             VStack(spacing: 12) {
                 ForEach(AppTheme.allCases) { theme in
-                    ThemeCard(theme: theme, selected: current == theme) { WelcomeLook.choose(theme) }
+                    ThemeCard(theme: theme, selected: current == theme) { ThemeCrossfade.change { WelcomeLook.choose(theme) } }
                 }
             }
             .padding(.top, 4)

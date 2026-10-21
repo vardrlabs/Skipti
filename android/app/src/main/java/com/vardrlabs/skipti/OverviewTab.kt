@@ -27,6 +27,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -392,15 +394,18 @@ fun OverviewScreen(
                     SectionLabel(OverviewCopy.PEOPLE, dark, Modifier.padding(top = 4.dp), color = Tok.text(dark))
                     // D-234 wave (decision 102): iOS pads this card 14.
                     Column(Modifier.glassCard(dark, padding = 14)) {
-                        people.forEachIndexed { i, p ->
-                            if (i > 0) HorizontalDivider(color = Tok.hairline(dark))
+                        // D-250: rows keyed by what they show (a person per currency, repeats numbered: MotionKeys), never
+                        // by position, so a person who comes or goes moves and the rest close up.
+                        val keys = MotionKeys.unique(people.map { "${it.name}/${it.currencyCode}" })
+                        MovingRows(people.zip(keys), key = { it.second }) { (p, _), at ->
+                            if (at > 0) HorizontalDivider(color = Tok.hairline(dark))
                             PersonRow(p, groups, dark)
                         }
                     }
                 }
             }
         }
-        error?.let { Text(it, style = Type.body(dark).copy(color = Tok.owed(dark)), modifier = Modifier.glassCard(dark)) }
+        error?.let { RevealOnEnter { Text(it, style = Type.body(dark).copy(color = Tok.owed(dark)), modifier = Modifier.glassCard(dark)) } }
         Spacer(Modifier.height(8.dp))
     }
 }
@@ -541,8 +546,10 @@ private fun Hero(o: OverviewOut, groupCount: Int, dark: Boolean, onSettle: () ->
                     if (first.amountMinor > 0) OverviewCopy.GET_BACK else OverviewCopy.OWE,
                     style = Type.body(dark).copy(color = dim, fontSize = TypeScale.heroLine.sp),
                 )
-                Text(
+                // D-250: the amount rolls when it changes (after an Add, a settle), by core's signed integer.
+                MoneyText(
                     money(abs(first.amountMinor), first.currencyCode),
+                    first.amountMinor,
                     // The numbers face (O-1), as iOS draws it: a money amount is a figure, not a title.
                     style = Type.numericColored(TypeScale.heroAmount, Tok.onHero(dark), androidx.compose.ui.text.font.FontWeight.Bold),
                     // D-217 final fix: shrinks to fit as iOS's does (minimumScaleFactor 0.6), never cut.
@@ -604,7 +611,8 @@ private fun PersonRow(p: PersonNetOut, groups: List<NamedGroupWire>, dark: Boole
         }
         Column(horizontalAlignment = Alignment.End) {
             Text(OverviewCopy.verb(p.netMinor), style = Type.label(dark, 12).copy(color = colour))
-            Text(money(abs(p.netMinor), p.currencyCode), style = Type.numericColored(17, colour))
+            // D-250: the person's amount rolls when it changes.
+            MoneyText(money(abs(p.netMinor), p.currencyCode), p.netMinor, style = Type.numericColored(17, colour))
         }
     }
 }
@@ -635,6 +643,8 @@ fun GroupPage(
     onExport: (String) -> Unit = {},
     /** D-221 (Design 12): the shell's memory of this open group between loads (the last settled state, a waiting play). */
     celebration: CelebrationState = remember { CelebrationState() },
+    /** D-250 fix wave (M3): the shell's last read of this group's page (memory only), so the page slides in drawn. */
+    keep: GroupPageKeep = remember { GroupPageKeep() },
 ) {
     var named by remember { mutableStateOf<NamedGroupWire?>(null) }
     // D-210: the cloud, roles and requests of this group, and whether it is a
@@ -688,61 +698,29 @@ fun GroupPage(
         onError = { pictureError = it },
     )
 
+    /** Draws [it], a read of the page (the shell's kept one at once, then each fresh read). */
+    fun show(it: GroupPageKeep.Loaded) {
+        val q = it.quad
+        named = q.a; stats = q.b; lines = q.c; recent = q.d
+        remaining = it.remaining
+        people = it.people
+        cardBalances = it.cardBalances
+        historyNames = it.historyNames
+        progress = it.progress
+        milestone = it.milestone
+        parkedHere = it.parked
+    }
+    // D-250 fix wave (M3): a page opened before draws its last read at once (the read below refreshes it), so it slides
+    // in drawn, as iOS's does; a first visit was read before the slide when that took under GroupPageKeep.HOLD_MS.
+    val keptAtOpen = remember(groupId) { keep.last?.also { show(it) } != null }
     // D-247: a settle held, undone or written from the next card reads the page again.
     LaunchedEffect(vaultPath, groupId, SyncStatus.revision, requestIds, SettleHold.shared.revision) {
         withContext(Dispatchers.IO) {
-            runCatching {
-                val store = LedgerStore(vaultPath)
-                // The roles this phone last heard, offline too.
-                GroupRoles.load(store, groupId)
-                // D-210: read strictly, before anything else: a copy is never the
-                // group Add and Settle up work on, and an unreadable mark shows
-                // nothing rather than a page that could be added to.
-                val loaded = GroupPeople.load(store, groupId)
-                if (loaded.readOnly == null) store.selectGroup(groupId)
-                val n = store.namedGroups().first { it.group.id == groupId }
-                val all = store.loadExpenses().filter { it.group == groupId }
-                val tree = CategoryLevels.tree
-                val s = ffiGroupStats(
-                    all.map { StatsExpenseIn(it.toInput(), CategoryLevels.parent(it.category, tree)) },
-                    n.selfId,
-                )
-                // D-247: a settle held for Undo counts as recorded (the next card moves on, the meter moves), read with
-                // the vault's under the hold's lock so a write landing meanwhile is never counted twice.
-                val settlements = SettleHold.shared.counting { held -> (store.loadSettlements() + held).map { it.toInput() } }
-                val redistributions = store.loadRedistributions()
-                val removed = store.removedIds(groupId)
-                fun lineOf(who: String) = ffiBalanceLine(all.map { it.toInput() }, settlements, redistributions, removed, who, groupId)
-                val l = lineOf(n.selfId)
-                    .sortedWith(compareByDescending<BalanceLineOut> { abs(it.viewerNetMinor) }.thenBy { it.currencyCode })
-                // D-180: core's projection (edits applied, deletions out), so a
-                // row opens the expense itself, to read, edit or delete.
-                val projected = store.projectedExpenses().expenses
-                    .filter { !it.deleted && it.expense.group == groupId }
-                    .sortedByDescending { (it.timestampMs ?: it.addedAtMs).toLong() }
-                    .take(5)
-                Loaded(
-                    Quad(n, s, l, projected),
-                    // D-247 (decision 168): what the next card counts, the plan's length (core's fewest payments, the
-                    // plan Settle up shows).
-                    GroupNext.planCount(l), loaded, RequestCards.balanceLines(store, groupId, Notices.requests(groupId)),
-                    store.historyNames(groupId),
-                    SettledSummary.blocks(GroupProgress.progressOver(store, groupId, settlements), n.group.settlementCurrency),
-                    GroupProgress.milestone(store, groupId, System.currentTimeMillis()),
-                    CloudRecords.hasParked(store, groupId),
-                )
-            }
+            runCatching { GroupPageKeep.read(vaultPath, groupId) }
         }.fold(
             onSuccess = {
-                val q = it.quad
-                named = q.a; stats = q.b; lines = q.c; recent = q.d
-                remaining = it.remaining
-                people = it.people
-                cardBalances = it.cardBalances
-                historyNames = it.historyNames
-                progress = it.progress
-                milestone = it.milestone
-                parkedHere = it.parked
+                show(it)
+                keep.last = it
                 // D-221 (Design 12): a change to all settled marks a play; it starts once the page is seen, never here.
                 val after = SettledSummary.allSettled(it.progress)
                 if (Celebration.plays(celebration.before, after, isCopy = it.people.readOnly != null)) celebration.pending = true
@@ -808,13 +786,21 @@ fun GroupPage(
         // a backgrounded play never keeps the page dimmed until it is resumed). It does not play again.
         if (!motion.resumed) play = null
     }
+    // D-250 fix wave (M3): a first visit whose read took longer than the slide's hold: the page's cards fade in as they
+    // arrive (over CHANGE), never pop in after it has landed; a page drawn from its kept read is there at once.
+    val reduce = rememberMotionState().reduce
+    val arrival by animateFloatAsState(
+        if (GroupPageKeep.drawn(keptAtOpen, named != null, error != null || loadFailed)) 1f else 0f,
+        if (reduce) snap() else ChangeMotion.tween(ChangeMotion.Kind.CHANGE),
+        label = "pageArrives",
+    )
     Box(Modifier.fillMaxSize()) {
         Column(
             Modifier
                 .fillMaxSize()
                 .backdropSource(backdrop)
                 // The page's content dims under the celebration; the art behind it does not.
-                .graphicsLayer { alpha = play?.let { CelebrationTimeline.dim(it.elapsed, it.still) } ?: 1f }
+                .graphicsLayer { alpha = (play?.let { CelebrationTimeline.dim(it.elapsed, it.still) } ?: 1f) * arrival }
                 .verticalScroll(scroll)
                 .padding(start = 16.dp, end = 16.dp, top = BarDecisions.scrollTop(16f).dp, bottom = 8.dp + LocalShellBarInset.current),
             verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -827,17 +813,26 @@ fun GroupPage(
                 GroupHeader(n, dark, isCopy, onPeople = onPeople, onPicture = { choosePicture() })
                 pictureError?.let { ErrorLine(it, dark) }
                 // Decision 122: one quiet line under the header, as the header's own meta line.
-                if (parkedHere) Text(OverviewCopy.COULD_NOT_SYNC, style = Type.bodyDim(dark).copy(fontSize = TypeScale.detail.sp))
-                if (progress.isNotEmpty()) SettledCard(progress, dark)
+                // D-250 fix wave (M4): the page's own pieces come and go in place (iOS's rowsMotion over the page): the
+                // parked line, the Settled card and the milestone fade in and out, the rest closing up.
+                MovingRows(listOfNotNull(OverviewCopy.COULD_NOT_SYNC.takeIf { parkedHere }), key = { "parked" }) { line, _ ->
+                    Text(line, style = Type.bodyDim(dark).copy(fontSize = TypeScale.detail.sp))
+                }
+                MovingRows(listOfNotNull(progress.takeIf { it.isNotEmpty() }), key = { "settled" }) { p, _ -> SettledCard(p, dark) }
                 StatsRow(n, stats, lines.firstOrNull(), dark)
-                milestone?.let { MilestoneCard(it, dark) }
+                MovingRows(listOfNotNull(milestone), key = { "milestone" }) { m, _ -> MilestoneCard(m, dark) }
                 val next = GroupNext.pick(lines)
-                if (!isCopy && next != null) GroupNextCard(
-                    vaultPath, n, historyNames, next, remaining, dark, onError = { error = it },
-                    // D-224 fix wave (F7): the card's payment settled the group: the play is marked at once.
-                    onAllSettled = { celebration.settledHere(isCopy) },
-                )
-                cards.forEach { card ->
+                // D-250: the next card is one place (its payment changes in it); it comes in, and leaves sliding out
+                // when the last payment is settled, as Settle up's cards do.
+                MovingRows(listOfNotNull(next?.takeIf { !isCopy }), key = { "next" }, leave = RowLeave.SLIDE) { pick, _ ->
+                    GroupNextCard(
+                        vaultPath, n, historyNames, pick, remaining, dark, onError = { error = it },
+                        // D-224 fix wave (F7): the card's payment settled the group: the play is marked at once.
+                        onAllSettled = { celebration.settledHere(isCopy) },
+                    )
+                }
+                // D-250: request cards keyed by their request, in and out.
+                MovingRows(cards, key = { it.id }, leave = RowLeave.SLIDE, spacing = 14.dp) { card, _ ->
                     RequestCardView(
                         card, dark, canSettleUp = lines.any { it.viewerNetMinor != 0L }, balance = cardBalances[card.id], busy = cardBusy,
                         onDecline = { decline(card.item, n) },
@@ -879,11 +874,15 @@ fun GroupPage(
                         }
                     }
                 }
-                if (lines.isNotEmpty()) {
-                    SectionLabel(OverviewCopy.WHO_OWES, dark, color = Tok.text(dark))
-                    val names = LedgerStore.balanceNames(n, historyNames)
-                    lines.forEach { line ->
-                        Box(Modifier.glassCard(dark)) { BalanceLineView(line, names, n.selfId, dark) }
+                // D-250 fix wave (M4): the section moves as one, so its label leaves with the last card.
+                MovingRows(listOfNotNull(lines.takeIf { it.isNotEmpty() }), key = { "who-owes" }) { shownLines, _ ->
+                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        SectionLabel(OverviewCopy.WHO_OWES, dark, color = Tok.text(dark))
+                        val names = LedgerStore.balanceNames(n, historyNames)
+                        // D-250: one card per currency, keyed by it.
+                        MovingRows(shownLines, key = { it.currencyCode }, spacing = 14.dp) { line, _ ->
+                            Box(Modifier.glassCard(dark)) { BalanceLineView(line, names, n.selfId, dark) }
+                        }
                     }
                 }
                 SectionLabel(OverviewCopy.RECENT, dark, color = Tok.text(dark))
@@ -892,7 +891,8 @@ fun GroupPage(
                 } else {
                     // D-234 wave (decision 102): iOS pads this card 14.
                     Column(Modifier.glassCard(dark, padding = 14)) {
-                        recent.forEachIndexed { i, e ->
+                        // D-250: keyed by the expense (iOS's `\.element.id`, not its place), in and out.
+                        MovingRows(recent, key = { it.id }) { e, i ->
                             if (i > 0) HorizontalDivider(color = Tok.hairline(dark))
                             Row(
                                 Modifier
@@ -930,7 +930,8 @@ fun GroupPage(
             // D-247 fix wave (I1): a held settle whose write failed (its window ended, the page went, SKIPTI left the
             // front) says so here too, as on Settle up.
             (error ?: SettleHold.shared.failure)?.let {
-                Text(it, style = Type.body(dark).copy(color = Tok.owed(dark)), modifier = Modifier.glassCard(dark))
+                // D-250: the line rises in (iOS's `.reveal`).
+                RevealOnEnter { Text(it, style = Type.body(dark).copy(color = Tok.owed(dark)), modifier = Modifier.glassCard(dark)) }
             }
             Spacer(Modifier.height(8.dp))
         }
@@ -1020,14 +1021,14 @@ private fun GroupHeader(n: NamedGroupWire, dark: Boolean, isCopy: Boolean, onPeo
 private fun StatsRow(n: NamedGroupWire, stats: GroupStatsOut?, net: BalanceLineOut?, dark: Boolean) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         val zero = money(0, n.group.settlementCurrency)
-        Stat(OverviewCopy.TOTAL_SPENT, stats?.spent?.firstOrNull()?.let { money(it.amountMinor, it.currencyCode) } ?: zero, Tok.text(dark), dark, Modifier.weight(1f))
-        Stat(OverviewCopy.YOUR_SHARE, stats?.yourShare?.firstOrNull()?.let { money(it.amountMinor, it.currencyCode) } ?: zero, Tok.text(dark), dark, Modifier.weight(1f))
+        Stat(OverviewCopy.TOTAL_SPENT, stats?.spent?.firstOrNull()?.let { money(it.amountMinor, it.currencyCode) } ?: zero, Tok.text(dark), dark, Modifier.weight(1f), stats?.spent?.firstOrNull()?.amountMinor ?: 0L)
+        Stat(OverviewCopy.YOUR_SHARE, stats?.yourShare?.firstOrNull()?.let { money(it.amountMinor, it.currencyCode) } ?: zero, Tok.text(dark), dark, Modifier.weight(1f), stats?.yourShare?.firstOrNull()?.amountMinor ?: 0L)
         if (net != null && net.viewerNetMinor != 0L) {
             Stat(
                 if (net.viewerNetMinor > 0) OverviewCopy.GET_BACK else OverviewCopy.OWE,
                 money(abs(net.viewerNetMinor), net.currencyCode),
                 if (net.viewerNetMinor > 0) Tok.owing(dark) else Tok.owed(dark),
-                dark, Modifier.weight(1f),
+                dark, Modifier.weight(1f), net.viewerNetMinor,
             )
         } else {
             Stat(OverviewCopy.SETTLED_SHORT, Placeholder.NONE, Tok.textDim(dark), dark, Modifier.weight(1f))
@@ -1035,23 +1036,84 @@ private fun StatsRow(n: NamedGroupWire, stats: GroupStatsOut?, net: BalanceLineO
     }
 }
 
-private data class Quad<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
+internal data class Quad<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
 
-/** What a group page reads in one go (off the main thread). */
-private class Loaded(
-    val quad: Quad<NamedGroupWire, GroupStatsOut, List<BalanceLineOut>, List<uniffi.skipti_core.ProjectedExpenseOut>>,
-    val remaining: Int,
-    val people: GroupPeople,
-    val cardBalances: Map<String, String>,
-    val historyNames: Map<String, String>,
-    val progress: List<SettledProgressOut>,
-    val milestone: Milestones.Shown?,
-    /** Decision 122: a record of this group is parked. */
-    val parked: Boolean,
-)
+/** D-250 fix wave (M3): a group page's last read, kept by the shell per group for as long as the app runs (memory only,
+ *  as [CelebrationState]), and the read itself, so the shell can read a first visit before the page slides in. */
+class GroupPageKeep {
+    internal var last: Loaded? = null
+
+    /** What a group page reads in one go (off the main thread). */
+    internal class Loaded(
+        val quad: Quad<NamedGroupWire, GroupStatsOut, List<BalanceLineOut>, List<uniffi.skipti_core.ProjectedExpenseOut>>,
+        val remaining: Int,
+        val people: GroupPeople,
+        val cardBalances: Map<String, String>,
+        val historyNames: Map<String, String>,
+        val progress: List<SettledProgressOut>,
+        val milestone: Milestones.Shown?,
+        /** Decision 122: a record of this group is parked. */
+        val parked: Boolean,
+    )
+
+    companion object {
+        /** How long a tap on a group waits for a first visit's read before the page slides in anyway (decision: under
+         *  this the person sees no wait and the page lands drawn; over it, the slide starts and the cards fade in). */
+        const val HOLD_MS = 100L
+
+        /** Whether the shell holds the slide for a read: only a group with no kept read. */
+        fun holds(kept: Boolean): Boolean = !kept
+
+        /** Whether the page's content is drawn in full: kept at open, read, or failed (its error must show). */
+        fun drawn(keptAtOpen: Boolean, read: Boolean, failed: Boolean): Boolean = keptAtOpen || read || failed
+
+        /** The page's read: strict, as the page always made it. */
+        internal fun read(vaultPath: String, groupId: String): Loaded {
+            val store = LedgerStore(vaultPath)
+            // The roles this phone last heard, offline too.
+            GroupRoles.load(store, groupId)
+            // D-210: read strictly, before anything else: a copy is never the
+            // group Add and Settle up work on, and an unreadable mark shows
+            // nothing rather than a page that could be added to.
+            val loaded = GroupPeople.load(store, groupId)
+            if (loaded.readOnly == null) store.selectGroup(groupId)
+            val n = store.namedGroups().first { it.group.id == groupId }
+            val all = store.loadExpenses().filter { it.group == groupId }
+            val tree = CategoryLevels.tree
+            val s = ffiGroupStats(
+                all.map { StatsExpenseIn(it.toInput(), CategoryLevels.parent(it.category, tree)) },
+                n.selfId,
+            )
+            // D-247: a settle held for Undo counts as recorded (the next card moves on, the meter moves), read with
+            // the vault's under the hold's lock so a write landing meanwhile is never counted twice.
+            val settlements = SettleHold.shared.counting { held -> (store.loadSettlements() + held).map { it.toInput() } }
+            val redistributions = store.loadRedistributions()
+            val removed = store.removedIds(groupId)
+            fun lineOf(who: String) = ffiBalanceLine(all.map { it.toInput() }, settlements, redistributions, removed, who, groupId)
+            val l = lineOf(n.selfId)
+                .sortedWith(compareByDescending<BalanceLineOut> { abs(it.viewerNetMinor) }.thenBy { it.currencyCode })
+            // D-180: core's projection (edits applied, deletions out), so a
+            // row opens the expense itself, to read, edit or delete.
+            val projected = store.projectedExpenses().expenses
+                .filter { !it.deleted && it.expense.group == groupId }
+                .sortedByDescending { (it.timestampMs ?: it.addedAtMs).toLong() }
+                .take(5)
+            return Loaded(
+                Quad(n, s, l, projected),
+                // D-247 (decision 168): what the next card counts, the plan's length (core's fewest payments, the
+                // plan Settle up shows).
+                GroupNext.planCount(l), loaded, RequestCards.balanceLines(store, groupId, Notices.requests(groupId)),
+                store.historyNames(groupId),
+                SettledSummary.blocks(GroupProgress.progressOver(store, groupId, settlements), n.group.settlementCurrency),
+                GroupProgress.milestone(store, groupId, System.currentTimeMillis()),
+                CloudRecords.hasParked(store, groupId),
+            )
+        }
+    }
+}
 
 @Composable
-private fun Stat(label: String, value: String, colour: Color, dark: Boolean, modifier: Modifier) {
+private fun Stat(label: String, value: String, colour: Color, dark: Boolean, modifier: Modifier, minor: Long = 0L) {
     Column(
         modifier
             .background(Tok.surface(dark).copy(alpha = 0.8f), ThemeArt.panelShape(Appearance.theme, 14))
@@ -1064,8 +1126,10 @@ private fun Stat(label: String, value: String, colour: Color, dark: Boolean, mod
         Text(label, style = Type.bodyDim(dark).copy(fontSize = 12.sp), maxLines = 2)
         // D-221 fix wave (S11): iOS's 2 between the label and the value.
         Spacer(Modifier.height(2.dp))
-        Text(
+        // D-250: the value rolls when it changes (core's integer behind it).
+        MoneyText(
             value,
+            minor,
             style = Type.numericColored(TypeScale.statValue, colour),
             autoSize = amountAutoSize(TypeScale.statValue),
             maxLines = 1,

@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
@@ -307,7 +308,7 @@ fun SettledCard(blocks: List<SettledProgressOut>, dark: Boolean) {
     val many = blocks.size > 1
     Column(Modifier.glassCard(dark), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (many) SectionLabel(SettledCopy.LABEL, dark, color = Tok.text(dark))
-        blocks.forEach { b ->
+        blocks.forEach { b -> key(b.currencyCode) {
             val percent = "${SettledSummary.percent(b.basisPoints)}%"
             // S4: one element per block, spoken with core's spoken money (SPEC 11.7).
             val spoken = SettledSpeech.block(
@@ -322,21 +323,25 @@ fun SettledCard(blocks: List<SettledProgressOut>, dark: Boolean) {
                         SectionLabel(SettledCopy.LABEL, dark, modifier = Modifier.alignByBaseline(), color = Tok.text(dark))
                     }
                     Spacer(Modifier.weight(1f))
-                    Text(
+                    // D-250: the percent rolls with the meter (core's basis points behind it).
+                    MoneyText(
                         percent,
+                        b.basisPoints.toLong(),
                         style = Type.numeric(TypeScale.settledPercent, FontWeight.Bold, dark),
                         maxLines = 1,
                         modifier = Modifier.alignByBaseline(),
                     )
                 }
-                SettledMeter(SettledMeters.fraction(b.basisPoints), big = true, dark)
-                Text(
+                // D-250: a settle sweeps the meter (the welcome's sweep); the first read lands at once.
+                SettledMeter(rememberFill(SettledMeters.fraction(b.basisPoints).toDouble()), big = true, dark)
+                MoneyText(
                     if (b.settled) SettledCopy.NOTHING_LEFT
                     else SettledCopy.stillToSettle(BalanceUi.moneyFormat(b.outstandingMinor, b.currencyCode, AppLocale.current)),
+                    b.outstandingMinor,
                     style = Type.bodyDim(dark).copy(fontSize = TypeScale.detail.sp),
                 )
             }
-        }
+        } }
     }
 }
 
@@ -402,7 +407,9 @@ fun GroupNextCard(
     val scope = rememberCoroutineScope()
     // S1: held from the tap until the page moves on; a card for another payment starts with a fresh latch (M3).
     val latch = remember(pick) { SettleLatch<GroupNext.Pick>() }
-    val settling = latch.settling(pick)
+    // D-250 fix wave (M5): a card sliding out after its settle keeps "Settling" (the latch lets go as it leaves), as
+    // Settle up's cards keep "Recording…".
+    val settling = latch.settling(pick) || LocalRowLeaving.current
     val other = LedgerStore.label(pick.entry.id, named, history)
     val amount = BalanceUi.moneyFormat(pick.amountMinor, pick.currencyCode, AppLocale.current)
     val spoken = BalanceUi.moneySpoken(pick.amountMinor, pick.currencyCode, AppLocale.current)

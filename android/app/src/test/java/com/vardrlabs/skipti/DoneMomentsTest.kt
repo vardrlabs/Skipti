@@ -544,7 +544,7 @@ class DoneMomentsTest {
         }
         val shell = kt("AppRoot.kt").substringAfter("private fun HomeShell(").substringBefore("\n}\n")
         val cover = shell.indexOf("if (ToastCover.covers(route)) CoversShellToast()")
-        assertTrue("the shell covers its toast for such a route, before it draws one", cover in 0 until shell.indexOf("when (route) {"))
+        assertTrue("the shell covers its toast for such a route, before it draws one", cover in 0 until shell.indexOf("when (shown) {"))
         assertTrue("the add-person screen covers it", "CoversShellToast()" in body(kt("People.kt"), "AddPersonScreen"))
         val host = body(kt("DoneMoments.kt"), "DoneToastHost")
         assertTrue("the app's host hides its toast while covered", "center === DoneCenter && ToastCover.hides(AppLock.locked)" in host)
@@ -611,8 +611,11 @@ class DoneMomentsTest {
         assertEquals("one dim of the tab content", 1, Regex("""\.doneDim\(donePlay, dark\)""").findAll(shell).count())
         assertEquals("and You's", 2, Regex("""\.doneDim\(""").findAll(shell).count())
         val overlay = shell.indexOf("DoneOverlay(donePlay, dark)")
-        val bar = shell.indexOf("SkiptiTabBar(")
+        // D-250 fix wave (I4): the bar is drawn over the pages, outside them (the shell's own copy under a sheet too).
+        val bar = shell.indexOf("CompositionLocalProvider(LocalShellBackdrop provides shellBackdrop) { tabBar() }")
         assertTrue("content, then the overlay, then the bar: $refresh $overlay $bar", refresh in 0 until overlay && overlay < bar)
+        val underSheet = shell.indexOf("Box(Modifier.align(Alignment.BottomCenter)) { tabBar() }")
+        assertTrue("the copy under a sheet is after the overlay, outside the dimmed content", overlay in 0 until underSheet)
         val barBox = shell.substring(shell.lastIndexOf("Box(", bar), bar)
         assertFalse("the bar is never dimmed", "doneDim" in barBox || "graphicsLayer" in barBox)
         assertTrue("the shell says while its bar is shown", "ShellBarShown.value = true" in barBox)
@@ -620,7 +623,7 @@ class DoneMomentsTest {
         val afterRoot = activity.substringAfter("AppRoot(")
         assertTrue("the toast's host over the root", "DoneToastHost(barShown = ShellBarShown.value)" in afterRoot)
         val switch = shell.substringAfter("is TabTap.SwitchTo -> {").substringBefore("is TabTap.PopToRoot")
-        assertTrue("a tab switch plays the light haptic", "Haptics.play(view, HapticKind.LIGHT)" in switch)
+        assertTrue("a tab switch plays the light haptic", "Haptics.play(shellView, HapticKind.LIGHT)" in switch)
         val pop = shell.substringAfter("is TabTap.PopToRoot ->").substringBefore("\n")
         val top = shell.substringAfter("is TabTap.ScrollToTop ->").substringBefore("\n")
         for ((name, line) in listOf("PopToRoot" to pop, "ScrollToTop" to top)) {
@@ -1076,7 +1079,7 @@ class DoneMomentsTest {
         assertTrue("the shell reads the rule", rule in shell)
         assertTrue("holds the cover while it applies", "if (pushCovered) CoversShellToast()" in shell)
         assertTrue("and forgets the push once it does not", "LaunchedEffect(pushCovered) { if (!pushCovered) pushCover = null }" in shell)
-        assertTrue("before it draws", shell.indexOf("if (pushCovered) CoversShellToast()") in 0 until shell.indexOf("when (route) {"))
+        assertTrue("before it draws", shell.indexOf("if (pushCovered) CoversShellToast()") in 0 until shell.indexOf("when (shown) {"))
     }
 
     /** A-R3: a first group made from New group plays its moment over Home's NEW page, as iOS's does (its Home is loaded

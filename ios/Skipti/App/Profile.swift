@@ -668,14 +668,20 @@ struct YouHero: View {
     private var ringed: some View {
         let shown = progress ?? (0, 0)
         return ZStack {
-            if AppearanceState.shared.theme == .norse {
-                // D-243: the ring turns on the art's clock (RingTurn); the picture inside it does not.
-                ArtTurn {
-                    RuneRing(done: shown.done, total: shown.total)
+            Group {
+                if AppearanceState.shared.theme == .norse {
+                    // D-243: the ring turns on the art's clock (RingTurn); the picture inside it does not.
+                    ArtTurn {
+                        RuneRing(done: shown.done, total: shown.total)
+                    }
+                } else {
+                    CompletionRing(done: shown.done, total: shown.total)
                 }
-            } else {
-                CompletionRing(done: shown.done, total: shown.total)
             }
+            // D-250: a step done while away sweeps the ring from what it showed (the welcome's sweep; runes light as it
+            // passes); the first read lands at once. Fix wave (M12): on the ring alone, so a picture changed in the same
+            // update never crossfades over the sweep's 0.9 s.
+            .fillMotion(progress.map { RuneRing.share(done: $0.done, total: $0.total) })
             AvatarView(avatar: avatar, name: name, size: 104)
         }
         .frame(width: ThemeArt.m("ringBox"), height: ThemeArt.m("ringBox"))

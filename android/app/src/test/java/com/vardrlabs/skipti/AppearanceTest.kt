@@ -156,7 +156,7 @@ class AppearanceTest {
             "role = Role.RadioButton", "enabled = choice.enabled", "selected = mode == choice.chosen",
             "heightIn(min = ThemeArt.m(\"touchTarget\").dp)", "ThemeArt.pillShape(Appearance.theme)", "ThemeArt.m(\"modeTrack\")",
             "ThemeArt.m(\"modeInset\")", "Type.name(dark, TypeScale.segment.toInt())", "ButtonLook.DISABLED_ALPHA",
-            "shadow(ThemeArt.m(\"segmentShadowRadius\").dp", "Tok.accentSoft(dark)", "Tok.surface(dark)", "Tok.textDim(dark)",
+            "shadow = ThemeArt.m(\"segmentShadowRadius\").dp" /* D-250: the one sliding pill carries it */, "Tok.accentSoft(dark)", "Tok.surface(dark)", "Tok.textDim(dark)",
             "maxLines = 1", "TextAutoSize.StepBased(", "Appearance.setMode(context, mode)",
             // Fix wave (I-2): the row grows with the words like iOS's: the track sits `margin` inside the row, the chosen
             // pill `margin + inset` inside its segment, so the track stays `inset` outside the pill at every text size.

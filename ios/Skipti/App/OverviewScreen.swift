@@ -239,6 +239,20 @@ struct OverviewScreen: View {
         Binding(get: { SpendingPrefs.view(spendingViewRaw) }, set: { spendingViewRaw = SpendingPrefs.raw($0) })
     }
 
+    /// D-250: Home's people keyed by name and currency, each repeat numbered (`MotionKeys.unique`).
+    static func personKeys(_ people: [PersonNetOut]) -> [String] {
+        MotionKeys.unique(people.map { "\($0.name)/\($0.currencyCode)" })
+    }
+
+    /// D-250: what Home shows, for RowsMotion: the hero's kind, the ledger cards, the spending card, Lately's entries and
+    /// the people.
+    private var homeShape: [String] {
+        let hero = loaded && error == nil && HomeHero.kind(groupCount: groups.count) == .noGroup ? "ask"
+            : (overview?.totals.isEmpty == false ? "owes" : "settled")
+        return [hero, spendingOnHome ? "spending" : "none"] + groups.map(\.group.id) + lately.entries.map(\.id)
+            + Self.personKeys(overview?.people ?? [])
+    }
+
     var body: some View {
         // A container, not a Group: a Group hands its modifiers (the sheets
         // below) to whichever branch shows, so a branch flip tore them down.
@@ -282,18 +296,26 @@ struct OverviewScreen: View {
                         }
                         if let people = overview?.people, !people.isEmpty {
                             section(OverviewCopy.people)
+                            // D-250: keyed by the person and currency (`personKeys`), never the place: a person settled
+                            // leaves and the rest close up.
+                            let keyed = Array(zip(Self.personKeys(people), people))
                             VStack(spacing: 0) {
-                                ForEach(Array(people.enumerated()), id: \.offset) { i, p in
+                                ForEach(Array(keyed.enumerated()), id: \.element.0) { i, pair in
                                     if i > 0 { Divider().overlay(Tokens.hairline) }
-                                    personRow(p)
+                                    personRow(pair.1)
                                 }
                             }
                             .glassCard(padding: 14)
                         }
                         if let error {
                             Text(verbatim: error).font(TypeRole.body()).foregroundStyle(Tokens.owed).glassCard()
+                                .transition(.reveal)
                         }
                     }
+                    // D-250: Home's rows move: a ledger card, a person, a Lately entry, the hero's kind; the error line
+                    // rises in. (Amounts roll by themselves, MoneyChange.)
+                    .rowsMotion(homeShape)
+                    .reveals(error)
                     .padding(16)
                     .shellScrollTop() // D-205
                 }
@@ -466,6 +488,8 @@ struct OverviewScreen: View {
                     Text(verbatim: money(Int64(first.amountMinor.magnitude), first.currencyCode))
                         .font(TypeRole.numeric(TypeScale.heroAmount, weight: 700, relativeTo: .largeTitle)).foregroundStyle(Tokens.onHero)
                         .minimumScaleFactor(0.6).lineLimit(1)
+                        // D-250: the hero's amount rolls as an Add or a settle changes it (core's signed minor units).
+                        .moneyChange(first.amountMinor)
                     // D-223 (Design 2, Q4 a): who it is, the first two people in the hero's currency, largest first.
                     let who = WhoOwes.parts(o.people, currency: first.currencyCode, format: { money($0, $1) })
                     if !who.isEmpty {
@@ -505,6 +529,7 @@ struct OverviewScreen: View {
                 Text(verbatim: OverviewCopy.verb(p.netMinor)).font(TypeRole.label(12)).foregroundStyle(colour)
                 Text(verbatim: money(Int64(p.netMinor.magnitude), p.currencyCode))
                     .font(TypeRole.numeric(17, weight: 600)).foregroundStyle(colour)
+                    .moneyChange(p.netMinor)
             }
         }
         .padding(.vertical, 10)
@@ -679,6 +704,13 @@ struct GroupPageScreen: View {
             createdHere: people.createdHere)
     }
 
+    /// D-250: what the page's rows are, for RowsMotion: the next payment (its person and currency), the request
+    /// cards, the balance lines' currencies and the recent expenses.
+    private var pageShape: [String] {
+        let pick = GroupNext.pick(lines: lines).map { "\($0.currencyCode)/\($0.entry.id)" } ?? "none"
+        return [pick] + cards.map(\.id) + lines.map(\.currencyCode) + recent.map(\.id)
+    }
+
     private var cards: [RequestCardItem] {
         guard named != nil, people.shared, !isCopy else { return [] }
         return RequestCards.cards(items: notices.requests(in: groupID), rows: rows)
@@ -734,7 +766,8 @@ struct GroupPageScreen: View {
                         Text(verbatim: OverviewCopy.nothingYet).font(TypeRole.body()).foregroundStyle(Tokens.textDim).glassCard()
                     } else {
                         VStack(spacing: 0) {
-                            ForEach(Array(recent.enumerated()), id: \.offset) { i, e in
+                            // D-250: keyed by the expense, so a new one slides in at the top and the rest move down.
+                            ForEach(Array(recent.enumerated()), id: \.element.id) { i, e in
                                 if i > 0 { Divider().overlay(Tokens.hairline) }
                                 if isCopy {
                                     recentRow(e, named, chevron: false)
@@ -774,8 +807,12 @@ struct GroupPageScreen: View {
                 // the front) says so here too, as on Settle up.
                 if let error = error ?? SettleHold.shared.failure {
                     Text(verbatim: error).font(TypeRole.body()).foregroundStyle(Tokens.owed).glassCard()
+                        .transition(.reveal)
                 }
             }
+            // D-250: the next card going or coming, the recent rows, the request cards and the error line move.
+            .rowsMotion(pageShape)
+            .reveals(error ?? SettleHold.shared.failure)
             .padding(16)
             .modifier(CelebrationDim(play: celebration))
         }
@@ -1021,22 +1058,26 @@ struct GroupPageScreen: View {
 
     private func statsRow(_ n: NamedGroupWire, _ net: BalanceLineOut?) -> some View {
         HStack(spacing: 8) {
-            stat(OverviewCopy.totalSpent, stats?.spent.first.map { money($0.amountMinor, $0.currencyCode) } ?? money(0, n.group.settlementCurrency), Tokens.text)
-            stat(OverviewCopy.yourShare, stats?.yourShare.first.map { money($0.amountMinor, $0.currencyCode) } ?? money(0, n.group.settlementCurrency), Tokens.text)
+            stat(OverviewCopy.totalSpent, stats?.spent.first.map { money($0.amountMinor, $0.currencyCode) } ?? money(0, n.group.settlementCurrency), Tokens.text,
+                 minor: stats?.spent.first?.amountMinor ?? 0)
+            stat(OverviewCopy.yourShare, stats?.yourShare.first.map { money($0.amountMinor, $0.currencyCode) } ?? money(0, n.group.settlementCurrency), Tokens.text,
+                 minor: stats?.yourShare.first?.amountMinor ?? 0)
             if let net, net.viewerNetMinor != 0 {
                 stat(net.viewerNetMinor > 0 ? OverviewCopy.getBack : OverviewCopy.owe,
                      money(Int64(net.viewerNetMinor.magnitude), net.currencyCode),
-                     net.viewerNetMinor > 0 ? Tokens.owing : Tokens.owed)
+                     net.viewerNetMinor > 0 ? Tokens.owing : Tokens.owed, minor: net.viewerNetMinor)
             } else {
-                stat(OverviewCopy.settledShort, Placeholder.none, Tokens.textDim)
+                stat(OverviewCopy.settledShort, Placeholder.none, Tokens.textDim, minor: 0)
             }
         }
     }
 
-    private func stat(_ label: String, _ value: String, _ colour: Color) -> some View {
+    /// D-250: `minor`, core's signed minor units behind `value`, rolls the number when it changes.
+    private func stat(_ label: String, _ value: String, _ colour: Color, minor: Int64) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(verbatim: label).font(TypeRole.body(12)).foregroundStyle(Tokens.textDim).lineLimit(1).minimumScaleFactor(0.8)
             Text(verbatim: value).font(TypeRole.numeric(TypeScale.statValue, weight: 600)).foregroundStyle(colour).lineLimit(1).minimumScaleFactor(0.6)
+                .moneyChange(minor)
                 // D-228 decision 43: the placeholder value (the Settled tile, a money fallback) is spoken as "none".
                 .accessibilityLabel(Text(verbatim: Placeholder.spoken(value)))
         }

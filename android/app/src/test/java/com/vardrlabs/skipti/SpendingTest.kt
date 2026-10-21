@@ -248,15 +248,15 @@ class SpendingTest {
         val shell = main("AppRoot.kt")
         assertTrue("onOpenSpending = { spendingOpen = SpendingOpen.HEADER }" in shell)
         assertTrue("onOpenSpending = { spendingOpen = SpendingOpen.CARD }" in shell)
-        assertTrue(Regex("""spendingOpen == SpendingOpen\.HEADER\) \{[^}]*SpendingScreen\(\s*vaultPath = vaultPath, dark = dark, fromJustMeHeader = true,""").containsMatchIn(shell))
-        assertTrue(Regex("""spendingOpen == SpendingOpen\.CARD\) \{[^}]*SpendingScreen\(\s*vaultPath = vaultPath, dark = dark, fromJustMeHeader = false,""").containsMatchIn(shell))
+        assertTrue(Regex("""page\.spending == SpendingOpen\.HEADER\) \{[^}]*SpendingScreen\(\s*vaultPath = vaultPath, dark = dark, fromJustMeHeader = true,""").containsMatchIn(shell))
+        assertTrue(Regex("""page\.spending == SpendingOpen\.CARD\) \{[^}]*SpendingScreen\(\s*vaultPath = vaultPath, dark = dark, fromJustMeHeader = false,""").containsMatchIn(shell))
         // The page reads the start without writing it; only a tap on the switch writes.
         val page = main("Spending.kt")
         assertTrue("val view = opened ?: SpendingPrefs.pageStart(fromJustMeHeader, SpendingPrefs.shownView)" in page)
         assertTrue("        opened = v\n        SpendingPrefs.setView(context, v)" in page)
         // The + over the page opens Add expense on Just me.
         assertTrue("onAdd = { route = if (SpendingPresence.shown) \"add/justme\" else \"add\" }" in shell)
-        assertTrue("startOnJustMe = route == \"add/justme\"" in shell)
+        assertTrue("startOnJustMe = shown == \"add/justme\"" in shell)
         assertTrue(SpendingOpen.covers(SpendingOpen.CARD, HomeTab.BALANCE))
         assertTrue(SpendingOpen.covers(SpendingOpen.HEADER, HomeTab.EXPENSES))
         assertFalse(SpendingOpen.covers(SpendingOpen.HEADER, HomeTab.BALANCE))
@@ -585,7 +585,8 @@ class SpendingTest {
         assertEquals(SpendingCopy.EMPTY, SpendingCopy.cardEmpty(false))
         assertEquals("Your spending, Just me, Could not read your spending.", SpendingCopy.spoken("Just me", null, failed = true))
         val card = main("Spending.kt")
-        assertTrue("Text(SpendingCopy.cardEmpty(failed), " in card)
+        // D-250 fix wave (twin 6): the line fades in and out in place (a MovingRows of its words).
+        assertTrue("MovingRows(listOfNotNull(SpendingCopy.cardEmpty(failed).takeIf { first == null }), key = { \"empty\" })" in card)
         assertFalse("Text(SpendingCopy.EMPTY, " in card)
         val home = main("OverviewTab.kt")
         assertTrue("SpendingLoad.cardRead { SpendingLoad.load(store, SpendingMonth.current(), view) }" in home)
@@ -608,7 +609,8 @@ class SpendingTest {
         assertEquals(listOf<String?>(null), ExpenseSections.build(groupOnly, ExpenseSections.Filter.JustMe).map { it.groupId })
         assertEquals("a group's chip", listOf<String?>("g"), ExpenseSections.build(groupOnly, ExpenseSections.Filter.Group("g")).map { it.groupId })
         assertEquals("one Just me", listOf("g", null), ExpenseSections.build(listOf(e("1", "g"), e("2", null)), ExpenseSections.Filter.All).map { it.groupId })
-        assertTrue("if (section.expenses.isNotEmpty()) Column(Modifier.glassCard(dark, padding = 14)) {" in main("ExpenseListScreen.kt"))
+        // D-250 fix wave (M4): the card moves as one (it leaves with its last row); the header stays.
+        assertTrue("MovingRows(listOfNotNull(section.takeIf { it.expenses.isNotEmpty() }), key = { \"card\" }, leave = RowLeave.SLIDE) { carded, _ ->" in main("ExpenseListScreen.kt"))
     }
 
     /** M5 and M6: Add expense writes Compose state on the main thread only (read off it, set in onSuccess), and the

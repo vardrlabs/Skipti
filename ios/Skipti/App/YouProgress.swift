@@ -124,6 +124,27 @@ enum StepCopy {
 struct RuneRing {
     let done: Int
     let total: Int
+    /// D-250: the share drawn, done of total at rest; `FillMotion` sweeps it between two counts (the ring is
+    /// `Animatable` in it), and the runes light one by one as it passes them.
+    var fill: Double
+
+    init(done: Int, total: Int) {
+        self.done = done
+        self.total = total
+        fill = RuneRing.share(done: done, total: total)
+    }
+
+    /// D-250: done of total as a share of the ring (0 with no steps, never past the whole).
+    static func share(done: Int, total: Int) -> Double {
+        guard total > 0 else { return 0 }
+        return Double(min(max(done, 0), total)) / Double(total)
+    }
+
+    /// D-250: the runes lit at a share between two counts while the ring sweeps: the Look Book's half-up rounding of 24
+    /// times the share. At rest the integer form (`lit(done:total:)`) decides, so no float ever picks a resting ring.
+    static func lit(share: Double) -> Int {
+        Int((Double(Runes.futhark.count) * min(max(share, 0), 1) + 0.5 + 1e-9).rounded(.down))
+    }
 
     /// The Look Book's `Math.round(24 * done / total)`, half up, in integers (art.py 18): 6 of 7 lights 21.
     static func lit(done: Int, total: Int) -> Int {
@@ -197,6 +218,14 @@ struct ReadGeneration: Equatable {
 struct CompletionRing: View {
     let done: Int
     let total: Int
+    /// D-250: the share drawn (`RuneRing.share` at rest); `FillMotion` sweeps it between two counts.
+    var fill: Double
+
+    init(done: Int, total: Int) {
+        self.done = done
+        self.total = total
+        fill = RuneRing.share(done: done, total: total)
+    }
 
     var body: some View {
         let radius = ThemeArt.m("ringRadius")
@@ -207,7 +236,7 @@ struct CompletionRing: View {
                 .frame(width: radius * 2, height: radius * 2)
             if done > 0, total > 0 {
                 Circle()
-                    .trim(from: 0, to: CGFloat(min(done, total)) / CGFloat(total))
+                    .trim(from: 0, to: CGFloat(fill))
                     .stroke(Tokens.ring, style: StrokeStyle(lineWidth: stroke, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                     .frame(width: radius * 2, height: radius * 2)
@@ -218,15 +247,32 @@ struct CompletionRing: View {
     }
 }
 
+/// D-250: the arc is drawn at every share of a sweep (`FillMotion`).
+extension CompletionRing: Animatable {
+    var animatableData: Double {
+        get { fill }
+        set { fill = newValue }
+    }
+}
+
 /// L39: Norse's ring: the 24 runes in order, centred on the radius, 15 degrees apart from 12 o'clock clockwise, each
 /// turned by its angle (tops outward); the first `lit` in the ring's gold over a static glow (D-246: the rune's own shape
 /// blurred, `GlyphGlow`; D-243's disc halo is gone), the rest unlit.
 /// Decorative. You's ring turns (`ArtTurn` in Profile); the done check's turns on the moment's own clock.
+/// D-250: the ring is drawn at every share of a sweep (`FillMotion`).
+extension RuneRing: Animatable {
+    var animatableData: Double {
+        get { fill }
+        set { fill = newValue }
+    }
+}
+
 extension RuneRing: View {
     var body: some View {
         let radius = ThemeArt.m("runeRingRadius")
         let size = ThemeArt.m("runeRingSize")
-        let lit = RuneRing.lit(done: done, total: total)
+        // D-250: at rest the count's own rounding; mid-sweep the share's.
+        let lit = fill == RuneRing.share(done: done, total: total) ? RuneRing.lit(done: done, total: total) : RuneRing.lit(share: fill)
         let step = 360 / Double(Runes.futhark.count)
         ZStack {
             ForEach(Array(Runes.futhark.enumerated()), id: \.offset) { i, rune in
@@ -262,6 +308,8 @@ extension ProgressPill: View {
             }
             Text(verbatim: StepCopy.pill(done: done, total: total))
                 .font(TypeRole.label(TypeScale.pill))
+                // D-250: the count rolls as a step is done.
+                .moneyChange(Int64(done))
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
