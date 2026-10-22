@@ -334,7 +334,7 @@ enum People {
     static func invite(store: LedgerStore, group: NamedGroupWire, member: MemberWire, person: FoundPerson) async throws {
         guard let uid = Account.shared.uid else { throw CloudFunctions.Failure.signedOut }
         // D-254: before the group is put in the cloud (a write the rules refuse an account not approved).
-        if let refusal = Approval.localRefusal("inviteUser", approval: Approval.cached(store, uid: uid)) { throw refusal }
+        if let refusal = await Approval.shared.refusal(for: "inviteUser", uid: uid, store: store) { throw refusal }
         switch await CloudSync.ensureGroup(group.group.id, name: group.group.name, uid: uid) {
         case .member: break
         case .notMember: throw CloudFunctions.Failure.refused("PERMISSION_DENIED")
@@ -355,7 +355,7 @@ enum People {
         guard let uid = Account.shared.uid else { throw CloudFunctions.Failure.signedOut }
         guard let participantId = recent.participantId, let via = recent.viaGroupId else { return }
         // D-254: before the group is put in the cloud (a write the rules refuse an account not approved).
-        if let refusal = Approval.localRefusal("inviteKnown", approval: Approval.cached(store, uid: uid)) { throw refusal }
+        if let refusal = await Approval.shared.refusal(for: "inviteKnown", uid: uid, store: store) { throw refusal }
         switch await CloudSync.ensureGroup(group.group.id, name: group.group.name, uid: uid) {
         case .member: break
         case .notMember: throw CloudFunctions.Failure.refused("PERMISSION_DENIED")

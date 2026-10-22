@@ -235,6 +235,8 @@ struct SkiptiApp: App {
                     // work; the tests reach the cloud components through their
                     // own seams.
                     if !verificationArg && LaunchWork.startsCloud() { CloudSync.shared.appIsActive(phase == .active) }
+                    // D-254 fix wave (M4): whether approval heard may start the cloud now (the proofs too: they run in front).
+                    Approval.shared.inFront = phase == .active
                     // D-247 (decision 182): a settle held for Undo lands as SKIPTI leaves the front (inactive too: the
                     // app switcher, where a swipe ends the app with no further word).
                     if phase != .active { SettleHold.shared.commit() }

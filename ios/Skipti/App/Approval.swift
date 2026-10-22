@@ -134,8 +134,13 @@ final class Approval {
     @ObservationIgnored private var loadedFor: String?
     @ObservationIgnored private var listener: ListenerRegistration?
     @ObservationIgnored private var listeningAs: String?
-    @ObservationIgnored private var asking = false
-    @ObservationIgnored private var askedAt: (uid: String, at: Date)?
+    /// D-254 fix wave (M5): the account and the state the last answered ask left it in; a front event asks again only
+    /// when either differs (`frontAsks`). Cleared at sign-out.
+    @ObservationIgnored private var answered: (uid: String, state: ApprovalState)?
+    @ObservationIgnored private let asks = SingleFlight<ApprovalState>()
+    /// D-254 fix wave (M4): SKIPTI is in front (the scene phase, and `CloudSync.appIsActive`). Approval heard while it is
+    /// not is kept, and the next front event starts the cloud.
+    @ObservationIgnored var inFront = false
 
     private init() {}
 
@@ -158,9 +163,46 @@ final class Approval {
     }
 
     /// `CloudFunctions.call`'s gate: a call the server would refuse for approval is refused here, with no network.
+    /// D-254 fix wave (I2): `approval` is the state after `callRefusal` resolved an unknown one, so unknown here means no
+    /// answer: the offline words, never the waiting ones (an approved tester must not read "waiting").
     nonisolated static func localRefusal(_ name: String, approval: ApprovalState) -> CloudFunctions.Failure? {
         guard !exempt.contains(name), !allowsCloud(approval) else { return nil }
-        return approval == .denied ? .notApproved : .awaitingApproval
+        switch approval {
+        case .denied: return .notApproved
+        case .pending: return .awaitingApproval
+        case .unknown, .approved: return .offline
+        }
+    }
+
+    /// D-254 fix wave (I2): how long a gated call waits to resolve an unknown state.
+    nonisolated static let resolveSeconds: TimeInterval = 5
+
+    /// D-254 fix wave (I2): the call gate. Exempt or approved: through, nothing asked. Pending or denied: refused,
+    /// nothing asked. Unknown (nothing heard yet, as on the first launch after the update): one bounded ask of the
+    /// server (`requestApproval`, which answers with the state and caches it through `heard`), then refused only if
+    /// that answer is pending or denied; no answer in time is the offline refusal.
+    static func callRefusal(_ name: String, cached: ApprovalState, seconds: TimeInterval = resolveSeconds,
+                            ask: @escaping @MainActor () async -> ApprovalState) async -> CloudFunctions.Failure? {
+        guard !exempt.contains(name), !allowsCloud(cached) else { return nil }
+        guard cached == .unknown else { return localRefusal(name, approval: cached) }
+        let answer = await Bounded.value(seconds: seconds, otherwise: ApprovalState.unknown, ask)
+        return localRefusal(name, approval: answer)
+    }
+
+    /// D-254 fix wave (M4): approval heard starts the cloud only while SKIPTI is in front.
+    nonisolated static func startsCloudNow(_ step: ApprovalStep, inFront: Bool) -> Bool {
+        guard case .approve = step else { return false }
+        return inFront
+    }
+
+    /// D-254 fix wave (M5): a front event asks for approval once per app process while the state stays the same (not on
+    /// every return to the front: each ask is a server write). `answered`: the last answered ask's account and the
+    /// state it left. The sign-in and a refusal for approval ask anyway (`ask`).
+    nonisolated static func frontAsks(answered: (uid: String, state: ApprovalState)?, uid: String,
+                                      state: ApprovalState) -> Bool {
+        guard !allowsCloud(state) else { return false }
+        guard let answered else { return true }
+        return answered.uid != uid || answered.state != state
     }
 
     /// What hearing `server` does, given what the phone last knew (`cached`). The toast only follows a state the
@@ -224,27 +266,31 @@ final class Approval {
               let uid = InstallSession.owned(uid: uid, owner: Account.storedOwner(store)) else { return }
         if loadedFor != uid { load(uid: uid, store: store) }
         listen(uid: uid, store: store)
-        guard !Self.allowsCloud(state), !askedRecently(uid) else { return }
+        guard Self.frontAsks(answered: answered, uid: uid, state: state) else { return }
         Task { await Approval.shared.ask(uid: uid, store: store) }
     }
 
-    /// The sign-in's ask and the front's are one: a front event right after a sign-in asks nothing again.
-    private func askedRecently(_ uid: String) -> Bool {
-        guard let askedAt, askedAt.uid == uid else { return false }
-        return Date().timeIntervalSince(askedAt.at) < 10
+    /// `requestApproval({ name?, platform })`: the name people see (the person's own name on this phone, if set) and
+    /// this platform. Its answer is heard like the listener's, and returned (D-254 fix wave I2: the call gate resolves
+    /// an unknown state with it); a failure (offline) changes nothing and returns unknown. One at a time: a second ask
+    /// while one runs gets its answer.
+    @discardableResult
+    func ask(uid: String, store: LedgerStore = .defaultStore()) async -> ApprovalState {
+        await asks.run(uid) {
+            var data: [String: Any] = ["platform": "ios"]
+            if let name = CloudProfile.cloudName((try? store.loadSelf())?.name) { data["name"] = name }
+            guard let result = try? await CloudFunctions.call("requestApproval", data) else { return .unknown }
+            let answer = ApprovalState.server(result["state"] as? String)
+            let shared = Approval.shared
+            shared.heard(answer, uid: uid, store: store)
+            if Account.shared.uid == uid { shared.answered = (uid, answer) }
+            return answer
+        }
     }
 
-    /// `requestApproval({ name?, platform })`: the name people see (the person's own name on this phone, if set) and
-    /// this platform. Its answer is heard like the listener's. A failure (offline) changes nothing.
-    func ask(uid: String, store: LedgerStore = .defaultStore()) async {
-        guard !asking else { return }
-        asking = true
-        defer { asking = false }
-        askedAt = (uid, Date())
-        var data: [String: Any] = ["platform": "ios"]
-        if let name = CloudProfile.cloudName((try? store.loadSelf())?.name) { data["name"] = name }
-        guard let result = try? await CloudFunctions.call("requestApproval", data) else { return }
-        heard(ApprovalState.server(result["state"] as? String), uid: uid, store: store)
+    /// D-254 fix wave (I2): the live call gate (`callRefusal`) for `name`, with the vault's state for `uid`.
+    func refusal(for name: String, uid: String, store: LedgerStore = .defaultStore()) async -> CloudFunctions.Failure? {
+        await Self.callRefusal(name, cached: Self.cached(store, uid: uid)) { await Approval.shared.ask(uid: uid, store: store) }
     }
 
     /// One listener on `approvals/{uid}` while signed in and in front. A snapshot from the cache says nothing (the
@@ -283,7 +329,8 @@ final class Approval {
             loadedFor = uid
             state = .approved
             if toast { DoneCenter.shared.post(DoneMoments.line(ApprovalCopy.approvedToast)) }
-            CloudSync.shared.appIsActive(true)
+            // D-254 fix wave (M4): only in front; otherwise the next front event starts it (the vault says approved).
+            if Self.startsCloudNow(step, inFront: inFront) { CloudSync.shared.appIsActive(true) }
         case .withdraw(let new):
             Self.setCached(store, uid: uid, new)
             loadedFor = uid
@@ -296,7 +343,7 @@ final class Approval {
     /// Every sign-out (`Account.signOut`, and a session ended elsewhere): the listener stops and the vault forgets.
     func signedOut(store: LedgerStore = .defaultStore()) {
         stopListening()
-        askedAt = nil
+        answered = nil
         loadedFor = nil
         state = .unknown
         Self.clearCached(store)

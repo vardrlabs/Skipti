@@ -22,6 +22,8 @@ final class CloudSync {
 
     /// SKIPTI came to the front (listeners on) or left it (listeners off).
     func appIsActive(_ active: Bool) {
+        // D-254 fix wave (M4): approval heard while SKIPTI is not in front waits for the next front event.
+        Approval.shared.inFront = active
         if active {
             // D-235 round 4 (I1): a token delete that could not finish is tried again when no one is signed in.
             if LaunchWork.startsCloud(), Account.shared.uid == nil { Push.shared.settleOwed() }
@@ -43,8 +45,13 @@ final class CloudSync {
     func approvalWithdrawn() {
         registered = nil
         stopListening()
-        Task { await Push.shared.stop(inCloud: false) }
+        // Fix wave (review M9): the token leaves this phone's device document too, by the one update the rules let an
+        // account not approved make (`fcmToken` removed, `lastSeen` set: `CloudProfile.tokenUpdate(nil)`).
+        Task { await Self.stopPush(true) }
     }
+
+    /// The push stop `approvalWithdrawn` makes (`inCloud`); a seam for the tests.
+    static var stopPush: @MainActor (_ inCloud: Bool) async -> Void = { await Push.shared.stop(inCloud: $0) }
 
     /// The sync switch changed (Settings). D-196: pushes come with sync.
     func syncSwitched() {
@@ -293,7 +300,15 @@ final class CloudSync {
                         try await collection(uid: uid, groupId: record.groupId).document(CloudRecords.documentId(record))
                             .getDocument(source: .server).exists
                     }
+                }, approval: {
+                    // D-254 fix wave (M1): before parking a permission refusal, the account's approval from the server.
+                    await serverApproval(uid: uid)
                 })
+                // D-254 fix wave (M1): approval taken away while this phone still held approved: nothing is parked,
+                // the push stops, and the phone hears it now (the cloud stops as `Approval.heard` decides).
+                if let state = one.heard, state != .unknown, Account.shared.uid == uid {
+                    Approval.shared.heard(state, uid: uid, store: store)
+                }
                 uploaded.formUnion(one.uploaded)
                 written.formUnion(chunk.filter { one.written.contains(CloudRecords.documentId($0)) }.compactMap(\.groupId))
                 count += one.written.count
@@ -410,9 +425,14 @@ final class CloudSync {
     /// Records one at a time (after a batch failed): `uploaded` holds what is on the server now (written here or found
     /// there), `written` what this call wrote, `refused` what the rules refused for good (set aside; the rest go on),
     /// and `offline` is true when one could not be settled (the records from it on wait for the next push).
+    /// D-254 fix wave (M1): a permission refusal is parked only while the server still holds the account approved
+    /// (`approval`, read once, only then): approval taken away while this phone still held approved refuses every
+    /// write, and parking them would keep them parked for good. Not approved (or no answer), the push stops with
+    /// nothing parked, and `heard` carries the state read.
     static func uploadOneByOne(
-        _ records: [RecordWire], write: (RecordWire) async throws -> Void, onServer: (RecordWire) async -> ServerCopy
-    ) async -> (uploaded: [String], written: [String], refused: [String], offline: Bool) {
+        _ records: [RecordWire], write: (RecordWire) async throws -> Void, onServer: (RecordWire) async -> ServerCopy,
+        approval: () async -> ApprovalState = { .approved }
+    ) async -> (uploaded: [String], written: [String], refused: [String], offline: Bool, heard: ApprovalState?) {
         var uploaded: [String] = [], written: [String] = [], refused: [String] = []
         for record in records {
             let id = CloudRecords.documentId(record)
@@ -424,12 +444,27 @@ final class CloudSync {
                 uploaded.append(id)
                 if failure == nil { written.append(id) }
             case .refused:
+                if let failure, isPermissionDenied(failure) {
+                    let state = await approval()
+                    if !Approval.allowsCloud(state) { return (uploaded, written, refused, true, state) }
+                }
                 refused.append(id)
             case .offline:
-                return (uploaded, written, refused, true)
+                return (uploaded, written, refused, true, nil)
             }
         }
-        return (uploaded, written, refused, false)
+        return (uploaded, written, refused, false, nil)
+    }
+
+    /// D-254 fix wave (M1): `approvals/{uid}` as the server holds it (a missing document reads pending, as the server's
+    /// own gate reads it); no answer is unknown.
+    static func serverApproval(uid: String) async -> ApprovalState {
+        await Bounded.value(seconds: groupReadTimeout, otherwise: ApprovalState.unknown) {
+            guard let snapshot = try? await Cloud.db.collection("approvals").document(uid).getDocument(source: .server) else {
+                return .unknown
+            }
+            return ApprovalState.server(snapshot.exists ? snapshot.data()?["state"] as? String : nil)
+        }
     }
 
     enum GroupState { case member, notMember, offline }

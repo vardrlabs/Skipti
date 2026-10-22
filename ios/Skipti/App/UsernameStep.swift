@@ -35,6 +35,8 @@ enum UsernameCopy {
 /// The live status under the field.
 enum UsernameStatus: Equatable {
     case hint, checking, available(String), taken(String), notAvailable, offline, limit
+    /// D-254 fix wave (review I1): the check was refused because the account is not approved: its words, and no Save.
+    case approval(String)
 
     /// What the phone can say at once, before any cloud check. `list`: the
     /// blocklist (the bundled one unless a test passes the parsed file).
@@ -69,10 +71,11 @@ enum UsernameStatus: Equatable {
         }
     }
 
-    /// A live check that failed: the day's limit says so; anything else is
-    /// the offline line.
+    /// A live check that failed: the day's limit says so; D-254 fix wave (review I1): a refusal for approval says
+    /// that (never "Could not reach SKIPTI's cloud"); anything else is the offline line.
     static func failedCheck(_ error: Error) -> UsernameStatus {
-        error as? CloudFunctions.Failure == .refused("RESOURCE_EXHAUSTED") ? .limit : .offline
+        if let words = ApprovalCopy.failure(error) { return .approval(words) }
+        return error as? CloudFunctions.Failure == .refused("RESOURCE_EXHAUSTED") ? .limit : .offline
     }
 }
 
@@ -214,6 +217,7 @@ struct UsernameField: View {
         case .notAvailable: Text(verbatim: UsernameCopy.notAvailable).font(TypeRole.body(13)).foregroundStyle(Tokens.owed)
         case .offline: Text(verbatim: UsernameCopy.offline).font(TypeRole.body(13)).foregroundStyle(Tokens.owed)
         case .limit: Text(verbatim: PeopleCopy.limit).font(TypeRole.body(13)).foregroundStyle(Tokens.owed)
+        case .approval(let words): Text(verbatim: words).font(TypeRole.body(13)).foregroundStyle(Tokens.owed)
         }
     }
 }

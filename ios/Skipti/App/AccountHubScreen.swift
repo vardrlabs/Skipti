@@ -620,6 +620,19 @@ enum SettingsMap {
 
     /// Above the sections: the deletion notice, when there is an account.
     static func hubItems(signedIn: Bool) -> [SettingItem] { signedIn ? [.deletionPending] : [] }
+
+    /// D-254 fix wave (review M3): the account controls that do nothing until the account is approved (no push reaches
+    /// it, and no one can find it): away while it waits or was not approved. Sign out and Delete account stay.
+    static let waitsForApproval: Set<SettingItem> = [.notifications, .findMe]
+
+    /// A section's items as the page shows them for `model`'s account state.
+    static func shown(_ section: SettingsSection, model: AccountHubModel) -> [SettingItem] {
+        let all = items(section, signedIn: model.showsAccountControls)
+        switch model.state {
+        case .waiting, .notApproved: return all.filter { !waitsForApproval.contains($0) }
+        case .noAccount, .active: return all
+        }
+    }
 }
 
 /// D-206: Home's greeting, from the phone's clock and the name on this
@@ -758,7 +771,7 @@ struct AccountHubScreen: View {
 
     /// D-221: what the facts depend on that the phone tells us about: the profile, sync, the two preferences.
     private var factsKey: String {
-        "\(profileRevision)|\(SyncStatus.shared.revision)|\(currencyRaw ?? "")|\(lockRaw ?? "")|\(signedIn)|\(username ?? "")"
+        "\(profileRevision)|\(SyncStatus.shared.revision)|\(currencyRaw ?? "")|\(lockRaw ?? "")|\(signedIn)|\(username ?? "")|\(Approval.shared.state)"
     }
 
     private func readFacts() async {
@@ -869,7 +882,7 @@ struct SettingsSectionScreen: View {
                 case .data:
                     yourDataPage
                 default:
-                    ForEach(SettingsMap.items(section, signedIn: model.showsAccountControls), id: \.self) { item in
+                    ForEach(SettingsMap.shown(section, model: model), id: \.self) { item in
                         view(for: item)
                     }
                 }

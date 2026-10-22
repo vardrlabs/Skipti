@@ -249,7 +249,8 @@ final class ApprovalTests: XCTestCase {
     }
 
     /// `CloudFunctions.call`'s own gate: every call but the exempt ones is refused locally until approved, with the
-    /// waiting words (pending, or not heard yet) or the not approved ones (denied); the exempt ones always go.
+    /// waiting words (pending) or the not approved ones (denied); the exempt ones always go. Fix wave (I2): unknown here
+    /// is the state after the bounded ask found no answer, so it is the offline refusal, never the waiting words.
     func testTheCallGateRefusesLocallyAndLetsLeavingThrough() {
         let exempt = ["signOutDevice", "signOutEverywhere", "requestDeletion", "cancelDeletion", "requestApproval", "adminApprovals"]
         XCTAssertEqual(Approval.exempt, Set(exempt), "the server's approvals.EXEMPT")
@@ -259,7 +260,7 @@ final class ApprovalTests: XCTestCase {
         for name in ["createInvite", "peekInvite", "acceptInvite", "findPeople", "setUsername", "setFindable", "inviteUser",
                      "inviteKnown", "adoptRemovals", "deleteGroup", "groupRoles", "shareProfile"] {
             XCTAssertEqual(Approval.localRefusal(name, approval: .pending), .awaitingApproval, name)
-            XCTAssertEqual(Approval.localRefusal(name, approval: .unknown), .awaitingApproval, name)
+            XCTAssertEqual(Approval.localRefusal(name, approval: .unknown), .offline, name)
             XCTAssertEqual(Approval.localRefusal(name, approval: .denied), .notApproved, name)
             XCTAssertNil(Approval.localRefusal(name, approval: .approved), name)
         }
@@ -272,18 +273,18 @@ final class ApprovalTests: XCTestCase {
         let call = try slice(invites, from: "    static func call(_ name: String, _ data: [String: Any]) async throws -> [String: Any] {",
                              to: "\n    }\n")
         inOrder(call, ["guard let user = FirebaseGate.auth?.currentUser else { throw Failure.signedOut }",
-                       "if let refusal = Approval.localRefusal(name, approval: Approval.cached(.defaultStore(), uid: user.uid)) {",
+                       "if let refusal = await Approval.shared.refusal(for: name, uid: user.uid) {",
                        "throw refusal", "user.getIDToken()", "URLSession.shared.data(for: request)",
                        // A server refusal for approval (`none` included) asks for approval, so the request exists.
                        "catch let failure as Failure where failure == .awaitingApproval || failure == .notApproved {",
                        "Approval.shared.ask(uid: user.uid)", "throw failure"])
         let create = try slice(invites, from: "    static func create(store: LedgerStore, group: NamedGroupWire, member: MemberWire)", to: "\n    }\n")
-        inOrder(create, ["Approval.localRefusal(\"createInvite\"", "CloudSync.ensureGroup("])
+        inOrder(create, ["Approval.shared.refusal(for: \"createInvite\"", "CloudSync.ensureGroup("])
         let people = try appSource("People.swift")
         let invite = try slice(people, from: "    static func invite(store: LedgerStore, group: NamedGroupWire, member: MemberWire, person: FoundPerson)", to: "\n    }\n")
-        inOrder(invite, ["Approval.localRefusal(\"inviteUser\"", "CloudSync.ensureGroup("])
+        inOrder(invite, ["Approval.shared.refusal(for: \"inviteUser\"", "CloudSync.ensureGroup("])
         let known = try slice(people, from: "    static func inviteKnown(", to: "\n    }\n")
-        inOrder(known, ["Approval.localRefusal(\"inviteKnown\"", "CloudSync.ensureGroup("])
+        inOrder(known, ["Approval.shared.refusal(for: \"inviteKnown\"", "CloudSync.ensureGroup("])
     }
 
     // MARK: - details.approval
@@ -375,9 +376,11 @@ final class ApprovalTests: XCTestCase {
         inOrder(signIn, ["try SignInMethod.remember(method, store)", "uid = incoming", "Self.setSignedInMark(store, true)",
                          "await Approval.shared.signedIn(uid: incoming, store: store)", "CloudSync.shared.appIsActive(true)"])
         let approval = try appSource("Approval.swift")
-        let ask = try slice(approval, from: "    func ask(uid: String, store: LedgerStore = .defaultStore()) async {", to: "\n    }\n")
+        let ask = try slice(approval, from: "    func ask(uid: String, store: LedgerStore = .defaultStore()) async -> ApprovalState {", to: "\n    }\n")
         inOrder(ask, ["[\"platform\": \"ios\"]", "CloudProfile.cloudName((try? store.loadSelf())?.name)",
-                      "CloudFunctions.call(\"requestApproval\", data)", "heard(ApprovalState.server(result[\"state\"] as? String)"])
+                      "CloudFunctions.call(\"requestApproval\", data)",
+                      "let answer = ApprovalState.server(result[\"state\"] as? String)", "shared.heard(answer, uid: uid, store: store)",
+                      "return answer"])
         // The listener trusts the server only: a snapshot from the (memory) cache says nothing.
         let listen = try slice(approval, from: "    func listen(uid: String, store: LedgerStore = .defaultStore()) {", to: "\n    }\n")
         XCTAssertTrue(listen.contains("guard error == nil, let snapshot, !snapshot.metadata.isFromCache else { return }"))
@@ -386,11 +389,12 @@ final class ApprovalTests: XCTestCase {
         let heard = try slice(approval, from: "    func heard(_ server: ApprovalState, uid: String", to: "\n    }\n")
         inOrder(heard, ["case .approve(let toast):", "Self.setCached(store, uid: uid, .approved)",
                         "if toast { DoneCenter.shared.post(DoneMoments.line(ApprovalCopy.approvedToast)) }",
-                        "CloudSync.shared.appIsActive(true)", "case .withdraw(let new):", "Self.setCached(store, uid: uid, new)",
+                        "if Self.startsCloudNow(step, inFront: inFront) { CloudSync.shared.appIsActive(true) }",
+                        "case .withdraw(let new):", "Self.setCached(store, uid: uid, new)",
                         "CloudSync.shared.approvalWithdrawn()"])
         let sync = try appSource("CloudSync.swift")
         let withdrawn = try slice(sync, from: "    func approvalWithdrawn() {", to: "\n    }\n")
-        inOrder(withdrawn, ["registered = nil", "stopListening()", "Push.shared.stop(inCloud: false)"])
+        inOrder(withdrawn, ["registered = nil", "stopListening()", "await Self.stopPush(true)"])
     }
 
     // MARK: - A deletion asked for while not approved
@@ -412,6 +416,209 @@ final class ApprovalTests: XCTestCase {
                        "guard !profile.exists else { return deletionDate(profile: profile.data(), approval: nil) }",
                        "Cloud.db.collection(\"approvals\").document(uid).getDocument(source: .server)",
                        "return deletionDate(profile: nil, approval: approval?.data())"])
+    }
+
+    // MARK: - D-254 fix wave (shells review)
+
+    /// I1: while the account is not approved (waiting, not approved, or not heard yet), You's ring counts the five local
+    /// steps only: no "Pick your username" the cloud would refuse, no notifications step that hears nothing.
+    func testTheRingLeavesOutTheAccountStepsUntilApproved() throws {
+        XCTAssertEqual(SetupSteps.steps(signedIn: true, lockAvailable: true, approved: false),
+                       [.name, .picture, .currency, .appLock, .firstGroup])
+        XCTAssertEqual(SetupSteps.steps(signedIn: true, lockAvailable: true, approved: true),
+                       [.name, .picture, .currency, .appLock, .firstGroup, .username, .notifications])
+        XCTAssertEqual(SetupSteps.steps(signedIn: true, lockAvailable: false, approved: false),
+                       [.name, .picture, .currency, .firstGroup])
+        var facts = SetupFacts(signedIn: true, lockAvailable: true)
+        facts.approved = false
+        XCTAssertFalse(SetupSteps.steps(facts).contains(.username))
+        XCTAssertTrue(SetupSteps.progress(facts).total == 5)
+        XCTAssertNotEqual(SetupSteps.next(facts, skipping: [.name, .picture, .currency, .appLock, .firstGroup]), .username)
+        facts.approved = true
+        XCTAssertTrue(SetupSteps.progress(facts).total == 7, "approved: the account steps are back")
+        let you = try appSource("YouProgress.swift")
+        let read = try slice(you, from: "    static func read(store: LedgerStore, account: Account, hasUsername: Bool) async -> SetupFacts {",
+                             to: "\n    }\n")
+        XCTAssertTrue(read.contains("facts.approved = Approval.allowsCloud(Approval.shared.state)"))
+        // The facts are read again when the approval changes.
+        let hub = try appSource("AccountHubScreen.swift")
+        XCTAssertTrue(hub.contains("|\\(username ?? \"\")|\\(Approval.shared.state)\""))
+    }
+
+    /// I1: a live username check refused for approval says so; never "Could not reach SKIPTI's cloud", and Save stays off.
+    func testAUsernameCheckRefusedForApprovalSaysSo() {
+        XCTAssertEqual(UsernameStatus.failedCheck(CloudFunctions.Failure.awaitingApproval), .approval(ApprovalCopy.callWaiting))
+        XCTAssertEqual(UsernameStatus.failedCheck(CloudFunctions.Failure.notApproved), .approval(ApprovalCopy.callDenied))
+        XCTAssertNotEqual(UsernameStatus.failedCheck(CloudFunctions.Failure.awaitingApproval), .offline)
+        XCTAssertEqual(UsernameStatus.failedCheck(CloudFunctions.Failure.offline), .offline, "offline is still offline")
+        XCTAssertNil(UsernameStatus.canSave(status: .approval(ApprovalCopy.callWaiting), text: "goodname", list: nil),
+                     "no Save that the cloud would refuse")
+        XCTAssertEqual(UsernameStatus.canSave(status: .offline, text: "goodname", list: nil), "goodname", "offline still saves")
+    }
+
+    /// I2: a gated call while nothing is heard yet asks the server first (bounded), and is refused only for pending or
+    /// denied; no answer is the offline refusal. A known state asks nothing.
+    @MainActor
+    func testAnUnknownStateIsAskedForBeforeACallIsRefused() async {
+        var asked = 0
+        func gate(_ cached: ApprovalState, answer: ApprovalState, name: String = "createInvite") async -> CloudFunctions.Failure? {
+            await Approval.callRefusal(name, cached: cached) { asked += 1; return answer }
+        }
+        let approvedNow = await gate(.unknown, answer: .approved)
+        XCTAssertNil(approvedNow, "approved on the server: the call goes")
+        let noAnswer = await gate(.unknown, answer: .unknown)
+        XCTAssertEqual(noAnswer, .offline, "no answer: the offline words, never the waiting ones")
+        let pending = await gate(.unknown, answer: .pending)
+        XCTAssertEqual(pending, .awaitingApproval)
+        let denied = await gate(.unknown, answer: .denied)
+        XCTAssertEqual(denied, .notApproved)
+        XCTAssertEqual(asked, 4, "one ask each")
+        let cachedPending = await gate(.pending, answer: .approved)
+        XCTAssertEqual(cachedPending, .awaitingApproval)
+        let cachedApproved = await gate(.approved, answer: .denied)
+        XCTAssertNil(cachedApproved)
+        let leaving = await gate(.unknown, answer: .denied, name: "requestDeletion")
+        XCTAssertNil(leaving)
+        XCTAssertEqual(asked, 4, "a known state, and an exempt call, ask nothing")
+        // Bounded: an ask that never answers is no answer.
+        let silent = await Approval.callRefusal("createInvite", cached: .unknown, seconds: 0.2) {
+            try? await Task.sleep(nanoseconds: 30_000_000_000)
+            return .approved
+        }
+        XCTAssertEqual(silent, .offline)
+        XCTAssertEqual(Approval.resolveSeconds, 5)
+        let approval = try? appSource("Approval.swift")
+        let live = try? slice(approval ?? "", from: "    func refusal(for name: String, uid: String", to: "\n    }\n")
+        XCTAssertTrue(live?.contains("Self.callRefusal(name, cached: Self.cached(store, uid: uid)) { await Approval.shared.ask(uid: uid, store: store) }") ?? false)
+    }
+
+    /// M1: a permission refusal is parked only while the server still holds the account approved; otherwise the push
+    /// stops with nothing parked and the state read is handed on. An invalid argument parks without asking.
+    @MainActor
+    func testAPermissionRefusalIsNotParkedWhileNotApproved() async throws {
+        let records = (0..<3).map { i -> RecordWire in
+            RecordWire(version: 1, recordType: 1, groupId: nil, epoch: 0, hlcMillis: 1_790_000_000_000, hlcCounter: UInt32(i),
+                       hlcDeviceId: String(repeating: "d", count: 32), authorDeviceId: String(repeating: "d", count: 32),
+                       nonceSession: Data([0, 0, 0, 1]), flags: 0, blob: Data())
+        }
+        let ids = records.map(CloudRecords.documentId)
+        func refused(_ code: FirestoreErrorCode.Code) -> NSError {
+            NSError(domain: FirestoreErrorDomain, code: code.rawValue)
+        }
+        func push(_ state: ApprovalState, code: FirestoreErrorCode.Code = .permissionDenied) async
+            -> (uploaded: [String], written: [String], refused: [String], offline: Bool, heard: ApprovalState?, asked: Int) {
+            var asked = 0
+            let one = await CloudSync.uploadOneByOne(records, write: { r in
+                if r.hlcCounter == 1 { throw refused(code) }
+            }, onServer: { _ in .notThere }, approval: { asked += 1; return state })
+            return (one.uploaded, one.written, one.refused, one.offline, one.heard, asked)
+        }
+        for state in [ApprovalState.pending, .denied, .unknown] {
+            let r = await push(state)
+            XCTAssertEqual(r.refused, [], "nothing parked (\(state))")
+            XCTAssertTrue(r.offline, "the push stops (\(state))")
+            XCTAssertEqual(r.heard, state)
+            XCTAssertEqual(r.uploaded, [ids[0]])
+            XCTAssertEqual(r.asked, 1)
+        }
+        let approved = await push(.approved)
+        XCTAssertEqual(approved.refused, [ids[1]], "approved: parked as before")
+        XCTAssertFalse(approved.offline)
+        XCTAssertNil(approved.heard)
+        let invalid = await push(.pending, code: .invalidArgument)
+        XCTAssertEqual(invalid.refused, [ids[1]], "not a permission refusal: parked, nothing asked")
+        XCTAssertEqual(invalid.asked, 0)
+        // pushAll reads the approval from the server and hands a state on to `heard`.
+        let sync = try appSource("CloudSync.swift")
+        let all = try slice(sync, from: "    static func pushAll(uid: String, store: LedgerStore) async -> Int {", to: "\n    enum GroupState")
+        inOrder(all, ["}, approval: {", "await serverApproval(uid: uid)",
+                      "if let state = one.heard, state != .unknown, Account.shared.uid == uid {",
+                      "Approval.shared.heard(state, uid: uid, store: store)", "try? CloudRecords.park(store, Set(one.refused)"])
+        let read = try slice(sync, from: "    static func serverApproval(uid: String) async -> ApprovalState {", to: "\n    }\n")
+        XCTAssertTrue(read.contains("Cloud.db.collection(\"approvals\").document(uid).getDocument(source: .server)"))
+    }
+
+    /// M3: Notifications and Find me are away while the account waits or was not approved (they do nothing until then);
+    /// Sign out, Sync and Delete account stay. Approved, or not heard yet, the page is as before.
+    func testNotificationsAndFindMeWaitForApproval() throws {
+        func shown(_ approval: ApprovalState) -> [SettingItem] {
+            SettingsMap.shown(.profileAccount, model: accountHubModel(signedIn: true, syncOn: true, approval: approval))
+        }
+        XCTAssertEqual(shown(.pending), [.signedInAs, .signOut, .sync])
+        XCTAssertEqual(shown(.denied), [.signedInAs, .signOut, .sync])
+        XCTAssertEqual(shown(.approved), [.signedInAs, .signOut, .sync, .notifications, .findMe])
+        XCTAssertEqual(shown(.unknown), shown(.approved), "not heard yet: as before")
+        XCTAssertEqual(SettingsMap.waitsForApproval, [.notifications, .findMe])
+        let waiting = accountHubModel(signedIn: true, syncOn: true, approval: .pending)
+        XCTAssertTrue(SettingsMap.shown(.security, model: waiting).contains(.deleteAccount), "leaving never waits")
+        XCTAssertEqual(SettingsMap.shown(.profileAccount, model: accountHubModel(signedIn: false, syncOn: true, approval: .pending)),
+                       [.signIn])
+        let hub = try appSource("AccountHubScreen.swift")
+        XCTAssertTrue(hub.contains("ForEach(SettingsMap.shown(section, model: model), id: \\.self) { item in"))
+        XCTAssertFalse(hub.contains("ForEach(SettingsMap.items(section, signedIn: model.showsAccountControls)"))
+    }
+
+    /// M4: approval heard while SKIPTI is not in front is kept, and the cloud starts at the next front event, not in the
+    /// background.
+    func testApprovalHeardInTheBackgroundWaitsForTheFront() throws {
+        XCTAssertTrue(Approval.startsCloudNow(.approve(toast: true), inFront: true))
+        XCTAssertTrue(Approval.startsCloudNow(.approve(toast: false), inFront: true))
+        XCTAssertFalse(Approval.startsCloudNow(.approve(toast: true), inFront: false))
+        XCTAssertFalse(Approval.startsCloudNow(.approve(toast: false), inFront: false))
+        for step in [ApprovalStep.nothing, .keep(.pending), .withdraw(.denied)] {
+            XCTAssertFalse(Approval.startsCloudNow(step, inFront: true), "\(step)")
+        }
+        let sync = try appSource("CloudSync.swift")
+        let active = try slice(sync, from: "    func appIsActive(_ active: Bool) {", to: "\n        if active {")
+        XCTAssertTrue(active.contains("Approval.shared.inFront = active"))
+        let app = try appSource("SkiptiApp.swift")
+        XCTAssertTrue(app.contains("Approval.shared.inFront = phase == .active"))
+    }
+
+    /// M5: a front event asks at most once per app process while the state stays the same; a new state, or another
+    /// account, asks again; approved never asks.
+    func testTheFrontAsksOncePerStatePerProcess() throws {
+        XCTAssertTrue(Approval.frontAsks(answered: nil, uid: "u", state: .pending))
+        XCTAssertFalse(Approval.frontAsks(answered: ("u", .pending), uid: "u", state: .pending))
+        XCTAssertTrue(Approval.frontAsks(answered: ("u", .pending), uid: "u", state: .denied))
+        XCTAssertTrue(Approval.frontAsks(answered: ("u", .pending), uid: "v", state: .pending))
+        XCTAssertFalse(Approval.frontAsks(answered: nil, uid: "u", state: .approved))
+        XCTAssertTrue(Approval.frontAsks(answered: nil, uid: "u", state: .unknown))
+        let approval = try appSource("Approval.swift")
+        let front = try slice(approval, from: "    func front(uid: String?, store: LedgerStore = .defaultStore()) {", to: "\n    }\n")
+        inOrder(front, ["listen(uid: uid, store: store)", "guard Self.frontAsks(answered: answered, uid: uid, state: state) else { return }",
+                        "Approval.shared.ask(uid: uid, store: store)"])
+        XCTAssertFalse(approval.contains("askedRecently"), "no time window any more")
+        let ask = try slice(approval, from: "    func ask(uid: String, store: LedgerStore = .defaultStore()) async -> ApprovalState {", to: "\n    }\n")
+        inOrder(ask, ["shared.heard(answer, uid: uid, store: store)", "if Account.shared.uid == uid { shared.answered = (uid, answer) }"])
+        let signedOut = try slice(approval, from: "    func signedOut(store: LedgerStore = .defaultStore()) {", to: "\n    }\n")
+        XCTAssertTrue(signedOut.contains("answered = nil"))
+    }
+
+    /// M8: one rule for the deletion marker on both shells (Android's twin uses the same inputs): a profile that exists
+    /// decides (its marker or none); with no profile, the approval document's marker.
+    func testTheDeletionMarkerRuleTwinTable() {
+        let t1 = Date(timeIntervalSince1970: 1_800_000_000), t2 = Date(timeIntervalSince1970: 1_800_086_400)
+        XCTAssertEqual(Phones.deletionDate(profile: ["deleteAt": Timestamp(date: t1)], approval: ["deleteAt": Timestamp(date: t2)]), t1)
+        XCTAssertNil(Phones.deletionDate(profile: ["participantId": "x"], approval: ["deleteAt": Timestamp(date: t2)]))
+        XCTAssertEqual(Phones.deletionDate(profile: nil, approval: ["state": "pending", "deleteAt": Timestamp(date: t2)]), t2)
+        XCTAssertNil(Phones.deletionDate(profile: nil, approval: ["state": "pending"]))
+        XCTAssertNil(Phones.deletionDate(profile: nil, approval: nil))
+    }
+
+    /// Review M9: approval taken away also clears this phone's token from its device document, by the token-only update
+    /// the rules allow an account not approved (`fcmToken` removed, `lastSeen` set).
+    @MainActor
+    func testWithdrawalClearsTheTokenInTheCloud() async {
+        let real = CloudSync.stopPush
+        defer { CloudSync.stopPush = real }
+        var calls: [Bool] = []
+        let done = expectation(description: "push stopped")
+        CloudSync.stopPush = { inCloud in calls.append(inCloud); done.fulfill() }
+        CloudSync.shared.approvalWithdrawn()
+        await fulfillment(of: [done], timeout: 5)
+        XCTAssertEqual(calls, [true], "the token leaves the device document too")
+        XCTAssertEqual(Set(CloudProfile.tokenUpdate(nil).keys), ["fcmToken", "lastSeen"], "a token-only update")
     }
 
     // MARK: - The emulator helper

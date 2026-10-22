@@ -161,8 +161,9 @@ enum CloudFunctions {
     static func call(_ name: String, _ data: [String: Any]) async throws -> [String: Any] {
         guard let user = FirebaseGate.auth?.currentUser else { throw Failure.signedOut }
         // D-254: a call the server would refuse for approval is refused here first, with no network call (every call
-        // but the exempt ones: leaving, and asking for approval).
-        if let refusal = Approval.localRefusal(name, approval: Approval.cached(.defaultStore(), uid: user.uid)) {
+        // but the exempt ones: leaving, and asking for approval). Fix wave (I2): a state not heard yet is asked for
+        // first (bounded), so an approved account never reads the waiting words; no answer is the offline refusal.
+        if let refusal = await Approval.shared.refusal(for: name, uid: user.uid) {
             throw refusal
         }
         let token: String
@@ -212,7 +213,7 @@ enum Invites {
     static func create(store: LedgerStore, group: NamedGroupWire, member: MemberWire) async throws -> String {
         guard let uid = Account.shared.uid else { throw CloudFunctions.Failure.signedOut }
         // D-254: before the group is put in the cloud (a write the rules refuse an account not approved).
-        if let refusal = Approval.localRefusal("createInvite", approval: Approval.cached(store, uid: uid)) { throw refusal }
+        if let refusal = await Approval.shared.refusal(for: "createInvite", uid: uid, store: store) { throw refusal }
         switch await CloudSync.ensureGroup(group.group.id, name: group.group.name, uid: uid) {
         case .member: break
         case .notMember: throw CloudFunctions.Failure.refused("PERMISSION_DENIED")
