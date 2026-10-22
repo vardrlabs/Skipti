@@ -10,7 +10,28 @@ Newest session log entries go at the bottom.
 
 ---
 
-## NOW: 2026-10-20 (session 11, Opus; opener `.drafts/stop/opus-opener-6.md`): 0.5.1 U9+U17, U29-U31, U10, U32/U33
+## NOW: 2026-10-21 (session 11 CLOSING; next session = session 12, opener `.drafts/stop/opus-opener-8.md`)
+
+**RESUME (session 11 close; READ THIS FIRST):**
+- main is pushed with D-245 to D-253 merged (the welcome, rune glyph glow, Settle up's other amount and Undo, small
+  fixes, Just me, the fluidity sweep, the store-shots seed, a deleted group ending on every phone, store-shot polish).
+  No Actions runs. Decisions recorded through 231 (DECISIONS-TAKEN).
+- Branch `release-051-prep` (pushed, NOT merged): 6e8e74d bumps iOS 0.5.1 Build 8 / Android 0.5.1 5001 (decision
+  138). Merge it after D-254 with a full gate.
+- NOT deployed (the founder's yes on 0.5.1's deploy day, after Fable): the privacy page (decision 158) and D-252's
+  `deleteGroup` Function change (decision 219), and D-254's rules/Functions/admin page.
+- Drafts ready: `.drafts/release-051/notes.md` (What to Test + Play, 376 chars), `.drafts/release-051/u35-checklist.md`
+  (public repo: dash sweep 2,705 hits mostly BUILD-LOG/WORKLOG; 7 files with /Users/prithvi paths; retired Oracle
+  files: his call), `.drafts/stop/fable-opener-4.md` (the Fable pass: run AFTER session 12's D-254), `.drafts/fable/
+  notes-for-the-pass.md`, `.drafts/u32/out/` (store shots; a re-capture of 4, 6, 7, 9 and Aurora shots plus U33 clips
+  `.drafts/u33/clips/` was in flight at close: check its outputs), `.drafts/u32/plan.md` (U33 film plan).
+- Session 12 order (the founder, 2026-10-21): (1) D-254 the approval gate (decisions 228, 229): plan and build, Fable
+  reviews it; (2) U33 the film (Motion artifact, decision 172) from the clips; (3) README photos: HE picks from the
+  store shots (decision 231): show him the set in a private Artifact and ask; (4) merge release-051-prep with a full
+  gate; (5) stop and hand him the Fable opener (updated with D-254). 0.5.2: Siri/Gemini (210-213), themed refresh
+  (214, U36), App Check (230), firebase-tools bump. Machine: CLAUDE.md 4 item 6 (memory rule).
+
+## SESSION 11 (closed): 2026-10-20/21 (Opus; opener `.drafts/stop/opus-opener-6.md`): 0.5.1 U9+U17, U29-U31, U10, U32/U33
 
 **RESUME (session 11, start):** main = 80c7a2d (vardrlabs/Skipti's starting commit), tree clean. Step now: the
 founder's up-front round. Three Opus research agents write `.drafts/u9/brief.md` (onboarding + name/picture),

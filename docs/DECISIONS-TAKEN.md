@@ -1548,6 +1548,19 @@ https://claude.ai/artifact/FwwzuzRkyyxiuGvJKNMPCG (v1); briefs `.drafts/u9/brief
 - **227 (yours, pop-up 2026-10-21):** Appearance's text-size sample "Lunch at Shake Shack" (your D-234 pick) becomes a
   neutral line: "Lunch with Luna" ($48.00 unchanged; Luna, a play on Runa, another repo of yours), both phones and the store shot.
 
+### Going public and the approval gate, 228 to 231: your answers (pop-up, 2026-10-21)
+
+- **228:** an approval gate for accounts, built NEXT session before Fable's pass (D-254): anyone can sign in, but the
+  cloud (sync, groups, invites) waits until you approve the account; their own ledger works fully meanwhile (guarantee
+  5); an honest "Waiting for approval" line in the app; the rules and Functions refuse cloud writes until approved.
+- **229:** you approve through a tiny private admin page on Firebase Hosting (its own site, not skipti.vardrlabs.com),
+  signed in with your Google account only; a Function sets the flag and accepts only your account. Deploying it is your
+  yes on deploy day.
+- **230:** Firebase App Check in 0.5.2, with guarantee 6 reworded to name Apple's and Google's attestation (a new SDK
+  on both phones, written justification and audit).
+- **231:** the public README gets curated photos of the app, which YOU pick from the store shots; the web version will
+  be its own private repo, skipti-web, using this repo's core pinned to a tag.
+
 ### Siri and Gemini, 210 to 213: your answers (pop-up, 2026-10-21)
 
 - **210 (U15, U16):** Siri and Gemini come in **0.5.2**, not 0.5.1.
