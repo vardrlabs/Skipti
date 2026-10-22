@@ -1643,6 +1643,11 @@ Mock-up https://claude.ai/artifact/4ULGr42bEn7YUhSu7pQaTx (v1); README pick http
   unit; no store shot or clip shows the picker. Recorded for a later look at the promoted order.
 - **261 (yours, chat with a screenshot, 2026-10-22):** Home's "Your ledgers" cards wrap a long group name to two lines
   instead of cutting it ("Hamptons wee..."), both phones; built in D-255 before the store shots are finished.
+- **262 (U33, mine):** the films are built and final: App Store preview https://claude.ai/artifact/2WKHKqqoZATSNEL9rWxsgU
+  (9:16, iPhone) and Play promo https://claude.ai/artifact/Bp78HQrtXhEr1bY3R1FCVC (16:9, Android), 25 s each, seven
+  beats (runes and the ᚠ, then Home, Add, Split, Settle, the theme flip Aurora to Norse as the climax, the end card).
+  The theme beat stops before Vardr Labs (it shows only as a tile); Android's split clip is a softer 1080 x 1920 copy
+  (the 18.9 MB original is over the upload limit). Nobody has watched them play yet: scrub both before exporting.
 - **257 (README):** a section "What it looks like" right after the intro, a 3 x 2 grid of shots 01, 04, 05, 07, 08, 09
   at full detail, each linked to its full-size file, no extra captions.
 

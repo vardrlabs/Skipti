@@ -10,7 +10,21 @@ Newest session log entries go at the bottom.
 
 ---
 
-## NOW: 2026-10-21 (session 12, Opus as controller; opener opus-opener-8)
+## NOW: 2026-10-22 (session 12 CLOSING; next session = Fable's 0.5.1 security pass, opener `.drafts/stop/fable-opener-4.md`)
+
+**RESUME (session 12 close; READ THIS FIRST):**
+- main is pushed with D-254 (the approval gate), D-255 (New York + USD pictures at full detail, ledger names wrap, the
+  README's "What it looks like") and release-051-prep (iOS 0.5.1 Build 8, Android 0.5.1 / 5001) merged; every full gate
+  23/23. No Actions runs. Decisions recorded through 262.
+- NOT deployed (0.5.1's deploy day, after Fable, his yes): D-254's order (design section 9; `.drafts/release-051/notes.md`),
+  D-252's deleteGroup, the privacy page Version 3.
+- Store art final: `.drafts/u32/out/` (App Store 10, Play 8 at 1440 x 2560, feature graphic, README set, contact sheet);
+  clips `.drafts/u33/clips/`; films (his to scrub, export and upload): App Store https://claude.ai/artifact/2WKHKqqoZATSNEL9rWxsgU,
+  Play https://claude.ai/artifact/Bp78HQrtXhEr1bY3R1FCVC.
+- Next: Fable's pass (opener `.drafts/stop/fable-opener-4.md`), then the 0.5.1 deploy day with him, then going public
+  (U35). The Developer Tools exemption goes OFF before any signed or store build (his action).
+
+## (previous) NOW: 2026-10-21 (session 12, Opus as controller; opener opus-opener-8)
 
 - Session 12 order: (1) D-254 approval gate, (2) U33 film, (3) README photos (his pick), (4) merge release-051-prep with
   a full gate, (5) STOP with the Fable opener (`.drafts/stop/fable-opener-4.md` updated).
