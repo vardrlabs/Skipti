@@ -35,8 +35,10 @@ Newest session log entries go at the bottom.
   DONE: server 846b0c7 (314 tests; 29-row matrix, 0 survived), Android 1ddc9806 (1247 JVM; 11 rows), iOS 5909f2dd
   (1044 tests; FW1-FW9). LOOK DONE (gate works; twins match; 2 Important + 3 Minor, triage
   `.drafts/d254/triage-look.md`; devices deleted). LOOK FIXES DONE: server/admin 77a2b25d (317 tests; L4a-L5b), Android
-  514f8152 (1251 JVM; L1-L7), iOS 14623891 (1049; LF1-LF7), incl. decision 252 layout. RE-LOOK RUNNING (d254-relook
-  devices) -> `.drafts/d254/relook/`. Then full gate, records, record_unit.py, merge. Then: full gate, records (decisions 239-251 drafted), record_unit.py, merge. Decisions drafted
+  514f8152 (1251 JVM; L1-L7), iOS 14623891 (1049; LF1-LF7), incl. decision 252 layout. RE-LOOK PASSED (both phones, `.drafts/d254/relook/`).
+  FULL GATE 23/23 0 skipped (5m37s, a73877ca); recorded (record_unit.py exit 0); decisions 239-251 + his 253-257
+  (film: two 25 s cuts, App Store 9:16 iPhone + Play 16:9 Android, score, end card "Even up. Cheers all round.";
+  README 3x2; New York data). Merging. Then: full gate, records (decisions 239-251 drafted), record_unit.py, merge. Decisions drafted
   `.drafts/d254/decisions-draft.md` (239-251). Next: whole-branch review after shells, fix wave, formal sabotage, look
   (throwaway sim + AVD, emulators, admin page served locally), full gate, records, merge.
 - D-255 brief ready: `.drafts/d255/brief.md` (Miami trip / Apartment 4B / Ski weekend, USD; full detail section 5).

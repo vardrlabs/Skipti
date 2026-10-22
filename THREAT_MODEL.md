@@ -35,6 +35,7 @@ was never released publicly; it is in git history.
 | A9 | Malicious third-party SDK in the app | Supply chain | Yes, bounded: the only third-party SDKs are Firebase's, named below |
 | A10 | Compromised OS, root, or targeted malware | Full device control | **No.** Nothing at this layer helps. |
 | A11 | Coercion of the user | Rubber hose | **No.** No deniability features, no fake vault. |
+| A12 | Anyone who signs in, before the operator approves the account | A signed-in account of their own | Yes: the approval gate |
 
 ## What SKIPTI defends
 
@@ -44,6 +45,14 @@ was never released publicly; it is in git history.
   they can add records only in their own name; nobody can change who is in a
   group except through SKIPTI's Cloud Functions; nobody can list other users.
   Each rule has a test that it refuses (the Firebase plan's unit 3).
+- **A12:** While SKIPTI is in early testing, a new account can write nothing
+  to the cloud until the operator approves it: the rules refuse every create
+  and update of an unapproved account (it may still read and delete what is
+  its own, and clear its phone's notification address), and every Cloud
+  Function except signing out, deleting the account and asking for approval
+  refuses it. Approval is a document only Cloud Functions write; the
+  function that sets it answers only the operator's own account, signed in
+  with Google. Each refusal has a test (D-254).
 - **A6 and A7:** The phone's ledger is encrypted (SQLCipher) with a key held
   in the platform keystore (Keychain, Android Keystore), with app-level
   auto-lock and a privacy cover when SKIPTI leaves the screen.
@@ -101,8 +110,11 @@ Removing them stops future access and nothing else.
 Everything in your cloud data (see above), plus: your internet address when
 you connect, when you sync, how many phones you use (each registers for
 notifications), and the push tokens Apple's and Google's push services issue.
-Notification text ("Rahul added Dinner · ₹1,200 in Goa trip") passes through
-Apple's or Google's push service.
+Notification text ("Emma added Dinner · $120.00 in Miami trip") passes
+through Apple's or Google's push service. When you sign in, an approval
+request holds the name you show others, your sign-in email if Apple or
+Google gave one, and your phone type; it is deleted with your account, and
+a denied request keeps neither the name nor the email.
 
 ## Explicitly out of scope
 
