@@ -1585,6 +1585,12 @@ Mock-up https://claude.ai/artifact/4ULGr42bEn7YUhSu7pQaTx (v1); README pick http
 - **236 (README, decision 231):** the README shows store shots 01, 04, 05, 07, 08 and 09, in their American re-shoot.
 - **237 (store caption 2):** "Trips, flats, dinners. One page each." becomes "Trips, roommates, dinners. One page each."
 
+- **238 (your ask, chat; my implementation):** public pictures at full real detail, never upscaled: README images
+  composed so the app screen sits at its native 1320 x 2868 pixels (1:1, PNG); Android re-captured on a throwaway
+  1440 x 2560 phone (was 1080 x 1920); App Store stays at Apple's fixed 1320 x 2868; the film renders without
+  upscaling past the clips' native size. No AI upscaling or sharpening (it invents detail; 224: no edited pixels).
+  Done in D-255 (`.drafts/d255/brief.md` section 5).
+
 ### Siri and Gemini, 210 to 213: your answers (pop-up, 2026-10-21)
 
 - **210 (U15, U16):** Siri and Gemini come in **0.5.2**, not 0.5.1.
