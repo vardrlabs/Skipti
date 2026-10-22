@@ -147,6 +147,14 @@ final class CloudSync {
         }
     }
 
+    /// D-198: signed out from another phone (or Sign out everywhere): push stops on this phone and it signs itself out.
+    /// Its entry's listener runs this when it sees the flag; since D-258 (G-26, decision 269) so does a push the rules
+    /// refused because of the flag (`uploadOneByOne`'s `phone`). Android's twin: `CloudSync.signedOutElsewhere`.
+    static func signedOutElsewhere() async {
+        await Push.shared.stop(inCloud: false)
+        RemoteSignOut.shared.happened()
+    }
+
     func accountSignedOut() {
         registered = nil
         stopListening()
@@ -303,11 +311,21 @@ final class CloudSync {
                 }, approval: {
                     // D-254 fix wave (M1): before parking a permission refusal, the account's approval from the server.
                     await serverApproval(uid: uid)
+                }, phone: {
+                    // D-258 (G-26, decision 269): and this phone's own entry, which may say it was signed out elsewhere.
+                    await serverPhone(uid: uid, store: store)
                 })
                 // D-254 fix wave (M1): approval taken away while this phone still held approved: nothing is parked,
                 // the push stops, and the phone hears it now (the cloud stops as `Approval.heard` decides).
                 if let state = one.heard, state != .unknown, Account.shared.uid == uid {
                     Approval.shared.heard(state, uid: uid, store: store)
+                }
+                // D-258 (G-26, decision 269): signed out from another phone: nothing was parked, and this phone signs out
+                // now, as its entry's listener would. Its records wait in the ledger, unsynced, and go up after the next
+                // sign-in as records made offline do. A flag from before this sign-in signs nothing out: the registration
+                // remakes the entry, and the records go up at the next push.
+                if one.phone == .signedOut, Account.shared.uid == uid {
+                    await signedOutElsewhere()
                 }
                 uploaded.formUnion(one.uploaded)
                 written.formUnion(chunk.filter { one.written.contains(CloudRecords.documentId($0)) }.compactMap(\.groupId))
@@ -429,11 +447,17 @@ final class CloudSync {
     /// (`approval`, read once, only then): approval taken away while this phone still held approved refuses every
     /// write, and parking them would keep them parked for good. Not approved (or no answer), the push stops with
     /// nothing parked, and `heard` carries the state read.
+    /// D-258 (G-26, decision 269): an approved account's permission refusal is parked only while the server does not
+    /// say this phone was signed out (`phone`, read once, only then): the rules refuse every record of a signed-out
+    /// phone, and parking them would keep them parked after the next sign-in. Flagged (since this sign-in or before
+    /// it), the push stops with nothing parked and `phone` carries the flag; no answer parks as before (decision 114).
     static func uploadOneByOne(
         _ records: [RecordWire], write: (RecordWire) async throws -> Void, onServer: (RecordWire) async -> ServerCopy,
-        approval: () async -> ApprovalState = { .approved }
-    ) async -> (uploaded: [String], written: [String], refused: [String], offline: Bool, heard: ApprovalState?) {
+        approval: () async -> ApprovalState = { .approved }, phone: () async -> PhoneFlag = { .signedIn }
+    ) async -> (uploaded: [String], written: [String], refused: [String], offline: Bool, heard: ApprovalState?,
+                phone: PhoneFlag?) {
         var uploaded: [String] = [], written: [String] = [], refused: [String] = []
+        var flag: PhoneFlag?
         for record in records {
             let id = CloudRecords.documentId(record)
             var failure: Error?
@@ -446,14 +470,44 @@ final class CloudSync {
             case .refused:
                 if let failure, isPermissionDenied(failure) {
                     let state = await approval()
-                    if !Approval.allowsCloud(state) { return (uploaded, written, refused, true, state) }
+                    if !Approval.allowsCloud(state) { return (uploaded, written, refused, true, state, nil) }
+                    if flag == nil { flag = await phone() }
+                    if let flag, flag.flagged { return (uploaded, written, refused, true, nil, flag) }
                 }
                 refused.append(id)
             case .offline:
-                return (uploaded, written, refused, true, nil)
+                return (uploaded, written, refused, true, nil, flag)
             }
         }
-        return (uploaded, written, refused, false, nil)
+        return (uploaded, written, refused, false, nil, flag)
+    }
+
+    /// D-258 (G-26, decision 269): this phone's own entry (`users/{uid}/devices/{device}`) as the server holds it, read
+    /// after a permission refusal before parking. `.signedOut`: flagged since this sign-in (signed out from another
+    /// phone, or Sign out everywhere: it signs out now); `.signedOutBefore`: a flag older than this sign-in (the
+    /// registration deletes and remakes the entry); `.signedIn`: no flag, or no entry; `.unknown`: no answer. Android's
+    /// twin: `CloudRecords.PhoneFlag`.
+    enum PhoneFlag: Equatable {
+        case signedIn, signedOut, signedOutBefore, unknown
+
+        /// The rules refuse this phone's records while its entry says signed out, whichever sign-in the flag is from.
+        var flagged: Bool { self == .signedOut || self == .signedOutBefore }
+    }
+
+    /// The pure reading of the entry: `Phones.signedOutSince` (the listener's own test) tells the two flags apart.
+    nonisolated static func phoneFlag(_ data: [String: Any]?, authTimeMs: Int64) -> PhoneFlag {
+        guard data?["signedOut"] as? Bool == true else { return .signedIn }
+        return Phones.signedOutSince(data, authTimeMs: authTimeMs) ? .signedOut : .signedOutBefore
+    }
+
+    /// This phone's entry from the server, in bounded time (as `serverApproval`); no answer is `.unknown`.
+    static func serverPhone(uid: String, store: LedgerStore) async -> PhoneFlag {
+        guard let device = try? CloudProfile.deviceId(store) else { return .unknown }
+        return await Bounded.value(seconds: groupReadTimeout, otherwise: PhoneFlag.unknown) {
+            guard let snapshot = try? await Cloud.db.collection("users").document(uid).collection("devices").document(device)
+                .getDocument(source: .server) else { return .unknown }
+            return phoneFlag(snapshot.data(), authTimeMs: await Phones.authTimeMs())
+        }
     }
 
     /// D-254 fix wave (M1): `approvals/{uid}` as the server holds it (a missing document reads pending, as the server's
@@ -535,8 +589,7 @@ final class CloudSync {
                     guard let data = snapshot?.data(), data["signedOut"] as? Bool == true else { return }
                     Task { @MainActor in
                         if Phones.signedOutSince(data, authTimeMs: await Phones.authTimeMs()) {
-                            await Push.shared.stop(inCloud: false)
-                            RemoteSignOut.shared.happened()
+                            await CloudSync.signedOutElsewhere()
                         }
                     }
                 }

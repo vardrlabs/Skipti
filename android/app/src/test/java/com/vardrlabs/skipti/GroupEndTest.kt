@@ -353,9 +353,10 @@ class GroupEndTest {
         }
         // D-252 adds no new server read: the group read is the removal's (`groupRead`).
         assertEquals(
-            "a record's existence, a group's existence, groupRead (removal and D-252 share it), the catch-up, and " +
-                "D-254 fix wave M1's approval read before parking (serverApproval)",
-            5, cloud.split("get(Source.SERVER)").size - 1,
+            "a record's existence, a group's existence, groupRead (removal and D-252 share it), the catch-up, " +
+                "D-254 fix wave M1's approval read before parking (serverApproval), and D-258's own-entry read after it " +
+                "(serverPhone)",
+            6, cloud.split("get(Source.SERVER)").size - 1,
         )
         assertTrue("a new session sweeps again", cloud.contains("vanishAsked.clear()\n        listedNow = emptySet()\n        vanishListing = null"))
         val handle = cloud.substringAfter("                    Notices.Kind.DELETED -> {").substringBefore("                    Notices.Kind.ROLE, Notices.Kind.DECLINED -> {")

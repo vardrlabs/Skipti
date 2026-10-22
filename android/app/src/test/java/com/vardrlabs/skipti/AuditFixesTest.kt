@@ -939,6 +939,88 @@ class AuditFixesTest {
         assertTrue(read, "Cloud.db().collection(\"approvals\").document(uid).get(Source.SERVER).awaitTask()" in read)
     }
 
+    /** D-258 (G-26, decision 269; the twin of iOS's): an approved account's permission refusal parks only while the
+     *  server does not say this phone was signed out. Flagged since this sign-in: nothing parked, the push stops, and the
+     *  flag is handed back (pushAll runs the remote sign-out path with it). Flagged before this sign-in: nothing parked,
+     *  nothing signed out. Not flagged, or no answer: parked as before (decision 114). The entry is read once a push. */
+    @Test
+    fun a_signed_out_phones_refusal_is_not_parked() = runBlocking {
+        val first = recordIn(null, 1u)
+        val second = recordIn(null, 2u)
+        val third = recordIn(group, 3u)
+        val three = listOf(first, second, third)
+        var reads = 0
+        suspend fun push(flag: CloudRecords.PhoneFlag, approval: ApprovalState = ApprovalState.APPROVED, big: Boolean = false) =
+            CloudRecords.oneByOne(
+                three, write = { if (it !== first) throw (if (big) TooBig() else RuleRefusal()) }, exists = { CloudRecords.Held.NO },
+                refusedByRules = ::ruledOrBig, deniedByRules = ::denied, approval = { approval }, phone = { reads++; flag },
+            )
+        for (flag in listOf(CloudRecords.PhoneFlag.SIGNED_OUT, CloudRecords.PhoneFlag.SIGNED_OUT_BEFORE)) {
+            reads = 0
+            val r = push(flag)
+            assertTrue("$flag: the push stops", r.stopped)
+            assertTrue("$flag: nothing parked", r.refused.isEmpty())
+            assertEquals(flag, r.phone)
+            assertNull(r.heard)
+            assertEquals("what went up before stays up", listOf(first), r.uploaded)
+            assertEquals(1, reads)
+        }
+        for (flag in listOf(CloudRecords.PhoneFlag.SIGNED_IN, CloudRecords.PhoneFlag.UNKNOWN)) {
+            reads = 0
+            val r = push(flag)
+            assertFalse("$flag", r.stopped)
+            assertEquals("$flag: parked as before, personal and group", listOf(second, third), r.refused)
+            assertEquals(flag, r.phone)
+            assertEquals("read once a push", 1, reads)
+        }
+        reads = 0
+        val tooBig = push(CloudRecords.PhoneFlag.SIGNED_OUT, big = true)
+        assertEquals("not a permission refusal: parked, nothing asked", listOf(second, third), tooBig.refused)
+        assertEquals(0, reads)
+        assertNull(tooBig.phone)
+        val waiting = push(CloudRecords.PhoneFlag.SIGNED_OUT, approval = ApprovalState.PENDING)
+        assertEquals("approval first: an account not approved stops as M1 says", ApprovalState.PENDING, waiting.heard)
+        assertEquals(0, reads)
+        assertNull(waiting.phone)
+        // Untouched by default (every other caller): parked as before.
+        val plain = CloudRecords.oneByOne(listOf(first, second), write = { if (it === second) throw RuleRefusal() }, exists = { CloudRecords.Held.NO },
+            refusedByRules = ::ruledOrBig, deniedByRules = ::denied, approval = { ApprovalState.APPROVED })
+        assertEquals(listOf(second), plain.refused)
+
+        // The reading: since this sign-in signs out; before it, a stale flag; none (or false, or no entry) is signed in.
+        val signedInAt = 1_790_000_000_000L
+        fun at(ms: Long): Map<String, Any?> = mapOf("signedOut" to true, "signedOutAt" to CloudRecords.timestamp(ms))
+        assertEquals(CloudRecords.PhoneFlag.SIGNED_OUT, CloudRecords.phoneFlag(at(signedInAt + 1), signedInAt))
+        assertEquals(CloudRecords.PhoneFlag.SIGNED_OUT, CloudRecords.phoneFlag(at(signedInAt), signedInAt))
+        assertEquals(CloudRecords.PhoneFlag.SIGNED_OUT_BEFORE, CloudRecords.phoneFlag(at(signedInAt - 1), signedInAt))
+        assertEquals("no time: now", CloudRecords.PhoneFlag.SIGNED_OUT, CloudRecords.phoneFlag(mapOf("signedOut" to true), signedInAt))
+        assertEquals(CloudRecords.PhoneFlag.SIGNED_IN, CloudRecords.phoneFlag(mapOf("signedOut" to false), signedInAt))
+        assertEquals(CloudRecords.PhoneFlag.SIGNED_IN, CloudRecords.phoneFlag(mapOf("name" to "Pixel 8"), signedInAt))
+        assertEquals("no entry yet", CloudRecords.PhoneFlag.SIGNED_IN, CloudRecords.phoneFlag(null, signedInAt))
+        assertTrue(CloudRecords.PhoneFlag.SIGNED_OUT.flagged && CloudRecords.PhoneFlag.SIGNED_OUT_BEFORE.flagged)
+        assertFalse(CloudRecords.PhoneFlag.SIGNED_IN.flagged || CloudRecords.PhoneFlag.UNKNOWN.flagged)
+
+        // pushAll reads this phone's entry from the server and, flagged since this sign-in, runs the remote sign-out path,
+        // the same one the entry's listener runs; before any parking.
+        val pushAll = body("CloudSync.kt", "    suspend fun pushAll(", "    ")
+        val steps = listOf(
+            "phone = { serverPhone(uid, store) },",
+            "if (result.phone == CloudRecords.PhoneFlag.SIGNED_OUT && Account.uid() == uid) signedOutElsewhere()",
+            "runCatching { CloudRecords.updateParked(store, newlyRefused, parked intersect uploaded) }",
+        )
+        val where = steps.map { pushAll.indexOf(it) }
+        assertTrue("$where", where.all { it >= 0 } && where == where.sorted())
+        val path = body("CloudSync.kt", "    suspend fun signedOutElsewhere()", "    ")
+        assertTrue(path, "withContext(Dispatchers.Main) { RemoteSignOut.happened(vaultPathOf(context)) }" in path)
+        val listener = main("CloudSync.kt").substringAfter("// D-198: this phone's own entry; a sign-out from elsewhere ends here.")
+            .substringBefore("groupListeners = GroupListeners(")
+        assertTrue(listener, "if (Phones.signedOutSince(data, Phones.authTimeMs())) signedOutElsewhere()" in listener)
+        val read = body("CloudSync.kt", "    suspend fun serverPhone(uid: String, store: LedgerStore)", "    ")
+        assertTrue(read, "Cloud.db().collection(\"users\").document(uid).collection(\"devices\").document(device)" in read)
+        assertTrue(read, ".get(Source.SERVER).awaitTask()" in read)
+        assertTrue(read, "withTimeoutOrNull(GroupEnsure.READ_TIMEOUT_MS)" in read)
+    }
+
     /** Negative: a network or auth failure with a denied or unanswered read still stops, and a personal record denied
      *  both ways stops too (that is auth trouble, not a removal). */
     @Test

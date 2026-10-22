@@ -85,6 +85,33 @@ object CloudSync {
         ApprovalState.UNKNOWN
     }
 
+    /** D-258 (G-26, decision 269; iOS's `serverPhone(uid:store:)`): this phone's own entry from the server, in bounded
+     *  time ([GroupEnsure.READ_TIMEOUT_MS], as iOS bounds its reads), read after a permission refusal before parking;
+     *  no answer is [CloudRecords.PhoneFlag.UNKNOWN]. */
+    suspend fun serverPhone(uid: String, store: LedgerStore): CloudRecords.PhoneFlag {
+        val device = runCatching { CloudProfile.deviceId(store) }.getOrNull() ?: return CloudRecords.PhoneFlag.UNKNOWN
+        return kotlinx.coroutines.withTimeoutOrNull(GroupEnsure.READ_TIMEOUT_MS) {
+            try {
+                val snapshot = Cloud.db().collection("users").document(uid).collection("devices").document(device)
+                    .get(Source.SERVER).awaitTask()
+                CloudRecords.phoneFlag(snapshot.data, Phones.authTimeMs())
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                CloudRecords.PhoneFlag.UNKNOWN
+            }
+        } ?: CloudRecords.PhoneFlag.UNKNOWN
+    }
+
+    /** D-198: signed out from another phone (or Sign out everywhere): this phone signs itself out (push stops inside
+     *  [RemoteSignOut.happened]). Its entry's listener runs this when it sees the flag; since D-258 (G-26, decision
+     *  269) so does a push the rules refused because of the flag ([CloudRecords.oneByOne]'s `phone`). iOS's twin:
+     *  `CloudSync.signedOutElsewhere()`. */
+    suspend fun signedOutElsewhere() {
+        val context = VaultGate.appContextRef ?: return
+        withContext(Dispatchers.Main) { RemoteSignOut.happened(vaultPathOf(context)) }
+    }
+
     /** D-254 fix wave (nit): push stops for approval taken away, in the cloud too (`inCloud`: the token-only update).
      *  [stop] is Push.stop (a fake in tests). */
     fun withdrawnPushStop(
@@ -354,6 +381,8 @@ object CloudSync {
                     exists = { record -> CloudRecords.held(Account.uid() == uid) { doc(record).get(Source.SERVER).awaitTask().exists() } },
                     // D-254 fix wave M1: before parking a permission refusal, whether the account is still approved.
                     approval = { serverApproval(uid) },
+                    // D-258 (G-26, decision 269): and this phone's own entry, which may say it was signed out elsewhere.
+                    phone = { serverPhone(uid, store) },
                 )
                 for (record in result.uploaded) {
                     uploaded += CloudRecords.documentId(record)
@@ -368,6 +397,11 @@ object CloudSync {
                 // D-254 fix wave M1: approval taken away while this phone still held it: nothing parked, the push stops,
                 // and the phone hears it (the cloud stops as for any withdrawal).
                 result.heard?.takeIf { it != ApprovalState.UNKNOWN }?.let { withContext(Dispatchers.Main) { Approval.heard(it, uid, store) } }
+                // D-258 (G-26, decision 269): signed out from another phone: nothing was parked, and this phone signs out
+                // now, as its entry's listener would. Its records wait in the ledger, unsynced, and go up after the next
+                // sign-in as records made offline do. A flag from before this sign-in signs nothing out: the registration
+                // remakes the entry, and the records go up at the next push.
+                if (result.phone == CloudRecords.PhoneFlag.SIGNED_OUT && Account.uid() == uid) signedOutElsewhere()
             }
             if (offline) break
         }
@@ -503,10 +537,7 @@ object CloudSync {
                     val data = snapshot?.data ?: return@addSnapshotListener
                     if (data["signedOut"] != true) return@addSnapshotListener
                     scope.launch {
-                        if (Phones.signedOutSince(data, Phones.authTimeMs())) {
-                            val context = VaultGate.appContextRef ?: return@launch
-                            withContext(Dispatchers.Main) { RemoteSignOut.happened(vaultPathOf(context)) }
-                        }
+                        if (Phones.signedOutSince(data, Phones.authTimeMs())) signedOutElsewhere()
                     }
                 }
         }
@@ -1557,7 +1588,29 @@ object CloudRecords {
         /** D-254 fix wave M1: the account's state read from the server when the push stopped because it is not
          *  approved (unknown: no answer); null otherwise. iOS's `heard`. */
         val heard: ApprovalState? = null,
+        /** D-258 (G-26, decision 269): this phone's entry as read after a permission refusal (null: not read). The push
+         *  stopped with nothing parked when it is flagged. iOS's `phone`. */
+        val phone: PhoneFlag? = null,
     )
+
+    /** D-258 (G-26, decision 269): this phone's own entry (`users/{uid}/devices/{device}`) as the server holds it, read
+     *  after a permission refusal before parking. [SIGNED_OUT]: flagged since this sign-in (signed out from another
+     *  phone, or Sign out everywhere: it signs out now); [SIGNED_OUT_BEFORE]: a flag older than this sign-in (the
+     *  registration deletes and remakes the entry); [SIGNED_IN]: no flag, or no entry; [UNKNOWN]: no answer. iOS's
+     *  twin: `CloudSync.PhoneFlag`. */
+    enum class PhoneFlag {
+        SIGNED_IN, SIGNED_OUT, SIGNED_OUT_BEFORE, UNKNOWN;
+
+        /** The rules refuse this phone's records while its entry says signed out, whichever sign-in the flag is from. */
+        val flagged: Boolean get() = this == SIGNED_OUT || this == SIGNED_OUT_BEFORE
+    }
+
+    /** The pure reading of the entry: [Phones.signedOutSince] (the listener's own test) tells the two flags apart. */
+    fun phoneFlag(data: Map<String, Any?>?, authTimeMs: Long): PhoneFlag = when {
+        data?.get("signedOut") != true -> PhoneFlag.SIGNED_IN
+        Phones.signedOutSince(data, authTimeMs) -> PhoneFlag.SIGNED_OUT
+        else -> PhoneFlag.SIGNED_OUT_BEFORE
+    }
 
     /** A batch the server refused, sent again one record at a time, so one record the rules refuse holds back
      *  nothing after it. */
@@ -1568,12 +1621,15 @@ object CloudRecords {
         refusedByRules: (Exception) -> Boolean = ::isRuleRefusal,
         deniedByRules: (Exception) -> Boolean = ::isPermissionDenied,
         approval: suspend () -> ApprovalState,
+        phone: suspend () -> PhoneFlag = { PhoneFlag.SIGNED_IN },
     ): OneByOne {
         val uploaded = mutableListOf<RecordWire>()
         val refused = mutableListOf<RecordWire>()
         var written = 0
         // D-254 fix wave M1: read once, at the first permission refusal that would park.
         var approved = false
+        // D-258 (G-26, decision 269): this phone's entry, read once too, after the approval and only then.
+        var flag: PhoneFlag? = null
         for (record in chunk) {
             try {
                 write(record)
@@ -1594,13 +1650,20 @@ object CloudRecords {
                             if (now != ApprovalState.APPROVED) return OneByOne(uploaded, written, refused, stopped = true, heard = now)
                             approved = true
                         }
+                        // D-258 (G-26, decision 269): the rules refuse every record of a phone signed out elsewhere, and
+                        // parking them would keep them parked after the next sign-in. Flagged: stop, park nothing, and
+                        // say so; no answer parks as before (decision 114).
+                        if (denied) {
+                            val read = flag ?: phone().also { flag = it }
+                            if (read.flagged) return OneByOne(uploaded, written, refused, stopped = true, phone = read)
+                        }
                         refused += record
                     }
-                    UploadFailure.STOP -> return OneByOne(uploaded, written, refused, stopped = true)
+                    UploadFailure.STOP -> return OneByOne(uploaded, written, refused, stopped = true, phone = flag)
                 }
             }
         }
-        return OneByOne(uploaded, written, refused, stopped = false)
+        return OneByOne(uploaded, written, refused, stopped = false, phone = flag)
     }
 
     data class Adoption(val direct: List<RecordWire>, val units: List<List<RecordWire>>)

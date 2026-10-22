@@ -2426,8 +2426,9 @@ final class GroupEndTests: XCTestCase {
         }
         // D-235/D-244 style count: the group read is the removal's (`groupRead`); D-252 adds no new server read. D-254
         // fix wave (M1) adds one: `serverApproval`, the account's approval read before a permission refusal is parked.
-        XCTAssertEqual(cloud.components(separatedBy: "getDocument(source: .server)").count - 1, 4,
-                       "ensureGroup's existence read, the record existence read, groupRead (removal and D-252 share it), serverApproval")
+        // D-258 (G-26) adds one: `serverPhone`, this phone's own entry, read after it, before parking too.
+        XCTAssertEqual(cloud.components(separatedBy: "getDocument(source: .server)").count - 1, 5,
+                       "ensureGroup's existence read, the record existence read, groupRead (removal and D-252 share it), serverApproval, serverPhone")
         XCTAssertTrue(cloud.contains("vanishAsked = []\n        listedNow = []\n        vanishListing = nil"), "a new session sweeps again")
         let handle = try XCTUnwrap(cloud.components(separatedBy: "                case .deleted:").dropFirst().first?
             .components(separatedBy: "                case .role, .declined:").first)
