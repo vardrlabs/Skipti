@@ -267,6 +267,33 @@ test('anyone signed in starts a group with only themselves in it', async () => {
     assert.equal(await write('alice', 'groups/g6', { ...group('alice'), ...field }), DENIED, JSON.stringify(field));
   }
 });
+// D-256 (decision 276): a deleted group leaves deletedGroups/{g} (deleteGroup writes it); its id is never a group again.
+const tombstone = () => ({ byUid: 'alice', uids: ['alice', 'bob', 'dan'], deletedAt: new Date() });
+test('D-256: a deleted group\'s id can never be created again, by anyone, even as its only member', async () => {
+  assert.equal(await write('owner', 'deletedGroups/g1', tombstone()), OK);
+  assert.equal(await write('alice', 'groups/g1', group('alice')), DENIED, 'the deleter');
+  assert.equal(await write('bob', 'groups/g1', group('bob')), DENIED, 'a member');
+  assert.equal(await write('carol', 'groups/g1', group('carol')), DENIED, 'a stranger');
+  assert.equal(await write('alice', 'groups/g1', group('alice'), 'set'), DENIED, 'the apps\' setData (ensureGroup) too');
+  assert.equal(await write('alice', 'groups/g2', group('alice')), OK, 'a fresh id is still a group');
+  assert.equal(await write('carol', 'groups/g3', group('carol'), 'set'), OK);
+});
+test('D-256: an account the tombstone lists reads it; a stranger does not; nobody lists or writes one', async () => {
+  assert.equal(await write('owner', 'deletedGroups/g1', tombstone()), OK, 'a Function (the admin SDK) writes it');
+  for (const uid of ['alice', 'bob', 'dan']) assert.equal(await get(uid, 'deletedGroups/g1'), OK, `${uid} (deleter, member, former)`);
+  assert.equal(await get('carol', 'deletedGroups/g1'), DENIED, 'a stranger');
+  assert.equal(await get(null, 'deletedGroups/g1'), DENIED, 'signed out');
+  assert.equal(await get('alice', 'deletedGroups/g9'), DENIED, 'no tombstone reads as refused, never as not found');
+  for (const uid of ['alice', 'carol', 'emulator-admin']) {
+    assert.equal(await list(uid, 'deletedGroups'), DENIED, `${uid}: list`);
+    assert.equal(await list(uid, 'deletedGroups', ['uids', 'ARRAY_CONTAINS', uid]), DENIED, `${uid}: list its own`);
+    assert.equal(await write(uid, 'deletedGroups/g4', { ...tombstone(), byUid: uid, uids: [uid] }), DENIED, `${uid}: create`);
+    assert.equal(await write(uid, 'deletedGroups/g1', { uids: ['alice', 'bob', 'dan', uid] }, 'update'), DENIED, `${uid}: update`);
+    assert.equal(await write(uid, 'deletedGroups/g1', null, 'delete'), DENIED, `${uid}: delete`);
+  }
+  assert.equal(await get('alice', 'deletedGroups/g1'), OK, 'still there, unchanged');
+  assert.equal(await get('carol', 'deletedGroups/g1'), DENIED, 'nobody added themselves');
+});
 test('a group is read only by its members, and listed only by membership', async () => {
   assert.equal(await write('alice', 'groups/g1', group('alice')), OK);
   assert.equal(await get('alice', 'groups/g1'), OK);

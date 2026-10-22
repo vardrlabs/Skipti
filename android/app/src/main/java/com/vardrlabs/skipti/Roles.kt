@@ -388,6 +388,9 @@ object GroupEndCopy {
     /** The banner's line for a group this account deleted, on every one of its phones. */
     fun youDeleted(group: String) = "You deleted $group."
 
+    /** D-256 (decision 276): the banner's line for a deletion known only from its tombstone (no deleter's name in it). */
+    const val WAS_DELETED = "This group was deleted."
+
     /** A write into a read-only copy, refused before anything is written ([Placing.ReadOnlyCopy]). */
     const val REFUSED_VANISHED = "This group is no longer shared with you. Nothing new can be added."
     const val REFUSED_YOU_DELETED = "You deleted this group. Nothing new can be added."
@@ -440,13 +443,56 @@ object GroupGone {
 
         /** Nothing changes now; asked again at the next listing change or launch. */
         RETRY,
+
+        /** D-256 (decision 276): its tombstone says it was deleted: a deleted copy ("You deleted {group}." when this
+         *  account deleted it, else "This group was deleted."). */
+        DELETED,
     }
 
-    fun decide(read: Read): Outcome = when (read) {
-        Read.REFUSED, Read.NOT_FOUND, Read.FORMER, Read.NOT_MEMBER -> Outcome.READ_ONLY
+    /** D-256 (decision 276): what `deletedGroups/{g}` said to this account. Read once, from the server, only when the
+     *  group's own read was refused or not found ([asksTombstone]). `deleteGroup` writes it (whose delete it was, the
+     *  accounts that held the group, the time; no name); the rules let only those accounts read it. [atMs] is null
+     *  when the document has no time. */
+    data class Tombstone(val byYou: Boolean, val atMs: Long?)
+
+    /** The tombstone as the Function writes it, for the account [uid]; null for none (refused, not there, no answer:
+     *  null data) or one without its deleter. */
+    fun tombstone(data: Map<String, Any?>?, uid: String): Tombstone? {
+        if (data == null) return null
+        val by = data["byUid"] as? String
+        if (by.isNullOrEmpty()) return null
+        return Tombstone(byYou = uid.isNotEmpty() && by == uid, atMs = (data["deletedAt"] as? Timestamp)?.toDate()?.time)
+    }
+
+    /** D-256: the tombstone is asked about only when the group's read says it is gone for this account (refused or
+     *  not found); a document that is there was not deleted, and no answer asks nothing more. */
+    fun asksTombstone(read: Read): Boolean = read == Read.REFUSED || read == Read.NOT_FOUND
+
+    /** The decision. D-256 (decision 276): a refused or missing group with a tombstone this account may read was
+     *  deleted, in those words; without one (refused, not there, no answer) it is the neutral copy, as before. */
+    fun decide(read: Read, tombstone: Tombstone?): Outcome = when (read) {
+        Read.REFUSED, Read.NOT_FOUND -> if (tombstone == null) Outcome.READ_ONLY else Outcome.DELETED
+        Read.FORMER, Read.NOT_MEMBER -> Outcome.READ_ONLY
         Read.NETWORK_ERROR -> Outcome.RETRY
         Read.EXISTS -> Outcome.KEEP
     }
+
+    /** The mark an outcome leaves, or null when it leaves none: the vanished mark, or (D-256) a deleted copy from the
+     *  tombstone: no deleter's name, "You deleted" when it was this account's, dated by the tombstone (else [nowMs]). */
+    fun mark(outcome: Outcome, tombstone: Tombstone?, nowMs: Long): ReadOnlyDTO? = when (outcome) {
+        Outcome.READ_ONLY -> mark(nowMs)
+        Outcome.DELETED ->
+            if (tombstone == null) mark(nowMs)
+            else ReadOnlyDTO("deleted", "", tombstone.atMs ?: nowMs, byYou = if (tombstone.byYou) true else null)
+        Outcome.KEEP, Outcome.RETRY -> null
+    }
+
+    /** D-256 (decision 276): `ensureGroup`'s create was refused and its read refused too (NOT_MEMBER). With a
+     *  tombstone this account may read, the group was deleted: the copy ends read-only, in the deletion's words, so its
+     *  waiting records stay on the phone (never parked, never sent again) and an invite stops at once. Without one
+     *  (someone else's group with this id, or the approval gate) nothing is marked, as before. */
+    fun createRefused(tombstone: Tombstone?, nowMs: Long): ReadOnlyDTO? =
+        tombstone?.let { mark(Outcome.DELETED, it, nowMs) }
 
     /** The read as `CloudSync.groupRead` gives it (the D-210 removal read: permission-denied and not-found are
      *  [Notices.GroupRead.Refused], null is no answer), for the account [uid]. D-252 fix wave (M2): a document that is
@@ -997,7 +1043,9 @@ object Notices {
      *  unmarked group becomes a deleted copy. The notice's [Item.byUid] against this account's uid says whose delete it
      *  was: "You deleted". iOS: `Notices.deletedMark`. */
     fun deletedMark(item: Item, uid: String?, existing: ReadOnlyDTO?): ReadOnlyDTO? {
-        if (existing?.kind == "deleted") return null
+        // D-256 (decision 276): a deleted mark from a tombstone that names nobody (not this account's) is told the
+        // deleter's name by the notice when it comes.
+        if (existing != null && existing.kind == "deleted" && !(existing.by.isEmpty() && existing.byYou != true)) return null
         val yours = !uid.isNullOrEmpty() && item.byUid == uid
         return ReadOnlyDTO("deleted", item.byName, item.atMs, byYou = if (yours) true else null)
     }

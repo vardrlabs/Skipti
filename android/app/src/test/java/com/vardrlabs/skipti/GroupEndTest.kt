@@ -1,5 +1,6 @@
 package com.vardrlabs.skipti
 
+import com.google.firebase.Timestamp
 import java.nio.file.Files
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -57,6 +58,7 @@ class GroupEndTest {
                 "refusedYouDeleted" to GroupEndCopy.REFUSED_YOU_DELETED,
                 "refusedDeleted" to GroupEndCopy.REFUSED_DELETED,
                 "refusedRemoved" to GroupEndCopy.REFUSED_REMOVED,
+                "wasDeleted" to GroupEndCopy.WAS_DELETED,
             ),
             lets,
         )
@@ -70,6 +72,7 @@ class GroupEndTest {
         assertEquals("You deleted this group. Nothing new can be added.", GroupEndCopy.REFUSED_YOU_DELETED)
         assertEquals("This group was deleted. Nothing new can be added.", GroupEndCopy.REFUSED_DELETED)
         assertEquals("You were removed from this group. Nothing new can be added.", GroupEndCopy.REFUSED_REMOVED)
+        assertEquals("This group was deleted.", GroupEndCopy.WAS_DELETED)
         // The stored kind, as iOS stores it (one vault format on both).
         assertTrue(swift("LedgerStore.swift").contains("static let vanishedKind = \"vanished\""))
         assertEquals("stored in the vault: never renamed", "vanished", ReadOnlyDTO.VANISHED)
@@ -136,12 +139,12 @@ class GroupEndTest {
 
     @Test
     fun the_one_read_decides() {
-        assertEquals(GroupGone.Outcome.READ_ONLY, GroupGone.decide(GroupGone.Read.REFUSED))
-        assertEquals(GroupGone.Outcome.READ_ONLY, GroupGone.decide(GroupGone.Read.NOT_FOUND))
-        assertEquals("no answer changes nothing", GroupGone.Outcome.RETRY, GroupGone.decide(GroupGone.Read.NETWORK_ERROR))
-        assertEquals(GroupGone.Outcome.KEEP, GroupGone.decide(GroupGone.Read.EXISTS))
-        assertEquals("removed, the notice lost: the copy ends", GroupGone.Outcome.READ_ONLY, GroupGone.decide(GroupGone.Read.FORMER))
-        assertEquals(GroupGone.Outcome.READ_ONLY, GroupGone.decide(GroupGone.Read.NOT_MEMBER))
+        assertEquals(GroupGone.Outcome.READ_ONLY, GroupGone.decide(GroupGone.Read.REFUSED, null))
+        assertEquals(GroupGone.Outcome.READ_ONLY, GroupGone.decide(GroupGone.Read.NOT_FOUND, null))
+        assertEquals("no answer changes nothing", GroupGone.Outcome.RETRY, GroupGone.decide(GroupGone.Read.NETWORK_ERROR, null))
+        assertEquals(GroupGone.Outcome.KEEP, GroupGone.decide(GroupGone.Read.EXISTS, null))
+        assertEquals("removed, the notice lost: the copy ends", GroupGone.Outcome.READ_ONLY, GroupGone.decide(GroupGone.Read.FORMER, null))
+        assertEquals(GroupGone.Outcome.READ_ONLY, GroupGone.decide(GroupGone.Read.NOT_MEMBER, null))
         assertEquals(GroupGone.Read.NOT_FOUND, GroupGone.read(Notices.GroupRead.Missing, "me"))
         assertEquals(GroupGone.Read.REFUSED, GroupGone.read(Notices.GroupRead.Refused, "me"))
         assertEquals(GroupGone.Read.NETWORK_ERROR, GroupGone.read(null, "me"))
@@ -149,8 +152,81 @@ class GroupEndTest {
         assertEquals(GroupGone.Read.REFUSED, GroupGone.read(Notices.groupRead("PERMISSION_DENIED"), "me"))
         assertEquals(GroupGone.Read.REFUSED, GroupGone.read(Notices.groupRead("NOT_FOUND"), "me"))
         for (code in listOf("UNAVAILABLE", "DEADLINE_EXCEEDED", "UNAUTHENTICATED", "CANCELLED", "INTERNAL", null)) {
-            assertEquals("$code", GroupGone.Outcome.RETRY, GroupGone.decide(GroupGone.read(Notices.groupRead(code), "me")))
+            assertEquals("$code", GroupGone.Outcome.RETRY, GroupGone.decide(GroupGone.read(Notices.groupRead(code), "me"), null))
         }
+    }
+
+    // ---- D-256 (decision 276): the tombstone (iOS: GroupEndTests, the same inputs) ----
+
+    private fun tomb(by: Any?, at: Timestamp? = Timestamp(1_800_000_000, 0)): Map<String, Any?> = buildMap {
+        put("uids", listOf("ow", "me"))
+        if (by != null) put("byUid", by)
+        if (at != null) put("deletedAt", at)
+    }
+
+    /** The tombstone as the Function writes it: whose delete it was against this account, and its time. */
+    @Test
+    fun a_tombstone_says_whose_delete_it_was() {
+        assertEquals(GroupGone.Tombstone(byYou = true, atMs = at), GroupGone.tombstone(tomb("ow"), "ow"))
+        assertEquals(GroupGone.Tombstone(byYou = false, atMs = at), GroupGone.tombstone(tomb("ow"), "me"))
+        assertEquals("no time: still a tombstone", GroupGone.Tombstone(byYou = false, atMs = null), GroupGone.tombstone(tomb("ow", null), "me"))
+        assertEquals("no account: never yours", false, GroupGone.tombstone(tomb("ow"), "")?.byYou)
+        assertNull("refused, not there, or no answer", GroupGone.tombstone(null, "ow"))
+        assertNull("no deleter: not one the Function wrote", GroupGone.tombstone(tomb(null), "ow"))
+        assertNull("an empty deleter", GroupGone.tombstone(tomb(""), ""))
+        assertNull("not text", GroupGone.tombstone(tomb(7), "ow"))
+    }
+
+    /** The tombstone is asked about only for a refused or missing group; with one, the copy is deleted; without one it
+     *  is the neutral copy as before; a group that is there, or no answer, never reads it. */
+    @Test
+    fun a_tombstone_turns_a_gone_group_into_a_deleted_copy() {
+        val mine = GroupGone.Tombstone(byYou = true, atMs = at)
+        val theirs = GroupGone.Tombstone(byYou = false, atMs = null)
+        assertTrue(GroupGone.asksTombstone(GroupGone.Read.REFUSED))
+        assertTrue(GroupGone.asksTombstone(GroupGone.Read.NOT_FOUND))
+        for (read in listOf(GroupGone.Read.EXISTS, GroupGone.Read.FORMER, GroupGone.Read.NOT_MEMBER, GroupGone.Read.NETWORK_ERROR)) {
+            assertFalse("$read", GroupGone.asksTombstone(read))
+        }
+        assertEquals(GroupGone.Outcome.DELETED, GroupGone.decide(GroupGone.Read.REFUSED, mine))
+        assertEquals(GroupGone.Outcome.DELETED, GroupGone.decide(GroupGone.Read.NOT_FOUND, theirs))
+        assertEquals("no tombstone: the neutral copy", GroupGone.Outcome.READ_ONLY, GroupGone.decide(GroupGone.Read.REFUSED, null))
+        assertEquals("a document that is there was not deleted", GroupGone.Outcome.READ_ONLY, GroupGone.decide(GroupGone.Read.FORMER, mine))
+        assertEquals(GroupGone.Outcome.READ_ONLY, GroupGone.decide(GroupGone.Read.NOT_MEMBER, mine))
+        assertEquals(GroupGone.Outcome.KEEP, GroupGone.decide(GroupGone.Read.EXISTS, mine))
+        assertEquals(GroupGone.Outcome.RETRY, GroupGone.decide(GroupGone.Read.NETWORK_ERROR, mine))
+        // The marks: "You deleted" on the deleter's phones, dated by the tombstone; another's names nobody.
+        val now = at + 3_600_000
+        assertEquals(ReadOnlyDTO("deleted", "", at, byYou = true), GroupGone.mark(GroupGone.Outcome.DELETED, mine, now))
+        assertEquals("no time: now", ReadOnlyDTO("deleted", "", now, byYou = null), GroupGone.mark(GroupGone.Outcome.DELETED, theirs, now))
+        assertEquals(GroupGone.mark(now), GroupGone.mark(GroupGone.Outcome.READ_ONLY, null, now))
+        assertNull(GroupGone.mark(GroupGone.Outcome.KEEP, mine, now))
+        assertNull(GroupGone.mark(GroupGone.Outcome.RETRY, mine, now))
+        // ensureGroup's refused create: only a tombstone marks (someone else's id, or the approval gate, marks nothing).
+        assertEquals(ReadOnlyDTO("deleted", "", at, byYou = true), GroupGone.createRefused(mine, now))
+        assertEquals(ReadOnlyDTO("deleted", "", now), GroupGone.createRefused(theirs, now))
+        assertNull(GroupGone.createRefused(null, now))
+    }
+
+    /** A tombstone's copy says how it ended: "You deleted {group}." on the deleter's phones, "This group was deleted."
+     *  elsewhere (no name), refusing writes in the deletion's words; the notice, when it comes, names the deleter. */
+    @Test
+    fun a_tombstones_copy_reads_as_a_deletion() {
+        val day = "October 13, 2026"
+        val yours = GroupGone.createRefused(GroupGone.Tombstone(byYou = true, atMs = at), at)!!
+        val theirs = GroupGone.createRefused(GroupGone.Tombstone(byYou = false, atMs = at), at)!!
+        assertEquals("You deleted Goa.", ReadOnlyBanner.title(yours, day, "Goa"))
+        assertEquals("This group was deleted.", ReadOnlyBanner.title(theirs, day, "Goa"))
+        assertEquals("This is your copy. Nothing new can be added.", ReadOnlyBanner.body(theirs, "Goa"))
+        assertEquals("You deleted this group. Nothing new can be added.", GroupEndCopy.refused(yours))
+        assertEquals("This group was deleted. Nothing new can be added.", GroupEndCopy.refused(theirs))
+        assertTrue(ReadOnlyActions.offersForget(theirs))
+        assertFalse("a deletion lifts only through an accepted invite", GroupGone.lifts(theirs, listedConfirmed = true))
+        assertFalse("never made vaguer", GroupGone.marks(over = theirs))
+        // The deletion's notice says more than the tombstone: another member's copy learns the name; the deleter's stays.
+        assertEquals(ReadOnlyDTO("deleted", "Prithvi", at), Notices.deletedMark(notice("ow"), "me", theirs))
+        assertNull(Notices.deletedMark(notice("ow"), "ow", yours))
+        assertNull(Notices.deletedMark(notice("ow"), "me", ReadOnlyDTO("deleted", "Asha", at)))
     }
 
     /** D-252 fix wave (M2): a document that is there is "still shared" only for a member. The rules let a removed
@@ -160,10 +236,10 @@ class GroupEndTest {
     fun a_group_that_is_there_is_shared_only_with_a_member() {
         val member = mapOf("memberUids" to listOf("ow", "me"), "name" to "Goa")
         assertEquals(GroupGone.Read.EXISTS, GroupGone.read(Notices.GroupRead.Found(member), "me"))
-        assertEquals(GroupGone.Outcome.KEEP, GroupGone.decide(GroupGone.read(Notices.GroupRead.Found(member), "me")))
+        assertEquals(GroupGone.Outcome.KEEP, GroupGone.decide(GroupGone.read(Notices.GroupRead.Found(member), "me"), null))
         val removed = mapOf("memberUids" to listOf("ow"), "former" to mapOf("me" to mapOf("at" to at, "by" to "ow")))
         assertEquals(GroupGone.Read.FORMER, GroupGone.read(Notices.GroupRead.Found(removed), "me"))
-        assertEquals("removed, the notice lost", GroupGone.Outcome.READ_ONLY, GroupGone.decide(GroupGone.read(Notices.GroupRead.Found(removed), "me")))
+        assertEquals("removed, the notice lost", GroupGone.Outcome.READ_ONLY, GroupGone.decide(GroupGone.read(Notices.GroupRead.Found(removed), "me"), null))
         assertEquals("the owner is still in it", GroupGone.Read.EXISTS, GroupGone.read(Notices.GroupRead.Found(removed), "ow"))
         assertEquals(GroupGone.Read.NOT_MEMBER, GroupGone.read(Notices.GroupRead.Found(mapOf("memberUids" to listOf("ow"))), "me"))
         assertEquals("no member list: not shared", GroupGone.Read.NOT_MEMBER, GroupGone.read(Notices.GroupRead.Found(emptyMap()), "me"))
@@ -336,7 +412,11 @@ class GroupEndTest {
         )
         val check = cloud.substringAfter("private fun checkVanished(").substringBefore("\n    /** One `groupRoles` call")
         assertTrue("found", check.contains("private fun askVanished("))
-        assertTrue("the one read, the removal's own, for this account (M2)", check.contains("GroupGone.decide(GroupGone.read(groupRead(groupId), uid))"))
+        assertTrue("the one read, the removal's own, for this account (M2)", check.contains("val read = GroupGone.read(groupRead(groupId), uid)"))
+        // D-256 (decision 276): the tombstone only after a refused or missing group, and its mark from the decision.
+        assertTrue(check.contains("val tombstone = if (GroupGone.asksTombstone(read)) tombstoneRead(groupId, uid) else null"))
+        assertTrue(check.contains("val outcome = GroupGone.decide(read, tombstone)"))
+        assertTrue(check.contains("val copy = GroupGone.mark(outcome, tombstone, System.currentTimeMillis()) ?: return@launch"))
         // D-252 fix wave (M3): a listing like the last checked is passed by before anything is launched.
         val head = check.substringBefore("scope.launch {")
         assertTrue(head.contains("if (GroupGone.unchanged(listing, vanishListing)) return\n        vanishListing = listing"))
@@ -344,19 +424,31 @@ class GroupEndTest {
         assertTrue("a failed read or lift checks again", check.contains("if (seen == null || seen.again) synchronized(listenLock) { vanishListing = null }"))
         assertTrue("no answer: the next listing asks again", check.contains("vanishAsked.remove(groupId)\n                        vanishListing = null\n                        return@launch"))
         assertTrue(check.contains("if (!GroupGone.marks(over = store.readOnlyChecked()[groupId])) return@runCatching false"))
-        assertTrue(check.contains("store.markReadOnly(groupId, GroupGone.mark(System.currentTimeMillis()))"))
+        assertTrue(check.contains("store.markReadOnly(groupId, copy)"))
         assertTrue("never after sign-out", check.contains("if (groupsListener == null || Account.uid() != uid) return@launch"))
         assertTrue("listed again meanwhile: nothing", check.contains("groupId !in listedNow"))
         assertTrue(check.contains("GroupGone.toCheck(seen.held, seen.up, ids, seen.copies, noticed, vanishAsked)"))
         for (forbidden in listOf("forgetGroup", "forgetInVault", "rawKvSet(", "delete(")) {
             assertFalse("the check never deletes local data: $forbidden", check.contains(forbidden))
         }
-        // D-252 adds no new server read: the group read is the removal's (`groupRead`).
+        // D-252 adds no new server read: the group read is the removal's (`groupRead`). D-256 adds one: `tombstoneRead`,
+        // a deleted group's tombstone (the vanished check and ensureGroup share it).
         assertEquals(
-            "a record's existence, a group's existence, groupRead (removal and D-252 share it), the catch-up, and " +
-                "D-254 fix wave M1's approval read before parking (serverApproval)",
-            5, cloud.split("get(Source.SERVER)").size - 1,
+            "a record's existence, a group's existence, groupRead (removal and D-252 share it), the catch-up, " +
+                "D-254 fix wave M1's approval read before parking (serverApproval), and tombstoneRead",
+            6, cloud.split("get(Source.SERVER)").size - 1,
         )
+        // D-256: the tombstone read is bounded, from the server, and writes nothing; ensureGroup's refusal reads it.
+        val tomb = cloud.substringAfter("suspend fun tombstoneRead(").substringBefore("\n    /** D-256 (decision 276): after [ensureGroup]")
+        assertTrue(tomb.contains("kotlinx.coroutines.withTimeoutOrNull(GroupEnsure.READ_TIMEOUT_MS) {"))
+        assertTrue(tomb.contains("collection(\"deletedGroups\").document(groupId).get(Source.SERVER)"))
+        assertTrue(cloud.contains("if (state == GroupState.NOT_MEMBER) endIfDeleted(groupId, uid)\n        return state"))
+        val ends = cloud.substringAfter("private suspend fun endIfDeleted(").substringBefore("\n    }\n")
+        assertTrue(ends.contains("val mark = GroupGone.createRefused(tombstoneRead(groupId, uid), System.currentTimeMillis()) ?: return"))
+        assertTrue(ends.contains("if (!GroupGone.marks(over = store.readOnlyChecked()[groupId])) return@runCatching false"))
+        for (forbidden in listOf("forgetGroup", "forgetInVault", "rawKvSet(", "delete(", ".set(")) {
+            assertFalse("the tombstone path writes nothing but the mark: $forbidden", tomb.contains(forbidden) || ends.contains(forbidden))
+        }
         assertTrue("a new session sweeps again", cloud.contains("vanishAsked.clear()\n        listedNow = emptySet()\n        vanishListing = null"))
         val handle = cloud.substringAfter("                    Notices.Kind.DELETED -> {").substringBefore("                    Notices.Kind.ROLE, Notices.Kind.DECLINED -> {")
         assertTrue(handle.contains("Notices.deletedMark(item, uid, store.readOnlyChecked()[item.groupId])?.let {"))

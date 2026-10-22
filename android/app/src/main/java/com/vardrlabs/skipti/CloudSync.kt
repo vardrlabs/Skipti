@@ -452,7 +452,7 @@ object CloudSync {
         // D-235 (Android audit M2): offline, the write's Task never completes (it resolves on the server's
         // acknowledgement), and "Making an invite…" spun for good; bounded, it falls to the server read, which fails
         // fast offline and says OFFLINE.
-        return GroupEnsure.decide(
+        val state = GroupEnsure.decide(
             create = { doc.set(CloudRecords.groupDocument(name, uid)).awaitTask() },
             read = {
                 // It exists: readable means a member (the rules refuse anyone
@@ -469,6 +469,44 @@ object CloudSync {
                 }
             },
         )
+        // D-256 (decision 276): a create the rules refused because the group was deleted (its tombstone) ends here.
+        if (state == GroupState.NOT_MEMBER) endIfDeleted(groupId, uid)
+        return state
+    }
+
+    /** D-256 (decision 276): `deletedGroups/{g}` from the server, in bounded time, for the account [uid]: null when the
+     *  rules refuse it (not one of its accounts, or there is none: a missing tombstone reads as refused), when it is not
+     *  there, or with no answer. Only a read: nothing is written. */
+    suspend fun tombstoneRead(groupId: String, uid: String): GroupGone.Tombstone? =
+        kotlinx.coroutines.withTimeoutOrNull(GroupEnsure.READ_TIMEOUT_MS) {
+            try {
+                val snapshot = Cloud.db().collection("deletedGroups").document(groupId).get(Source.SERVER).awaitTask()
+                if (snapshot.exists()) GroupGone.tombstone(snapshot.data, uid) else null
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                null
+            }
+        }
+
+    /** D-256 (decision 276): after [ensureGroup] found the group neither creatable nor readable, its tombstone says
+     *  whether it was deleted; if so the copy turns read-only in the deletion's words ([GroupGone.createRefused]), its
+     *  listener stops and the screens read it again: its waiting records stay on this phone, never parked or sent, and
+     *  an invite stops at once. Only for the vault's own signed-in account, over an unmarked copy or a lost place. */
+    private suspend fun endIfDeleted(groupId: String, uid: String) {
+        val mark = GroupGone.createRefused(tombstoneRead(groupId, uid), System.currentTimeMillis()) ?: return
+        val (signedIn, store) = ready() ?: return
+        if (signedIn != uid) return
+        val marked = withContext(serial) {
+            runCatching {
+                if (!GroupGone.marks(over = store.readOnlyChecked()[groupId])) return@runCatching false
+                store.markReadOnly(groupId, mark)
+                true
+            }.getOrDefault(false)
+        }
+        if (!marked) return
+        synchronized(listenLock) { groupListeners?.remove(groupId) }
+        withContext(Dispatchers.Main) { SyncStatus.changed() }
     }
 
     // ---- D-194: down ----
@@ -619,10 +657,13 @@ object CloudSync {
         }
     }
 
-    /** The one read for a group [checkVanished] chose: the removal's own ([groupRead]), no new server read. */
+    /** The one read for a group [checkVanished] chose: the removal's own ([groupRead]). D-256 (decision 276): when it
+     *  says refused or not found, one more: the group's tombstone ([tombstoneRead]), which says it was deleted. */
     private fun askVanished(groupId: String, uid: String, store: LedgerStore) {
         scope.launch {
-            val outcome = GroupGone.decide(GroupGone.read(groupRead(groupId), uid))
+            val read = GroupGone.read(groupRead(groupId), uid)
+            val tombstone = if (GroupGone.asksTombstone(read)) tombstoneRead(groupId, uid) else null
+            val outcome = GroupGone.decide(read, tombstone)
             val mark = synchronized(listenLock) {
                 // Signed out, or listening as someone else, while it was asked: what it said does not count.
                 if (groupsListener == null || Account.uid() != uid) return@launch
@@ -633,7 +674,7 @@ object CloudSync {
                         vanishListing = null
                         return@launch
                     }
-                    GroupGone.Outcome.READ_ONLY -> {
+                    GroupGone.Outcome.READ_ONLY, GroupGone.Outcome.DELETED -> {
                         vanishAsked.remove(groupId)
                         // Listed again meanwhile: the newer word stands.
                         groupId !in listedNow
@@ -641,11 +682,12 @@ object CloudSync {
                 }
             }
             if (!mark) return@launch
+            val copy = GroupGone.mark(outcome, tombstone, System.currentTimeMillis()) ?: return@launch
             val marked = withContext(serial) {
                 runCatching {
                     // A notice marked it first: the newer word stands.
                     if (!GroupGone.marks(over = store.readOnlyChecked()[groupId])) return@runCatching false
-                    store.markReadOnly(groupId, GroupGone.mark(System.currentTimeMillis()))
+                    store.markReadOnly(groupId, copy)
                     true
                 }.getOrDefault(false)
             }

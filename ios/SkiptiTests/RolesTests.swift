@@ -2177,6 +2177,7 @@ final class GroupEndTests: XCTestCase {
         XCTAssertEqual(GroupEndCopy.refusedYouDeleted, "You deleted this group. Nothing new can be added.")
         XCTAssertEqual(GroupEndCopy.refusedDeleted, "This group was deleted. Nothing new can be added.")
         XCTAssertEqual(GroupEndCopy.refusedRemoved, "You were removed from this group. Nothing new can be added.")
+        XCTAssertEqual(GroupEndCopy.wasDeleted, "This group was deleted.")
         XCTAssertEqual(LedgerStore.ReadOnly.vanishedKind, "vanished", "stored in the vault: never renamed")
     }
 
@@ -2230,12 +2231,12 @@ final class GroupEndTests: XCTestCase {
     // MARK: 2. A group that left the listing
 
     func testTheOneReadDecides() {
-        XCTAssertEqual(GroupGone.decide(.refused), .readOnly)
-        XCTAssertEqual(GroupGone.decide(.notFound), .readOnly)
-        XCTAssertEqual(GroupGone.decide(.networkError), .retry, "no answer changes nothing")
-        XCTAssertEqual(GroupGone.decide(.exists), .keep)
-        XCTAssertEqual(GroupGone.decide(.former), .readOnly, "removed, the notice lost: the copy ends")
-        XCTAssertEqual(GroupGone.decide(.notMember), .readOnly)
+        XCTAssertEqual(GroupGone.decide(.refused, tombstone: nil), .readOnly)
+        XCTAssertEqual(GroupGone.decide(.notFound, tombstone: nil), .readOnly)
+        XCTAssertEqual(GroupGone.decide(.networkError, tombstone: nil), .retry, "no answer changes nothing")
+        XCTAssertEqual(GroupGone.decide(.exists, tombstone: nil), .keep)
+        XCTAssertEqual(GroupGone.decide(.former, tombstone: nil), .readOnly, "removed, the notice lost: the copy ends")
+        XCTAssertEqual(GroupGone.decide(.notMember, tombstone: nil), .readOnly)
         XCTAssertEqual(GroupGone.read(.missing, uid: "me"), .notFound)
         XCTAssertEqual(GroupGone.read(.refused, uid: "me"), .refused)
         XCTAssertEqual(GroupGone.read(nil, uid: "me"), .networkError)
@@ -2243,8 +2244,82 @@ final class GroupEndTests: XCTestCase {
         XCTAssertEqual(GroupGone.read(Notices.groupRead(forFirestoreCode: .permissionDenied), uid: "me"), .refused)
         XCTAssertEqual(GroupGone.read(Notices.groupRead(forFirestoreCode: .notFound), uid: "me"), .refused)
         for code: FirestoreErrorCode.Code in [.unavailable, .deadlineExceeded, .unauthenticated, .cancelled, .internal] {
-            XCTAssertEqual(GroupGone.decide(GroupGone.read(Notices.groupRead(forFirestoreCode: code), uid: "me")), .retry, "\(code)")
+            XCTAssertEqual(GroupGone.decide(GroupGone.read(Notices.groupRead(forFirestoreCode: code), uid: "me"), tombstone: nil), .retry, "\(code)")
         }
+    }
+
+    // MARK: D-256 (decision 276): the tombstone
+
+    private func tomb(_ by: Any?, at: Timestamp? = Timestamp(seconds: 1_800_000_000, nanoseconds: 0)) -> [String: Any] {
+        var d: [String: Any] = ["uids": ["ow", "me"]]
+        if let by { d["byUid"] = by }
+        if let at { d["deletedAt"] = at }
+        return d
+    }
+
+    /// The tombstone as the Function writes it: whose delete it was against this account, and its time.
+    func testATombstoneSaysWhoseDeleteItWas() {
+        let when = Date(timeIntervalSince1970: 1_800_000_000)
+        XCTAssertEqual(GroupGone.tombstone(tomb("ow"), uid: "ow"), GroupGone.Tombstone(byYou: true, at: when))
+        XCTAssertEqual(GroupGone.tombstone(tomb("ow"), uid: "me"), GroupGone.Tombstone(byYou: false, at: when))
+        XCTAssertEqual(GroupGone.tombstone(tomb("ow", at: nil), uid: "me"), GroupGone.Tombstone(byYou: false, at: nil), "no time: still a tombstone")
+        XCTAssertEqual(GroupGone.tombstone(tomb("ow"), uid: "")?.byYou, false, "no account: never yours")
+        XCTAssertNil(GroupGone.tombstone(nil, uid: "ow"), "refused, not there, or no answer")
+        XCTAssertNil(GroupGone.tombstone(tomb(nil), uid: "ow"), "no deleter: not one the Function wrote")
+        XCTAssertNil(GroupGone.tombstone(tomb(""), uid: ""), "an empty deleter")
+        XCTAssertNil(GroupGone.tombstone(tomb(7), uid: "ow"), "not text")
+    }
+
+    /// The tombstone is asked about only for a refused or missing group; with one, the copy is deleted; without one it
+    /// is the neutral copy as before; a group that is there, or no answer, never reads it.
+    func testATombstoneTurnsAGoneGroupIntoADeletedCopy() {
+        let mine = GroupGone.Tombstone(byYou: true, at: at), theirs = GroupGone.Tombstone(byYou: false, at: nil)
+        XCTAssertTrue(GroupGone.asksTombstone(.refused))
+        XCTAssertTrue(GroupGone.asksTombstone(.notFound))
+        for read: GroupGone.Read in [.exists, .former, .notMember, .networkError] {
+            XCTAssertFalse(GroupGone.asksTombstone(read), "\(read)")
+        }
+        XCTAssertEqual(GroupGone.decide(.refused, tombstone: mine), .deleted)
+        XCTAssertEqual(GroupGone.decide(.notFound, tombstone: theirs), .deleted)
+        XCTAssertEqual(GroupGone.decide(.refused, tombstone: nil), .readOnly, "no tombstone: the neutral copy")
+        XCTAssertEqual(GroupGone.decide(.former, tombstone: mine), .readOnly, "a document that is there was not deleted")
+        XCTAssertEqual(GroupGone.decide(.notMember, tombstone: mine), .readOnly)
+        XCTAssertEqual(GroupGone.decide(.exists, tombstone: mine), .keep)
+        XCTAssertEqual(GroupGone.decide(.networkError, tombstone: mine), .retry)
+        // The marks: "You deleted" on the deleter's phones, dated by the tombstone; another's names nobody.
+        let now = at.addingTimeInterval(3_600)
+        XCTAssertEqual(GroupGone.mark(for: .deleted, tombstone: mine, now: now),
+                       LedgerStore.ReadOnly(kind: "deleted", by: "", at: at, byYou: true))
+        XCTAssertEqual(GroupGone.mark(for: .deleted, tombstone: theirs, now: now),
+                       LedgerStore.ReadOnly(kind: "deleted", by: "", at: now, byYou: nil), "no time: now")
+        XCTAssertEqual(GroupGone.mark(for: .readOnly, tombstone: nil, now: now), GroupGone.mark(at: now))
+        XCTAssertNil(GroupGone.mark(for: .keep, tombstone: mine, now: now))
+        XCTAssertNil(GroupGone.mark(for: .retry, tombstone: mine, now: now))
+        // ensureGroup's refused create: only a tombstone marks (someone else's id, or the approval gate, marks nothing).
+        XCTAssertEqual(GroupGone.createRefused(mine, now: now), LedgerStore.ReadOnly(kind: "deleted", by: "", at: at, byYou: true))
+        XCTAssertEqual(GroupGone.createRefused(theirs, now: now), LedgerStore.ReadOnly(kind: "deleted", by: "", at: now))
+        XCTAssertNil(GroupGone.createRefused(nil, now: now))
+    }
+
+    /// A tombstone's copy says how it ended: "You deleted {group}." on the deleter's phones, "This group was deleted."
+    /// elsewhere (no name), refusing writes in the deletion's words; the notice, when it comes, names the deleter.
+    func testATombstonesCopyReadsAsADeletion() {
+        let day = "October 13, 2026", now = at
+        let yours = GroupGone.createRefused(GroupGone.Tombstone(byYou: true, at: at), now: now)!
+        let theirs = GroupGone.createRefused(GroupGone.Tombstone(byYou: false, at: at), now: now)!
+        XCTAssertEqual(ReadOnlyBanner.title(mark: yours, date: day, group: "Goa"), "You deleted Goa.")
+        XCTAssertEqual(ReadOnlyBanner.title(mark: theirs, date: day, group: "Goa"), "This group was deleted.")
+        XCTAssertEqual(ReadOnlyBanner.body(mark: theirs, group: "Goa"), "This is your copy. Nothing new can be added.")
+        XCTAssertEqual(GroupEndCopy.refused(yours), "You deleted this group. Nothing new can be added.")
+        XCTAssertEqual(GroupEndCopy.refused(theirs), "This group was deleted. Nothing new can be added.")
+        XCTAssertTrue(ReadOnlyActions.offersForget(theirs))
+        XCTAssertFalse(GroupGone.lifts(theirs, listedConfirmed: true), "a deletion lifts only through an accepted invite")
+        XCTAssertFalse(GroupGone.marks(over: theirs), "never made vaguer")
+        // The deletion's notice says more than the tombstone: another member's copy learns the name; the deleter's stays.
+        XCTAssertEqual(Notices.deletedMark(notice(byUid: "ow"), uid: "me", existing: theirs),
+                       LedgerStore.ReadOnly(kind: "deleted", by: "Prithvi", at: at))
+        XCTAssertNil(Notices.deletedMark(notice(byUid: "ow"), uid: "ow", existing: yours))
+        XCTAssertNil(Notices.deletedMark(notice(byUid: "ow"), uid: "me", existing: LedgerStore.ReadOnly(kind: "deleted", by: "Asha", at: at)))
     }
 
     /// D-252 fix wave (M2): a document that is there is "still shared" only for a member. The rules let a removed
@@ -2254,10 +2329,10 @@ final class GroupEndTests: XCTestCase {
         let removedAt = Timestamp(seconds: 1_760_000_000, nanoseconds: 0)
         let member: [String: Any] = ["memberUids": ["ow", "me"], "name": "Goa"]
         XCTAssertEqual(GroupGone.read(.found(member), uid: "me"), .exists)
-        XCTAssertEqual(GroupGone.decide(GroupGone.read(.found(member), uid: "me")), .keep)
+        XCTAssertEqual(GroupGone.decide(GroupGone.read(.found(member), uid: "me"), tombstone: nil), .keep)
         let removed: [String: Any] = ["memberUids": ["ow"], "former": ["me": ["at": removedAt, "by": "ow"]]]
         XCTAssertEqual(GroupGone.read(.found(removed), uid: "me"), .former)
-        XCTAssertEqual(GroupGone.decide(GroupGone.read(.found(removed), uid: "me")), .readOnly, "removed, the notice lost")
+        XCTAssertEqual(GroupGone.decide(GroupGone.read(.found(removed), uid: "me"), tombstone: nil), .readOnly, "removed, the notice lost")
         XCTAssertEqual(GroupGone.read(.found(removed), uid: "ow"), .exists, "the owner is still in it")
         XCTAssertEqual(GroupGone.read(.found(["memberUids": ["ow"]]), uid: "me"), .notMember)
         XCTAssertEqual(GroupGone.read(.found([:]), uid: "me"), .notMember, "no member list: not shared")
@@ -2406,8 +2481,12 @@ final class GroupEndTests: XCTestCase {
             .components(separatedBy: "\n    }\n").first)
         let check = vanished + (try XCTUnwrap(cloud.components(separatedBy: "private func askVanished(").dropFirst().first?
             .components(separatedBy: "\n    }\n").first))
-        XCTAssertTrue(check.contains("GroupGone.decide(GroupGone.read(await Self.groupRead(groupId), uid: uid))"),
+        XCTAssertTrue(check.contains("let read = GroupGone.read(await Self.groupRead(groupId), uid: uid)"),
                       "the one read, the removal's own, for this account (M2)")
+        // D-256 (decision 276): the tombstone only after a refused or missing group, and its mark from the decision.
+        XCTAssertTrue(check.contains("let tombstone = GroupGone.asksTombstone(read) ? await Self.tombstoneRead(groupId, uid: uid) : nil"))
+        XCTAssertTrue(check.contains("let outcome = GroupGone.decide(read, tombstone: tombstone)"))
+        XCTAssertTrue(check.contains("let mark = GroupGone.mark(for: outcome, tombstone: tombstone, now: Date()) else { return }"))
         // D-252 fix wave (M3): a listing like the last checked is passed by before anything is read, and the vault is
         // read off the main thread: nothing before the detached read touches the store.
         let head = try XCTUnwrap(vanished.components(separatedBy: "Task { @MainActor in").first)
@@ -2418,16 +2497,30 @@ final class GroupEndTests: XCTestCase {
         XCTAssertTrue(check.contains("sync.vanishAsked.remove(groupId)\n                sync.vanishListing = nil\n                return"),
                       "no answer: the next listing asks again")
         XCTAssertTrue(check.contains("guard GroupGone.marks(over: try store.readOnlyChecked()[groupId]) else { return }"))
-        XCTAssertTrue(check.contains("try store.markReadOnly(groupId, GroupGone.mark(at: Date()))"))
+        XCTAssertTrue(check.contains("try store.markReadOnly(groupId, mark)"))
         XCTAssertTrue(check.contains("guard sync.groupsListener != nil, Account.shared.uid == uid else { return }"), "never after sign-out")
-        XCTAssertTrue(check.contains("guard !sync.listedNow.contains(groupId) else { return }"), "listed again meanwhile: nothing")
+        XCTAssertTrue(check.contains("guard !sync.listedNow.contains(groupId),\n                      let mark"), "listed again meanwhile: nothing")
         for forbidden in ["forgetGroup", "forgetInVault", "kvSet(", "removeItem"] {
             XCTAssertFalse(check.contains(forbidden), "the check never deletes local data: \(forbidden)")
         }
         // D-235/D-244 style count: the group read is the removal's (`groupRead`); D-252 adds no new server read. D-254
         // fix wave (M1) adds one: `serverApproval`, the account's approval read before a permission refusal is parked.
-        XCTAssertEqual(cloud.components(separatedBy: "getDocument(source: .server)").count - 1, 4,
-                       "ensureGroup's existence read, the record existence read, groupRead (removal and D-252 share it), serverApproval")
+        // D-256 adds one: `tombstoneRead`, a deleted group's tombstone (the vanished check and ensureGroup share it).
+        XCTAssertEqual(cloud.components(separatedBy: "getDocument(source: .server)").count - 1, 5,
+                       "ensureGroup's existence read, the record existence read, groupRead (removal and D-252 share it), serverApproval, tombstoneRead")
+        // D-256: the tombstone read is bounded, from the server, and writes nothing; ensureGroup's refusal reads it.
+        let tomb = try XCTUnwrap(cloud.components(separatedBy: "static func tombstoneRead(").dropFirst().first?
+            .components(separatedBy: "\n    }\n").first)
+        XCTAssertTrue(tomb.contains("await Bounded.value(seconds: groupReadTimeout, otherwise: nil) {"))
+        XCTAssertTrue(tomb.contains("collection(\"deletedGroups\").document(groupId).getDocument(source: .server)"))
+        XCTAssertTrue(cloud.contains("if state == .notMember { await endIfDeleted(groupId, uid: uid) }\n        return state"))
+        let ends = try XCTUnwrap(cloud.components(separatedBy: "private static func endIfDeleted(").dropFirst().first?
+            .components(separatedBy: "\n    }\n").first)
+        XCTAssertTrue(ends.contains("guard let mark = GroupGone.createRefused(await tombstoneRead(groupId, uid: uid), now: Date()),"))
+        XCTAssertTrue(ends.contains("guard GroupGone.marks(over: try ready.store.readOnlyChecked()[groupId]) else { return }"))
+        for forbidden in ["forgetGroup", "forgetInVault", "kvSet(", "removeItem", "setData", "delete("] {
+            XCTAssertFalse(tomb.contains(forbidden) || ends.contains(forbidden), "the tombstone path writes nothing but the mark: \(forbidden)")
+        }
         XCTAssertTrue(cloud.contains("vanishAsked = []\n        listedNow = []\n        vanishListing = nil"), "a new session sweeps again")
         let handle = try XCTUnwrap(cloud.components(separatedBy: "                case .deleted:").dropFirst().first?
             .components(separatedBy: "                case .role, .declined:").first)

@@ -1491,8 +1491,8 @@ async function endInvites(groupId, uids) {
 }
 
 // Deletes the group for everyone (the owner alone), open balances or not:
-// every member keeps a read-only copy on their phone. The group goes first;
-// only once it is gone is anyone told. Its picture and invitations go too,
+// every member keeps a read-only copy on their phone. Its tombstone, then the
+// group; only once it is gone is anyone told. Its picture and invitations go too,
 // and neither failing fails the deletion.
 export const deleteGroup = onCall(CALLABLE, async (request) => {
   const uid = await approvedCaller(request);
@@ -1509,6 +1509,11 @@ export const deleteGroup = onCall(CALLABLE, async (request) => {
   const members = group.memberUids ?? [];
   const everyone = [...members, ...Object.keys(group.former ?? {})];
   const byName = await nameOf(uid);
+  // D-256 (decision 276): the tombstone first. It refuses a group create with this id for good (firestore.rules) and
+  // tells every account that held the group that it was deleted. Written before the delete: a delete that fails midway
+  // already has it (the safe side), and a tombstone that cannot be written fails the call before anything is deleted.
+  await db.collection('deletedGroups').doc(groupId)
+    .set({ ...groups.tombstoneOf(members, group.former, uid), deletedAt: FieldValue.serverTimestamp() });
   await db.recursiveDelete(ref);
   await store.deleteGroupPicture(groupId);
   // The group is gone: nothing below may fail the call. Each step is its own.

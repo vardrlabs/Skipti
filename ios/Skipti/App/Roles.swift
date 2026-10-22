@@ -374,6 +374,8 @@ enum GroupEndCopy {
     static let noLongerShared = "This group is no longer shared with you."
     /// The banner's line for a group this account deleted, on every one of its phones.
     static func youDeleted(_ group: String) -> String { "You deleted \(group)." }
+    /// D-256 (decision 276): the banner's line for a deletion known only from its tombstone (no deleter's name in it).
+    static let wasDeleted = "This group was deleted."
     /// A write into a read-only copy, refused before anything is written (`LedgerStore.Placing.ReadOnlyCopy`).
     static let refusedVanished = "This group is no longer shared with you. Nothing new can be added."
     static let refusedYouDeleted = "You deleted this group. Nothing new can be added."
@@ -700,14 +702,64 @@ enum GroupGone {
         case readOnly
         /// Nothing changes now; asked again at the next listing change or launch.
         case retry
+        /// D-256 (decision 276): its tombstone says it was deleted: a deleted copy ("You deleted {group}." when this
+        /// account deleted it, else "This group was deleted.").
+        case deleted
     }
 
-    static func decide(_ read: Read) -> Outcome {
+    /// D-256 (decision 276): what `deletedGroups/{g}` said to this account. Read once, from the server, only when the
+    /// group's own read was refused or not found (`asksTombstone`). `deleteGroup` writes it (whose delete it was, the
+    /// accounts that held the group, the time; no name); the rules let only those accounts read it.
+    struct Tombstone: Equatable, Sendable {
+        /// This account deleted it (the tombstone's `byUid`).
+        let byYou: Bool
+        /// When (`deletedAt`); nil when the document has no time.
+        let at: Date?
+    }
+
+    /// The tombstone as the Function writes it, for the account `uid`; nil for none (refused, not there, no answer:
+    /// nil data) or one without its deleter.
+    static func tombstone(_ data: [String: Any]?, uid: String) -> Tombstone? {
+        guard let data, let by = data["byUid"] as? String, !by.isEmpty else { return nil }
+        return Tombstone(byYou: !uid.isEmpty && by == uid, at: (data["deletedAt"] as? Timestamp)?.dateValue())
+    }
+
+    /// D-256: the tombstone is asked about only when the group's read says it is gone for this account (refused or
+    /// not found); a document that is there was not deleted, and no answer asks nothing more.
+    static func asksTombstone(_ read: Read) -> Bool {
+        read == .refused || read == .notFound
+    }
+
+    /// The decision. D-256 (decision 276): a refused or missing group with a tombstone this account may read was
+    /// deleted, in those words; without one (refused, not there, no answer) it is the neutral copy, as before.
+    static func decide(_ read: Read, tombstone: Tombstone?) -> Outcome {
         switch read {
-        case .refused, .notFound, .former, .notMember: return .readOnly
+        case .refused, .notFound: return tombstone == nil ? .readOnly : .deleted
+        case .former, .notMember: return .readOnly
         case .networkError: return .retry
         case .exists: return .keep
         }
+    }
+
+    /// The mark an outcome leaves, or nil when it leaves none: the vanished mark, or (D-256) a deleted copy from the
+    /// tombstone: no deleter's name, "You deleted" when it was this account's, dated by the tombstone (else `now`).
+    static func mark(for outcome: Outcome, tombstone: Tombstone?, now: Date) -> LedgerStore.ReadOnly? {
+        switch outcome {
+        case .readOnly: return mark(at: now)
+        case .deleted:
+            guard let tombstone else { return mark(at: now) }
+            return LedgerStore.ReadOnly(kind: "deleted", by: "", at: tombstone.at ?? now, byYou: tombstone.byYou ? true : nil)
+        case .keep, .retry: return nil
+        }
+    }
+
+    /// D-256 (decision 276): `ensureGroup`'s create was refused and its read refused too (`.notMember`). With a
+    /// tombstone this account may read, the group was deleted: the copy ends read-only, in the deletion's words, so its
+    /// waiting records stay on the phone (never parked, never sent again) and an invite stops at once. Without one
+    /// (someone else's group with this id, or the approval gate) nothing is marked, as before.
+    static func createRefused(_ tombstone: Tombstone?, now: Date) -> LedgerStore.ReadOnly? {
+        guard let tombstone else { return nil }
+        return mark(for: .deleted, tombstone: tombstone, now: now)
     }
 
     /// The read as `CloudSync.groupRead` gives it (the D-210 removal read: permission-denied and not-found are
@@ -907,8 +959,10 @@ final class Notices: ObservableObject {
     /// keeps its mark (the deleting phone's own, or an earlier notice's: a second phone of the deleting account handles
     /// the same notice once, and the deleting phone ignores its own); a vanished, removed, lost-place or unmarked group
     /// becomes a deleted copy. The notice's `byUid` against this account's uid says whose delete it was: "You deleted".
+    /// D-256 (decision 276): a deleted mark from a tombstone that names nobody (not this account's) is told the
+    /// deleter's name by the notice when it comes.
     nonisolated static func deletedMark(_ item: Item, uid: String?, existing: LedgerStore.ReadOnly?) -> LedgerStore.ReadOnly? {
-        if existing?.kind == "deleted" { return nil }
+        if let existing, existing.kind == "deleted", !(existing.by.isEmpty && existing.byYou != true) { return nil }
         let yours = uid.map { !$0.isEmpty && item.byUid == $0 } ?? false
         return LedgerStore.ReadOnly(kind: "deleted", by: item.byName, at: item.at, byYou: yours ? true : nil)
     }
