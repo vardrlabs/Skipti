@@ -58,7 +58,8 @@ export async function signOutPhones(db, uid, only = null) {
  *  the last member, with the group's picture; D-210: a group it owned is
  *  handed on; D-211: its previews in the groups it leaves are deleted), its
  *  profile with records, phones, invitations and notices, its
- *  username, its counters, its unused link invites, and the Auth user.
+ *  username, its counters, its approval (D-254), its unused link invites,
+ *  and the Auth user.
  *  `bucket` is the Storage bucket of group pictures (the tests pass the
  *  emulator's), or null for the default, resolved only when a picture is
  *  deleted (deleteGroupPicture). An open removal request about a group's new
@@ -110,6 +111,8 @@ export async function purgeAccount(db, auth, uid, bucket = null) {
   }
   await db.recursiveDelete(userRef);
   await db.collection('limits').doc(uid).delete();
+  // D-254: its approval (a request's name and email, or a decision) goes too.
+  await db.collection('approvals').doc(uid).delete();
   const links = await db.collection('invites').where('createdBy', '==', uid).get();
   // D-235 (L2): its unused links go with their in-app copies on the accounts
   // they were sent to; the used ones it made, and the ones it used, stay as
@@ -161,26 +164,37 @@ export async function closeRequestsAbout(db, groupId, uid) {
  *  says the run stopped at its bound with accounts still due (logged as a
  *  warning by the caller). */
 export async function purgeDue(db, auth, nowMs = Date.now(), bucket = null, { pageSize = 50, maxPages = 10 } = {}) {
-  const due = db.collection('users').where('deleteAt', '<=', Timestamp.fromMillis(nowMs))
-    .orderBy('deleteAt').limit(pageSize);
   const purged = [];
   const failed = [];
-  let last = null;
-  for (let page = 0; page < maxPages; page += 1) {
-    const dueNow = await (last ? due.startAfter(last) : due).get();
-    for (const d of dueNow.docs) {
-      if (!account.due(d.data(), nowMs)) continue;
-      try {
-        await purgeAccount(db, auth, d.id, bucket);
-        purged.push(d.id);
-      } catch (e) {
-        logger.warn('purge: an account failed', { code: typeof e?.code === 'string' || typeof e?.code === 'number' ? e.code : 'other' });
-        failed.push(d.id);
+  let more = false;
+  // D-254: the profiles past their grace, then the approvals documents that
+  // carry the marker of an account with no profile (a pending or denied one,
+  // index.js requestDeletion); each with its own bound of pages. An account
+  // already taken in this run is not taken twice.
+  for (const collection of ['users', 'approvals']) {
+    const due = db.collection(collection).where('deleteAt', '<=', Timestamp.fromMillis(nowMs))
+      .orderBy('deleteAt').limit(pageSize);
+    let last = null;
+    let done = false;
+    for (let page = 0; page < maxPages; page += 1) {
+      const dueNow = await (last ? due.startAfter(last) : due).get();
+      for (const d of dueNow.docs) {
+        if (!account.due(d.data(), nowMs) || purged.includes(d.id) || failed.includes(d.id)) continue;
+        try {
+          await purgeAccount(db, auth, d.id, bucket);
+          purged.push(d.id);
+        } catch (e) {
+          logger.warn('purge: an account failed', { code: typeof e?.code === 'string' || typeof e?.code === 'number' ? e.code : 'other' });
+          failed.push(d.id);
+        }
       }
+      if (dueNow.size < pageSize) { done = true; break; }
+      last = dueNow.docs[dueNow.docs.length - 1];
     }
-    if (dueNow.size < pageSize) return { purged, failed, more: false };
-    last = dueNow.docs[dueNow.docs.length - 1];
+    if (!done) {
+      const left = await (last ? due.startAfter(last) : due).limit(1).get();
+      more = more || !left.empty;
+    }
   }
-  const left = await (last ? due.startAfter(last) : due).limit(1).get();
-  return { purged, failed, more: !left.empty };
+  return { purged, failed, more };
 }

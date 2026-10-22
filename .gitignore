@@ -37,6 +37,8 @@ keystore.properties
 .env
 .env.*
 !.env.example
+# D-254: the Functions emulator's params (an emulator-only admin uid, never uploaded).
+!firebase/functions/.env.local
 
 # Editor
 .idea/

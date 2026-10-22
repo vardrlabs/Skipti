@@ -16,12 +16,14 @@ import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { onDocumentCreated } from 'firebase-functions/v2/firestore';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { setGlobalOptions } from 'firebase-functions/v2';
+import { defineString } from 'firebase-functions/params';
 import * as logger from 'firebase-functions/logger';
 import * as push from './push.js';
 import * as people from './people.js';
 import * as account from './account.js';
 import * as store from './account-store.js';
 import * as groups from './groups.js';
+import * as approvals from './approvals.js';
 
 initializeApp();
 // D-197: a runtime identity of their own (Cloud Datastore User, Firebase Cloud
@@ -138,6 +140,22 @@ function signedIn(request) {
   return uid;
 }
 
+/** D-254 (decisions 228, 229): the approval gate. The FIRST statement of
+ *  every callable but approvals.EXEMPT (leaving, asking for approval, and the
+ *  admin's own call), before any argument is read, so an unapproved caller
+ *  learns nothing else: signed in, then approvals/{uid} must say approved.
+ *  Refused with permission-denied and `details.approval` (none, pending or
+ *  denied), which the phones turn into their waiting words. The rules refuse
+ *  the same accounts every client write; approvals.test.mjs reads this file
+ *  and proves every other onCall starts here. */
+async function approvedCaller(request) {
+  const uid = signedIn(request);
+  const snapshot = await db.collection('approvals').doc(uid).get();
+  const refused = approvals.refusal(approvals.stateOf(snapshot.exists ? snapshot.data() : null));
+  if (refused) throw new HttpsError('permission-denied', refused.message, refused.details);
+  return uid;
+}
+
 function token(data) {
   const value = data?.token;
   if (typeof value !== 'string' || !TOKEN.test(value)) throw new HttpsError('invalid-argument', 'Not an invite.');
@@ -159,7 +177,7 @@ async function openInvite(tokenValue) {
 // only the link carries. D-218: a place a member already holds is refused
 // (ALREADY_EXISTS) before anything is written; acceptInvite stays the guarantee.
 export const createInvite = onCall(CALLABLE, async (request) => {
-  const uid = signedIn(request);
+  const uid = await approvedCaller(request);
   const fields = inviteFields(request.data ?? {});
   await memberGroup(fields.groupId, uid);
   const groupName = await refuseHeld(fields.groupId, fields.memberId);
@@ -241,7 +259,7 @@ async function makeInvite(fields, uid) {
 
 // What the invite is, before joining: who asked, which group, as whom.
 export const peekInvite = onCall(CALLABLE, async (request) => {
-  signedIn(request);
+  await approvedCaller(request);
   const { invite } = await openInvite(token(request.data));
   return {
     groupName: invite.groupName, memberName: invite.memberName, inviterName: invite.inviterName ?? null,
@@ -270,7 +288,7 @@ const NOT_YOURS = 'Not yours to share.';
 // `record` of the first D-230 draft is refused the same way (nothing shipped
 // it). A well formed record that fails a check is skipped and logged.
 export const acceptInvite = onCall(CALLABLE, async (request) => {
-  const uid = signedIn(request);
+  const uid = await approvedCaller(request);
   const tokenValue = token(request.data);
   if (request.data?.record != null) throw new HttpsError('invalid-argument', 'records are not valid');
   const records = request.data?.records ?? null;
@@ -444,7 +462,7 @@ async function charge(uid, kind, amount = 1) {
 // is complete (its participantId is written by the phone's registration).
 // `first: true` is the step's save, which never spends the change.
 export const setUsername = onCall(CALLABLE, async (request) => {
-  const uid = signedIn(request);
+  const uid = await approvedCaller(request);
   const raw = request.data?.username;
   const wanted = raw == null || raw === '' ? null : people.username(raw);
   if (wanted?.error) throw new HttpsError('invalid-argument', 'username ' + wanted.error);
@@ -475,7 +493,7 @@ export const setUsername = onCall(CALLABLE, async (request) => {
 // C2: whether a username is free for you, while you type. Shape and the
 // blocklist cost no read; never says which word matched.
 export const checkUsername = onCall(CALLABLE, async (request) => {
-  const uid = signedIn(request);
+  const uid = await approvedCaller(request);
   await charge(uid, 'checks');
   const wanted = people.username(request.data?.username);
   if (wanted.error) return { available: false, reason: wanted.error === 'unavailable' ? 'unavailable' : 'shape' };
@@ -486,7 +504,7 @@ export const checkUsername = onCall(CALLABLE, async (request) => {
 
 // C2: up to three free usernames built from a name ("Suggested for you").
 export const suggestUsernames = onCall(CALLABLE, async (request) => {
-  const uid = signedIn(request);
+  const uid = await approvedCaller(request);
   const name = request.data?.name;
   if (typeof name !== 'string' || name.length > 80) throw new HttpsError('invalid-argument', 'name is not valid');
   await charge(uid, 'checks');
@@ -523,7 +541,7 @@ async function profileUpdate(uid, fields, refuse = true) {
 // Whether people can find you; the email fingerprint is kept only while you
 // are findable, and only for your VERIFIED sign-in email (never the app's word).
 export const setFindable = onCall(CALLABLE, async (request) => {
-  const uid = signedIn(request);
+  const uid = await approvedCaller(request);
   const on = request.data?.findable;
   if (typeof on !== 'boolean') throw new HttpsError('invalid-argument', 'findable is not a boolean');
   const fingerprint = people.profileHash(on, request.auth.token);
@@ -534,7 +552,7 @@ export const setFindable = onCall(CALLABLE, async (request) => {
 // One username, or up to 500 email fingerprints; only findable people, never
 // the caller. Nothing it is sent is stored.
 export const findPeople = onCall(CALLABLE, async (request) => {
-  const uid = signedIn(request);
+  const uid = await approvedCaller(request);
   const asked = people.search(request.data);
   if (asked.error) throw new HttpsError('invalid-argument', asked.error);
   await charge(uid, 'searches');
@@ -565,7 +583,7 @@ export const findPeople = onCall(CALLABLE, async (request) => {
 // D-218: a place a member already holds is refused (ALREADY_EXISTS), after
 // the target checks and before the daily quota is charged.
 export const inviteUser = onCall(CALLABLE, async (request) => {
-  const uid = signedIn(request);
+  const uid = await approvedCaller(request);
   const fields = inviteFields(request.data ?? {});
   const target = request.data?.targetUid;
   if (typeof target !== 'string' || !UID.test(target) || target === uid) {
@@ -624,7 +642,7 @@ async function deliverInvite(fn, fields, uid, target, groupName) {
 // D-218: a place a member already holds is refused (ALREADY_EXISTS), after
 // the target checks and before the daily quota is charged.
 export const inviteKnown = onCall(CALLABLE, async (request) => {
-  const uid = signedIn(request);
+  const uid = await approvedCaller(request);
   const fields = inviteFields(request.data ?? {});
   const viaGroupId = request.data?.viaGroupId;
   const participantId = request.data?.participantId;
@@ -691,24 +709,44 @@ export const signOutEverywhere = onCall(CALLABLE, async (request) => {
 });
 
 // SPEC §4.4: deletion in 7 days unless you sign in and keep the account;
-// every phone is signed out now.
+// every phone is signed out now. D-254: exempt from the approval gate
+// (leaving never waits). An account with no profile (a pending or denied
+// one: the rules refuse a profile until approval) carries the marker on
+// approvals/{uid} instead, and the purge takes it the same way.
 export const requestDeletion = onCall(CALLABLE, async (request) => {
   const uid = signedIn(request);
   const at = account.deletionAt(Date.now());
-  await profileUpdate(uid, { deleteAt: Timestamp.fromMillis(at), deletionRequestedAt: FieldValue.serverTimestamp() });
+  const marker = { deleteAt: Timestamp.fromMillis(at), deletionRequestedAt: FieldValue.serverTimestamp() };
+  if (!(await profileUpdate(uid, marker, false))) {
+    await db.collection('approvals').doc(uid).set(marker, { merge: true });
+  }
   await store.signOutPhones(db, uid);
   await getAuth().revokeRefreshTokens(uid);
   return { deleteAt: at };
 });
 
+// D-254: exempt from the gate. Keep my account clears the marker wherever it
+// is: the profile, and the approvals document (one that held only the marker,
+// never a request, goes).
 export const cancelDeletion = onCall(CALLABLE, async (request) => {
   const uid = signedIn(request);
-  // No profile: nothing was asked, nothing to cancel.
+  // No profile: nothing was asked there, nothing to cancel.
   await profileUpdate(uid, { deleteAt: FieldValue.delete(), deletionRequestedAt: FieldValue.delete() }, false);
+  const ref = db.collection('approvals').doc(uid);
+  await db.runTransaction(async (tx) => {
+    const snapshot = await tx.get(ref);
+    if (!snapshot.exists) return;
+    const data = snapshot.data();
+    if (!('deleteAt' in data) && !('deletionRequestedAt' in data)) return;
+    if (approvals.stateOf(data) === 'none') tx.delete(ref);
+    else tx.update(ref, { deleteAt: FieldValue.delete(), deletionRequestedAt: FieldValue.delete() });
+  });
   return { cancelled: true };
 });
 
-// Once a day: every account past its grace is deleted for good.
+// Once a day: every account past its grace is deleted for good (D-254: an
+// approvals/{uid} marker of an account with no profile too; every purge
+// deletes approvals/{uid}).
 export const purgeDeletedAccounts = onSchedule({ schedule: 'every 24 hours', timeoutSeconds: 1800 }, async () => {
   // D-210: one account that fails is logged and the others still go
   // (account-store.js purgeDue); it is tried again tomorrow. D-235 (L4): a
@@ -1173,7 +1211,7 @@ function managers(group) {
 // `admins`) and `you` (the caller's), so a phone compares a row's place, not a
 // participant id that may be another phone's "you".
 export const groupRoles = onCall(CALLABLE, async (request) => {
-  const uid = signedIn(request);
+  const uid = await approvedCaller(request);
   const { ref } = await groupOf(hex(request.data?.groupId, 'groupId'), uid);
   // One snapshot: the group, its log, the invites and the profiles are all read
   // in this read-only transaction, so `owner`, `admins` and `places` agree.
@@ -1210,7 +1248,7 @@ async function holderFor(tx, ref, group, member, you) {
 // owner). Only someone with an account in the group can be one. The phone
 // names the place (`member`) and its account's participant id (`you`).
 export const setAdmin = onCall(CALLABLE, async (request) => {
-  const uid = signedIn(request);
+  const uid = await approvedCaller(request);
   const data = request.data ?? {};
   const groupId = hex(data.groupId, 'groupId');
   const member = hex(data.member, 'member');
@@ -1243,7 +1281,7 @@ export const setAdmin = onCall(CALLABLE, async (request) => {
 // account's participant id (`you`), as for setAdmin. An open request to
 // remove the new owner is closed: nobody asks to remove the owner.
 export const makeOwner = onCall(CALLABLE, async (request) => {
-  const uid = signedIn(request);
+  const uid = await approvedCaller(request);
   const data = request.data ?? {};
   const groupId = hex(data.groupId, 'groupId');
   const member = hex(data.member, 'member');
@@ -1274,7 +1312,7 @@ export const makeOwner = onCall(CALLABLE, async (request) => {
 // owner's). One open request per person. The asker, the owner, the admins
 // and the person named see it.
 export const requestRemoval = onCall(CALLABLE, async (request) => {
-  const uid = signedIn(request);
+  const uid = await approvedCaller(request);
   const data = request.data ?? {};
   const groupId = hex(data.groupId, 'groupId');
   const member = hex(data.member, 'member');
@@ -1317,7 +1355,7 @@ export const requestRemoval = onCall(CALLABLE, async (request) => {
 // is an admin): the request and its notices go; the asker and the person
 // are told.
 export const declineRemoval = onCall(CALLABLE, async (request) => {
-  const uid = signedIn(request);
+  const uid = await approvedCaller(request);
   const data = request.data ?? {};
   const groupId = hex(data.groupId, 'groupId');
   const member = hex(data.member, 'member');
@@ -1354,7 +1392,7 @@ export const declineRemoval = onCall(CALLABLE, async (request) => {
 // which phones can never write, and the person's account leaves the members
 // for `former`, so they keep reading what was written up to now.
 export const removeMember = onCall(CALLABLE, async (request) => {
-  const uid = signedIn(request);
+  const uid = await approvedCaller(request);
   const data = request.data ?? {};
   const groupId = hex(data.groupId, 'groupId');
   const member = hex(data.member, 'member');
@@ -1457,7 +1495,7 @@ async function endInvites(groupId, uids) {
 // only once it is gone is anyone told. Its picture and invitations go too,
 // and neither failing fails the deletion.
 export const deleteGroup = onCall(CALLABLE, async (request) => {
-  const uid = signedIn(request);
+  const uid = await approvedCaller(request);
   const data = request.data ?? {};
   const groupId = hex(data.groupId, 'groupId');
   text(data.groupName, 80, 'groupName'); // checked as before; notices use the server's (D-235 M2)
@@ -1495,7 +1533,7 @@ export const deleteGroup = onCall(CALLABLE, async (request) => {
 // (groups.checkAdoptedRecords). Written in one transaction, all or nothing;
 // a record id already in the log is ALREADY_EXISTS (a retry: done).
 export const adoptRemovals = onCall(CALLABLE, async (request) => {
-  const uid = signedIn(request);
+  const uid = await approvedCaller(request);
   const data = request.data ?? {};
   const groupId = hex(data.groupId, 'groupId');
   if (groups.checkAdoptedRecords(data.records, groupId)) throw new HttpsError('invalid-argument', 'records are not valid');
@@ -1538,7 +1576,7 @@ export const adoptRemovals = onCall(CALLABLE, async (request) => {
 // retry of an earlier record, or an older one from a phone that is behind,
 // writes nothing and deletes nothing newer. Phones never act on a deletion.
 export const shareProfile = onCall(CALLABLE, async (request) => {
-  const uid = signedIn(request);
+  const uid = await approvedCaller(request);
   const data = request.data ?? {};
   const self = await db.collection('users').doc(uid).get();
   const name = self.exists && typeof self.data().name === 'string' ? self.data().name : null;
@@ -1615,7 +1653,7 @@ export const shareProfile = onCall(CALLABLE, async (request) => {
 // is declared above acceptInvite, which refuses a held place with it too.
 
 export const shareAliases = onCall(CALLABLE, async (request) => {
-  const uid = signedIn(request);
+  const uid = await approvedCaller(request);
   const data = request.data ?? {};
   if (groups.checkAliasRecords(data.records)) throw new HttpsError('invalid-argument', 'records are not valid');
   await charge(uid, 'aliases', data.records.length);
@@ -1797,7 +1835,7 @@ async function heldMarkDoc(tx, ref, g, r, a, uid, yous, refuse, events, index) {
 // `places` quota (decision 55) before anything is read. The answer is the
 // same skip for every refusal; the log carries only the code.
 export const sharePlaces = onCall(CALLABLE, async (request) => {
-  const uid = signedIn(request);
+  const uid = await approvedCaller(request);
   const data = request.data ?? {};
   if (groups.checkHeldRecords(data.records)) throw new HttpsError('invalid-argument', 'records are not valid');
   await charge(uid, 'places', data.records.length);
@@ -1850,4 +1888,114 @@ export const sharePlaces = onCall(CALLABLE, async (request) => {
     }
   }
   return { shared, skipped };
+});
+
+// ---- D-254 (decisions 228, 229): the approval gate. Decisions in
+// approvals.js (tested directly); approvals.test.mjs runs these against the
+// emulators. ----
+
+// The admin's uid (the founder's Google account). The emulators read it from
+// functions/.env.local (an emulator-only id, never uploaded: `*.local`);
+// production has no committed value, so the deploy asks for it, and an empty
+// value refuses every admin call (approvals.isAdmin).
+const ADMIN_UID = defineString('SKIPTI_ADMIN_UID', {
+  description: 'The Firebase uid of the one account allowed to approve accounts (the founder, signed in with Google).',
+});
+
+// An account asks to be approved: signed in is enough (exempt from the gate).
+// No document: a pending request with the phone's name and platform, the
+// token's provider and, only when verified, its email. Pending: the name,
+// platform and email refreshed, never requestedAt. Decided: nothing changes.
+export const requestApproval = onCall(CALLABLE, async (request) => {
+  const uid = signedIn(request);
+  const fields = approvals.requestFields(request.data, request.auth.token);
+  if (fields.error) throw new HttpsError('invalid-argument', fields.error);
+  const ref = db.collection('approvals').doc(uid);
+  return db.runTransaction(async (tx) => {
+    const snapshot = await tx.get(ref);
+    const data = snapshot.exists ? snapshot.data() : null;
+    const write = approvals.requestWrite(data, fields, FieldValue.serverTimestamp(), FieldValue.delete());
+    if (write) tx.set(ref, write, { merge: true });
+    return { state: write?.state ?? approvals.stateOf(data) };
+  });
+});
+
+/** The approvals documents in state `state`, as admin rows, newest first. */
+async function rowsIn(state) {
+  const found = await db.collection('approvals').where('state', '==', state).limit(approvals.LIST_MAX).get();
+  return approvals.newestFirst(found.docs.map((d) => approvals.row(d.id, d.data())), approvals.LIST_MAX);
+}
+
+/** Every profile (users/{uid}) with its approvals document, a page of
+ *  approvals.BATCH at a time: `each(uid, profile, approvalData)` per page. */
+async function eachProfilePage(each) {
+  const base = db.collection('users').orderBy(FieldPath.documentId()).limit(approvals.BATCH);
+  let last = null;
+  for (;;) {
+    const page = await (last ? base.startAfter(last) : base).get();
+    if (page.empty) return;
+    const refs = page.docs.map((d) => db.collection('approvals').doc(d.id));
+    const docs = await db.getAll(...refs);
+    await each(page.docs.map((d, i) => ({ uid: d.id, profile: d.data(), approval: docs[i].exists ? docs[i].data() : null })));
+    if (page.size < approvals.BATCH) return;
+    last = page.docs[page.docs.length - 1];
+  }
+}
+
+// The admin page's one call. Only the configured admin uid signed in with
+// Google (approvals.isAdmin); anyone else is refused with their own uid.
+// Exempt from the gate: this check is its own. CORS: the admin site's two
+// hosts, and localhost for the page served locally against the emulators.
+export const adminApprovals = onCall({ ...CALLABLE, cors: approvals.ADMIN_ORIGINS }, async (request) => {
+  const uid = signedIn(request);
+  if (!approvals.isAdmin(uid, request.auth.token?.firebase?.sign_in_provider, ADMIN_UID.value())) {
+    throw new HttpsError('permission-denied', approvals.NOT_ADMIN, { uid });
+  }
+  const action = request.data?.action;
+  const marker = db.collection('meta').doc('approvalsMigration');
+  if (action === 'list') {
+    const [pending, approved, denied] = await Promise.all(approvals.STATES.map(rowsIn));
+    const migrated = (await marker.get()).exists;
+    let toMigrate = 0;
+    if (!migrated) {
+      await eachProfilePage(async (rows) => { toMigrate += rows.filter((r) => approvals.migrates(r.approval)).length; });
+    }
+    return { pending, approved, denied, migrated, toMigrate };
+  }
+  if (action === 'decide') {
+    const d = approvals.decision(request.data, UID);
+    if (d.error) throw new HttpsError('invalid-argument', d.error);
+    const ref = db.collection('approvals').doc(d.uid);
+    await db.runTransaction(async (tx) => {
+      const snapshot = await tx.get(ref);
+      if (!snapshot.exists) throw new HttpsError('not-found', 'No such account.');
+      tx.update(ref, { state: d.state, decidedAt: FieldValue.serverTimestamp(), decidedBy: 'admin' });
+    });
+    return { ok: true };
+  }
+  if (action === 'migrate') {
+    // Once: every profile made before the gate is approved, so nobody already
+    // testing is locked out; a pending one too (its profile predates the
+    // gate); a denied one is left alone. Batches of at most 400 writes.
+    if ((await marker.get()).exists) throw new HttpsError('failed-precondition', 'The migration has already run.');
+    let count = 0;
+    await eachProfilePage(async (rows) => {
+      const batch = db.batch();
+      let n = 0;
+      for (const r of rows) {
+        if (!approvals.migrates(r.approval)) continue;
+        const requestedAt = r.approval?.requestedAt
+          ?? (typeof r.profile.createdAt?.toMillis === 'function' ? r.profile.createdAt : FieldValue.serverTimestamp());
+        batch.set(db.collection('approvals').doc(r.uid), {
+          state: 'approved', requestedAt, decidedAt: FieldValue.serverTimestamp(), decidedBy: 'migration',
+        }, { merge: true });
+        n += 1;
+      }
+      if (n) await batch.commit();
+      count += n;
+    });
+    await marker.set({ count, at: FieldValue.serverTimestamp() });
+    return { approved: count };
+  }
+  throw new HttpsError('invalid-argument', 'action is not valid');
 });

@@ -26,14 +26,31 @@ function idToken(uid, claims = {}) {
   })}.`;
 }
 
+// D-254: every account these tests act as is approved (approvals/{uid},
+// seeded once a test, before its first call), so each refusal here is refused
+// for the reason it names, never for the approval gate; a call the gate
+// refuses anyway fails the test outright. The gate's own tests are in
+// approvals.test.mjs.
+let approvedUids = new Set();
+async function approve(uid) {
+  if (!uid || approvedUids.has(uid)) return;
+  approvedUids.add(uid);
+  await seed(`approvals/${uid}`, { state: 'approved' });
+}
+function notGated(name, uid, body) {
+  if (body.error?.details?.approval) throw new Error(`${name}: ${uid} was refused by the approval gate (${body.error.details.approval})`);
+}
+
 /** Calls a Function; resolves to { result } or { error: status }. */
 async function call(name, uid, data, claims) {
+  await approve(uid);
   const r = await fetch(`${FN}/${name}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...(uid && { authorization: `Bearer ${idToken(uid, claims)}` }) },
     body: JSON.stringify({ data }),
   });
   const body = await r.json();
+  notGated(name, uid, body);
   return body.error ? { error: body.error.status } : { result: body.result };
 }
 
@@ -108,6 +125,7 @@ const NAME = { ow: 'Ola', ad: 'Asha', me: 'Mo', sam: 'Sam', eve: 'Eve' };
 beforeEach(async () => {
   const r = await fetch(`${FS}/emulator/v1/${DOCS}`, { method: 'DELETE' });
   assert.equal(r.status, 200, 'the Firestore emulator must be running');
+  approvedUids = new Set(); // D-254: the wipe took the approvals too
   await seed(`groups/${G}`, { name: 'Goa trip', memberUids: ['ow', 'ad', 'me', 'sam'], createdBy: 'ow', admins: ['ad'], createdAt: new Date() });
   for (const uid of ['ow', 'ad', 'me', 'sam', 'eve']) await seed(`users/${uid}`, { participantId: P[uid], name: NAME[uid] });
   await op('ow', 0, { op: 'create', group: G, name: 'Goa trip', settlementCurrency: 'INR',
@@ -385,6 +403,7 @@ test('removeMember: someone who never joined leaves the history; membership is u
 
 const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
 async function upload(uid, path) {
+  await approve(uid);
   const r = await fetch(`${ST}/v0/b/${BUCKET}/o?name=${encodeURIComponent(path)}`, {
     method: 'POST', headers: { 'content-type': 'image/jpeg', authorization: `Firebase ${idToken(uid)}` }, body: jpeg,
   });
@@ -1671,12 +1690,14 @@ test('D-229 review M4: a place held by an accepted invite (decision 36) aliases 
 
 /** acceptInvite as the phones see it: the status, message and details. */
 async function accept(uid, token, records = null) {
+  await approve(uid);
   const r = await fetch(`${FN}/acceptInvite`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken(uid)}` },
     body: JSON.stringify({ data: records ? { token, records } : { token } }),
   });
   const body = await r.json();
+  notGated('acceptInvite', uid, body);
   return body.error ? { status: body.error.status, message: body.error.message, details: body.error.details ?? null }
     : { result: body.result };
 }
