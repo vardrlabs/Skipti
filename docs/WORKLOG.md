@@ -21,6 +21,10 @@ Newest session log entries go at the bottom.
 - Store art final: `.drafts/u32/out/` (App Store 10, Play 8 at 1440 x 2560, feature graphic, README set, contact sheet);
   clips `.drafts/u33/clips/`; films (his to scrub, export and upload): App Store https://claude.ai/artifact/2WKHKqqoZATSNEL9rWxsgU,
   Play https://claude.ai/artifact/Bp78HQrtXhEr1bY3R1FCVC.
+- Films revised (decisions 263, 264): end line "Split the bill, not the friendship."; four App Store scores to choose
+  from: a folk-pop 2WKHKqqoZATSNEL9rWxsgU, b Nordic SAd7gc4nS5TsfrT8ZfXaWB, c synth JzEQPYTYbHZ6c9eeykG6Hx, d lo-fi
+  Fc1bbR8GH4s2ptwLpKo4E3 (claude.ai/artifact/...); Play promo Bp78HQrtXhEr1bY3R1FCVC on (a) until he picks, then both
+  films take his pick. None seen or heard by us (no signed-in browser).
 - Next: Fable's pass (opener `.drafts/stop/fable-opener-4.md`), then the 0.5.1 deploy day with him, then going public
   (U35). The Developer Tools exemption goes OFF before any signed or store build (his action).
 
