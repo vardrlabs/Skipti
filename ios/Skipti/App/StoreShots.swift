@@ -15,7 +15,7 @@ import SwiftUI
 
 /// One group of the seed: you ("Sam") plus `people`. D-253: `id` is the group's FIXED id (32 hex), the same on both
 /// shells, so its tile takes the same tone on every capture (`GroupTone.of` reads the id's first byte; a created group's
-/// id is random, and D-251's two captures drew Goa trip and Flat 4B in different tones on the two phones).
+/// id is random, and D-251's two captures drew two groups in different tones on the two phones).
 struct StoreShotsGroup: Equatable {
     let name: String
     let currency: String
@@ -51,9 +51,9 @@ enum StoreShots {
     /// Decision 173: the sample "you".
     static let you = "Sam"
     static let justMe = "Just me"
-    static let justMeCurrency = "INR"
-    /// A row at least this old keeps its own date (Goa trip's first expense, a year back: its milestone is due); every
-    /// other row is placed inside the current month, so every shot reads "this month".
+    static let justMeCurrency = "USD"
+    /// A row at least this old keeps its own date (Hamptons weekend's first expense, a year back: its milestone is
+    /// due); every other row is placed inside the current month, so every shot reads "this month".
     static let keptFromHours = 8_760
     /// The vault an earlier launch left is moved here once (never deleted); a later launch's seeded vault is replaced.
     static let asideSuffix = ".before-store-shots"
@@ -63,41 +63,41 @@ enum StoreShots {
     // MARK: - The seed table (Android's StoreShots.kt holds the same rows, in the same order)
 
     static let groups: [StoreShotsGroup] = [
-        .init(name: "Goa trip", currency: "INR", people: ["Meera", "Kiran", "Rahul"], id: "02bce5d13d3c6bbabded0d02baa8f38f"),
-        .init(name: "Flat 4B", currency: "INR", people: ["Meera"], id: "05812af319f50da19936d26e14706717"),
-        .init(name: "Paris", currency: "EUR", people: ["Ana"], id: "018c2fba8e39317ca229dc1fd08e9854"),
+        .init(name: "Hamptons weekend", currency: "USD", people: ["Emma", "Jake", "Olivia"], id: "02bce5d13d3c6bbabded0d02baa8f38f"),
+        .init(name: "Apartment 4B", currency: "USD", people: ["Emma"], id: "05812af319f50da19936d26e14706717"),
+        .init(name: "Brooklyn dinners", currency: "USD", people: ["Ben"], id: "018c2fba8e39317ca229dc1fd08e9854"),
     ]
 
     static let expenses: [StoreShotsExpense] = [
-        .init(ledger: "Goa trip", payer: "Sam", minor: 1_200_000, note: "Villa deposit", category: "Stay/Rentals", hoursAgo: 8_784, among: []),
-        .init(ledger: "Goa trip", payer: "Meera", minor: 3_360_000, note: "Flights to Goa", category: "Travel/Flights", hoursAgo: 236, among: []),
-        .init(ledger: "Goa trip", payer: "Sam", minor: 2_400_000, note: "Villa, three nights", category: "Stay/Rentals", hoursAgo: 212, among: []),
-        .init(ledger: "Goa trip", payer: "Kiran", minor: 240_000, note: "Scooters", category: "Travel/Rentals", hoursAgo: 190, among: []),
-        .init(ledger: "Goa trip", payer: "Rahul", minor: 186_000, note: "Fish thali lunch", category: "Food & Drink/Restaurants", hoursAgo: 166, among: []),
-        .init(ledger: "Goa trip", payer: "Kiran", minor: 80_000, note: "Fuel", category: "Travel/Fuel", hoursAgo: 160, among: []),
-        .init(ledger: "Goa trip", payer: "Sam", minor: 360_000, note: "Parasailing", category: "Entertainment/Events", hoursAgo: 140, among: ["Sam", "Kiran", "Rahul"]),
-        .init(ledger: "Goa trip", payer: "Meera", minor: 154_000, note: "Groceries for the villa", category: "Food & Drink/Groceries", hoursAgo: 118, among: []),
-        .init(ledger: "Goa trip", payer: "Rahul", minor: 212_000, note: "Beach shack lunch", category: "Food & Drink/Restaurants", hoursAgo: 94, among: []),
-        .init(ledger: "Goa trip", payer: "Meera", minor: 64_000, note: "Coffee and cake", category: "Food & Drink/Cafés", hoursAgo: 70, among: []),
-        .init(ledger: "Goa trip", payer: "Meera", minor: 480_000, note: "Seafood dinner", category: "Food & Drink/Restaurants", hoursAgo: 30, among: []),
-        .init(ledger: "Goa trip", payer: "Kiran", minor: 140_000, note: "Cab to the airport", category: "Travel/Taxis", hoursAgo: 6, among: []),
-        .init(ledger: "Flat 4B", payer: "Sam", minor: 4_200_000, note: "Rent", category: "Bills & Utilities/Rent", hoursAgo: 250, among: []),
-        .init(ledger: "Flat 4B", payer: "Sam", minor: 184_000, note: "Electricity", category: "Bills & Utilities/Electricity", hoursAgo: 100, among: []),
-        .init(ledger: "Flat 4B", payer: "Meera", minor: 99_800, note: "Internet", category: "Bills & Utilities/Internet", hoursAgo: 75, among: []),
-        .init(ledger: "Flat 4B", payer: "Sam", minor: 236_000, note: "Groceries", category: "Food & Drink/Groceries", hoursAgo: 44, among: []),
-        .init(ledger: "Paris", payer: "Ana", minor: 12_800, note: "Museum passes", category: "Entertainment/Events", hoursAgo: 72, among: []),
-        .init(ledger: "Paris", payer: "Sam", minor: 9_600, note: "Dinner in the Marais", category: "Food & Drink/Restaurants", hoursAgo: 50, among: []),
-        .init(ledger: "Paris", payer: "Ana", minor: 3_400, note: "Metro tickets", category: "Transport/Public transit", hoursAgo: 28, among: []),
-        .init(ledger: "Just me", payer: "Sam", minor: 245_000, note: "Weekly groceries", category: "Food & Drink/Groceries", hoursAgo: 5, among: []),
-        .init(ledger: "Just me", payer: "Sam", minor: 18_000, note: "Filter coffee", category: "Food & Drink/Cafés", hoursAgo: 26, among: []),
-        .init(ledger: "Just me", payer: "Sam", minor: 86_000, note: "Cab home", category: "Travel/Taxis", hoursAgo: 52, among: []),
-        .init(ledger: "Just me", payer: "Sam", minor: 489_900, note: "Running shoes", category: "Shopping/Clothing", hoursAgo: 120, among: []),
-        .init(ledger: "Just me", payer: "Sam", minor: 250_000, note: "Concert tickets", category: "Entertainment/Events", hoursAgo: 168, among: []),
-        .init(ledger: "Just me", payer: "Sam", minor: 180_000, note: "Gym membership", category: "Health/Fitness", hoursAgo: 200, among: []),
+        .init(ledger: "Hamptons weekend", payer: "Sam", minor: 40_000, note: "Beach house deposit", category: "Stay/Rentals", hoursAgo: 8_784, among: []),
+        .init(ledger: "Hamptons weekend", payer: "Emma", minor: 112_000, note: "Train tickets", category: "Travel/Flights", hoursAgo: 236, among: []),
+        .init(ledger: "Hamptons weekend", payer: "Sam", minor: 96_000, note: "Beach house, three nights", category: "Stay/Rentals", hoursAgo: 212, among: []),
+        .init(ledger: "Hamptons weekend", payer: "Jake", minor: 8_000, note: "Bike rentals", category: "Travel/Rentals", hoursAgo: 190, among: []),
+        .init(ledger: "Hamptons weekend", payer: "Olivia", minor: 6_200, note: "Lobster rolls", category: "Food & Drink/Restaurants", hoursAgo: 166, among: []),
+        .init(ledger: "Hamptons weekend", payer: "Jake", minor: 4_500, note: "Gas", category: "Travel/Fuel", hoursAgo: 160, among: []),
+        .init(ledger: "Hamptons weekend", payer: "Sam", minor: 18_000, note: "Kayak tour", category: "Entertainment/Events", hoursAgo: 140, among: ["Sam", "Jake", "Olivia"]),
+        .init(ledger: "Hamptons weekend", payer: "Emma", minor: 5_400, note: "Groceries for the house", category: "Food & Drink/Groceries", hoursAgo: 118, among: []),
+        .init(ledger: "Hamptons weekend", payer: "Olivia", minor: 9_600, note: "Beach club lunch", category: "Food & Drink/Restaurants", hoursAgo: 94, among: []),
+        .init(ledger: "Hamptons weekend", payer: "Emma", minor: 2_400, note: "Coffee and pastries", category: "Food & Drink/Cafés", hoursAgo: 70, among: []),
+        .init(ledger: "Hamptons weekend", payer: "Emma", minor: 21_000, note: "Seafood dinner", category: "Food & Drink/Restaurants", hoursAgo: 30, among: []),
+        .init(ledger: "Hamptons weekend", payer: "Jake", minor: 5_800, note: "Ride to the station", category: "Travel/Taxis", hoursAgo: 6, among: []),
+        .init(ledger: "Apartment 4B", payer: "Sam", minor: 380_000, note: "Rent", category: "Bills & Utilities/Rent", hoursAgo: 250, among: []),
+        .init(ledger: "Apartment 4B", payer: "Sam", minor: 14_200, note: "Electricity", category: "Bills & Utilities/Electricity", hoursAgo: 100, among: []),
+        .init(ledger: "Apartment 4B", payer: "Emma", minor: 7_000, note: "Internet", category: "Bills & Utilities/Internet", hoursAgo: 75, among: []),
+        .init(ledger: "Apartment 4B", payer: "Sam", minor: 18_600, note: "Groceries", category: "Food & Drink/Groceries", hoursAgo: 44, among: []),
+        .init(ledger: "Brooklyn dinners", payer: "Ben", minor: 6_400, note: "Pizza night", category: "Food & Drink/Restaurants", hoursAgo: 72, among: []),
+        .init(ledger: "Brooklyn dinners", payer: "Sam", minor: 14_800, note: "Dinner in Williamsburg", category: "Food & Drink/Restaurants", hoursAgo: 50, among: []),
+        .init(ledger: "Brooklyn dinners", payer: "Ben", minor: 4_600, note: "Tacos", category: "Food & Drink/Restaurants", hoursAgo: 28, among: []),
+        .init(ledger: "Just me", payer: "Sam", minor: 14_200, note: "Weekly groceries", category: "Food & Drink/Groceries", hoursAgo: 5, among: []),
+        .init(ledger: "Just me", payer: "Sam", minor: 650, note: "Cold brew", category: "Food & Drink/Cafés", hoursAgo: 26, among: []),
+        .init(ledger: "Just me", payer: "Sam", minor: 2_800, note: "Cab home", category: "Travel/Taxis", hoursAgo: 52, among: []),
+        .init(ledger: "Just me", payer: "Sam", minor: 14_000, note: "Running shoes", category: "Shopping/Clothing", hoursAgo: 120, among: []),
+        .init(ledger: "Just me", payer: "Sam", minor: 12_000, note: "Concert tickets", category: "Entertainment/Events", hoursAgo: 168, among: []),
+        .init(ledger: "Just me", payer: "Sam", minor: 8_900, note: "Gym membership", category: "Health/Fitness", hoursAgo: 200, among: []),
     ]
 
     static let settlements: [StoreShotsSettlement] = [
-        .init(ledger: "Goa trip", from: "Rahul", to: "Sam", minor: 300_000, hoursAgo: 20),
+        .init(ledger: "Hamptons weekend", from: "Olivia", to: "Sam", minor: 15_000, hoursAgo: 20),
     ]
 
     // MARK: - Arguments

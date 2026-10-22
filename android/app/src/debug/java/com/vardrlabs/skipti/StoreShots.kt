@@ -41,8 +41,8 @@ import uniffi.skipti_core.ffiCreateNamedGroup
 
 /** One group of the seed: you ("Sam") plus [people]. */
 /** D-253: [id] is the group's FIXED id (32 hex), iOS's own, so its tile takes the same tone on every capture
- *  (`GroupTone.of` reads the id's first byte; a created group's id is random, and D-251's two captures drew Goa trip
- *  and Flat 4B in different tones on the two phones). */
+ *  (`GroupTone.of` reads the id's first byte; a created group's id is random, and D-251's two captures drew two
+ *  groups in different tones on the two phones). */
 data class StoreShotsGroup(val name: String, val currency: String, val people: List<String>, val id: String)
 
 /** One expense of the seed. [ledger] is a group's name or "Just me"; [category] is "Parent/Leaf" in core's default
@@ -67,9 +67,9 @@ object StoreShots {
     /** Decision 173: the sample "you". */
     const val YOU = "Sam"
     const val JUST_ME = "Just me"
-    const val JUST_ME_CURRENCY = "INR"
-    /** A row at least this old keeps its own date (Goa trip's first expense, a year back: its milestone is due); every
-     *  other row is placed inside the current month, so every shot reads "this month". */
+    const val JUST_ME_CURRENCY = "USD"
+    /** A row at least this old keeps its own date (Hamptons weekend's first expense, a year back: its milestone is
+     *  due); every other row is placed inside the current month, so every shot reads "this month". */
     const val KEPT_FROM_HOURS = 8_760
     /** The vault an earlier launch left is moved here once (never deleted); a later launch's seeded vault is replaced. */
     const val ASIDE_SUFFIX = ".before-store-shots"
@@ -81,41 +81,41 @@ object StoreShots {
     // ---- The seed table (iOS's StoreShots.swift holds the same rows, in the same order) ----
 
     val GROUPS = listOf(
-        StoreShotsGroup("Goa trip", "INR", listOf("Meera", "Kiran", "Rahul"), "02bce5d13d3c6bbabded0d02baa8f38f"),
-        StoreShotsGroup("Flat 4B", "INR", listOf("Meera"), "05812af319f50da19936d26e14706717"),
-        StoreShotsGroup("Paris", "EUR", listOf("Ana"), "018c2fba8e39317ca229dc1fd08e9854"),
+        StoreShotsGroup("Hamptons weekend", "USD", listOf("Emma", "Jake", "Olivia"), "02bce5d13d3c6bbabded0d02baa8f38f"),
+        StoreShotsGroup("Apartment 4B", "USD", listOf("Emma"), "05812af319f50da19936d26e14706717"),
+        StoreShotsGroup("Brooklyn dinners", "USD", listOf("Ben"), "018c2fba8e39317ca229dc1fd08e9854"),
     )
 
     val EXPENSES = listOf(
-        StoreShotsExpense("Goa trip", "Sam", 1_200_000, "Villa deposit", "Stay/Rentals", 8_784, listOf()),
-        StoreShotsExpense("Goa trip", "Meera", 3_360_000, "Flights to Goa", "Travel/Flights", 236, listOf()),
-        StoreShotsExpense("Goa trip", "Sam", 2_400_000, "Villa, three nights", "Stay/Rentals", 212, listOf()),
-        StoreShotsExpense("Goa trip", "Kiran", 240_000, "Scooters", "Travel/Rentals", 190, listOf()),
-        StoreShotsExpense("Goa trip", "Rahul", 186_000, "Fish thali lunch", "Food & Drink/Restaurants", 166, listOf()),
-        StoreShotsExpense("Goa trip", "Kiran", 80_000, "Fuel", "Travel/Fuel", 160, listOf()),
-        StoreShotsExpense("Goa trip", "Sam", 360_000, "Parasailing", "Entertainment/Events", 140, listOf("Sam", "Kiran", "Rahul")),
-        StoreShotsExpense("Goa trip", "Meera", 154_000, "Groceries for the villa", "Food & Drink/Groceries", 118, listOf()),
-        StoreShotsExpense("Goa trip", "Rahul", 212_000, "Beach shack lunch", "Food & Drink/Restaurants", 94, listOf()),
-        StoreShotsExpense("Goa trip", "Meera", 64_000, "Coffee and cake", "Food & Drink/Cafés", 70, listOf()),
-        StoreShotsExpense("Goa trip", "Meera", 480_000, "Seafood dinner", "Food & Drink/Restaurants", 30, listOf()),
-        StoreShotsExpense("Goa trip", "Kiran", 140_000, "Cab to the airport", "Travel/Taxis", 6, listOf()),
-        StoreShotsExpense("Flat 4B", "Sam", 4_200_000, "Rent", "Bills & Utilities/Rent", 250, listOf()),
-        StoreShotsExpense("Flat 4B", "Sam", 184_000, "Electricity", "Bills & Utilities/Electricity", 100, listOf()),
-        StoreShotsExpense("Flat 4B", "Meera", 99_800, "Internet", "Bills & Utilities/Internet", 75, listOf()),
-        StoreShotsExpense("Flat 4B", "Sam", 236_000, "Groceries", "Food & Drink/Groceries", 44, listOf()),
-        StoreShotsExpense("Paris", "Ana", 12_800, "Museum passes", "Entertainment/Events", 72, listOf()),
-        StoreShotsExpense("Paris", "Sam", 9_600, "Dinner in the Marais", "Food & Drink/Restaurants", 50, listOf()),
-        StoreShotsExpense("Paris", "Ana", 3_400, "Metro tickets", "Transport/Public transit", 28, listOf()),
-        StoreShotsExpense("Just me", "Sam", 245_000, "Weekly groceries", "Food & Drink/Groceries", 5, listOf()),
-        StoreShotsExpense("Just me", "Sam", 18_000, "Filter coffee", "Food & Drink/Cafés", 26, listOf()),
-        StoreShotsExpense("Just me", "Sam", 86_000, "Cab home", "Travel/Taxis", 52, listOf()),
-        StoreShotsExpense("Just me", "Sam", 489_900, "Running shoes", "Shopping/Clothing", 120, listOf()),
-        StoreShotsExpense("Just me", "Sam", 250_000, "Concert tickets", "Entertainment/Events", 168, listOf()),
-        StoreShotsExpense("Just me", "Sam", 180_000, "Gym membership", "Health/Fitness", 200, listOf()),
+        StoreShotsExpense("Hamptons weekend", "Sam", 40_000, "Beach house deposit", "Stay/Rentals", 8_784, listOf()),
+        StoreShotsExpense("Hamptons weekend", "Emma", 112_000, "Train tickets", "Travel/Flights", 236, listOf()),
+        StoreShotsExpense("Hamptons weekend", "Sam", 96_000, "Beach house, three nights", "Stay/Rentals", 212, listOf()),
+        StoreShotsExpense("Hamptons weekend", "Jake", 8_000, "Bike rentals", "Travel/Rentals", 190, listOf()),
+        StoreShotsExpense("Hamptons weekend", "Olivia", 6_200, "Lobster rolls", "Food & Drink/Restaurants", 166, listOf()),
+        StoreShotsExpense("Hamptons weekend", "Jake", 4_500, "Gas", "Travel/Fuel", 160, listOf()),
+        StoreShotsExpense("Hamptons weekend", "Sam", 18_000, "Kayak tour", "Entertainment/Events", 140, listOf("Sam", "Jake", "Olivia")),
+        StoreShotsExpense("Hamptons weekend", "Emma", 5_400, "Groceries for the house", "Food & Drink/Groceries", 118, listOf()),
+        StoreShotsExpense("Hamptons weekend", "Olivia", 9_600, "Beach club lunch", "Food & Drink/Restaurants", 94, listOf()),
+        StoreShotsExpense("Hamptons weekend", "Emma", 2_400, "Coffee and pastries", "Food & Drink/Cafés", 70, listOf()),
+        StoreShotsExpense("Hamptons weekend", "Emma", 21_000, "Seafood dinner", "Food & Drink/Restaurants", 30, listOf()),
+        StoreShotsExpense("Hamptons weekend", "Jake", 5_800, "Ride to the station", "Travel/Taxis", 6, listOf()),
+        StoreShotsExpense("Apartment 4B", "Sam", 380_000, "Rent", "Bills & Utilities/Rent", 250, listOf()),
+        StoreShotsExpense("Apartment 4B", "Sam", 14_200, "Electricity", "Bills & Utilities/Electricity", 100, listOf()),
+        StoreShotsExpense("Apartment 4B", "Emma", 7_000, "Internet", "Bills & Utilities/Internet", 75, listOf()),
+        StoreShotsExpense("Apartment 4B", "Sam", 18_600, "Groceries", "Food & Drink/Groceries", 44, listOf()),
+        StoreShotsExpense("Brooklyn dinners", "Ben", 6_400, "Pizza night", "Food & Drink/Restaurants", 72, listOf()),
+        StoreShotsExpense("Brooklyn dinners", "Sam", 14_800, "Dinner in Williamsburg", "Food & Drink/Restaurants", 50, listOf()),
+        StoreShotsExpense("Brooklyn dinners", "Ben", 4_600, "Tacos", "Food & Drink/Restaurants", 28, listOf()),
+        StoreShotsExpense("Just me", "Sam", 14_200, "Weekly groceries", "Food & Drink/Groceries", 5, listOf()),
+        StoreShotsExpense("Just me", "Sam", 650, "Cold brew", "Food & Drink/Cafés", 26, listOf()),
+        StoreShotsExpense("Just me", "Sam", 2_800, "Cab home", "Travel/Taxis", 52, listOf()),
+        StoreShotsExpense("Just me", "Sam", 14_000, "Running shoes", "Shopping/Clothing", 120, listOf()),
+        StoreShotsExpense("Just me", "Sam", 12_000, "Concert tickets", "Entertainment/Events", 168, listOf()),
+        StoreShotsExpense("Just me", "Sam", 8_900, "Gym membership", "Health/Fitness", 200, listOf()),
     )
 
     val SETTLEMENTS = listOf(
-        StoreShotsSettlement("Goa trip", "Rahul", "Sam", 300_000, 20),
+        StoreShotsSettlement("Hamptons weekend", "Olivia", "Sam", 15_000, 20),
     )
 
     // ---- Arguments ----
