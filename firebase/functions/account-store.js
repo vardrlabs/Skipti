@@ -154,8 +154,11 @@ export async function approveFromBeforeGate(db, uids) {
       const createdAt = profiles[i].data().createdAt;
       const requestedAt = approval?.requestedAt
         ?? (typeof createdAt?.toMillis === 'function' ? createdAt : FieldValue.serverTimestamp());
+      // D-254 look fix 4: the profile's name, so the admin page names the account.
+      const name = approvals.profileName(profiles[i].data());
       tx.set(refs[i], {
         state: 'approved', requestedAt, decidedAt: FieldValue.serverTimestamp(), decidedBy: 'migration',
+        ...(name && { name }),
       }, { merge: true });
       n += 1;
     });

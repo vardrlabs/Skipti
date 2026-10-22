@@ -232,3 +232,118 @@ test('the migration banner shows while profiles wait for it, not until the first
   assert.match(adminScript, /\$\("migrate"\)\.hidden = n === 0;/);
   assert.doesNotMatch(adminScript, /r\.migrated/, 'the marker decides nothing on the page');
 });
+
+// ---- D-254 look fixes 4 and 5: the admin page's script, run. A small stand-in DOM (no dependency) holds the page's
+// elements by id; the script runs in its own context on localhost (emulator mode), signs in, and lists `LISTED`. ----
+
+class Node {
+  constructor(tag, id = null, hidden = false) {
+    Object.assign(this, { tag, id, hidden, children: [], attrs: {}, dataset: {}, listeners: {}, className: '', type: '',
+      disabled: false, open: false, value: '' });
+    this._text = '';
+  }
+  get textContent() { return this._text + this.children.map((c) => c.textContent).join(''); }
+  set textContent(t) { this._text = String(t); this.children = []; }
+  append(...nodes) { this.children.push(...nodes); }
+  replaceChildren(...nodes) { this._text = ''; this.children = nodes; }
+  setAttribute(k, v) { this.attrs[k] = String(v); }
+  getAttribute(k) { return this.attrs[k] ?? null; }
+  addEventListener(type, fn) { (this.listeners[type] ??= []).push(fn); }
+  fire(type) { for (const fn of this.listeners[type] ?? []) fn.call(this, { type, key: '' }); }
+  focus() {}
+  all() { return [this, ...this.children.flatMap((c) => c.all())]; }
+}
+
+const MIN = 60000;
+const NOW = Date.UTC(2026, 9, 21, 12, 0, 0);
+const LISTED = {
+  pending: [
+    { uid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaa111', state: 'pending', requestedAt: NOW - 30000, name: 'Al', platform: 'ios' },
+    { uid: 'bbbbbbbbbbbbbbbbbbbbbbbbbbb222', state: 'pending', requestedAt: NOW - 40000, name: 'Al', platform: 'ios' },
+    { uid: 'ccccccccccccccccccccccccccc333', state: 'pending', requestedAt: NOW - 50000, platform: 'android' },
+    { uid: 'ddddddddddddddddddddddddddd444', state: 'pending', requestedAt: NOW - 50000, platform: 'android' },
+  ],
+  approved: [{ uid: 'eeeeeeeeeeeeeeeeeeeeeeeeeee555', state: 'approved', requestedAt: NOW - 9 * MIN, decidedAt: NOW - 30000, decidedBy: 'admin', platform: 'ios' }],
+  denied: [{ uid: 'fffffffffffffffffffffffffff666', state: 'denied', requestedAt: NOW - 9 * MIN, decidedAt: NOW - 30000, decidedBy: 'admin', platform: 'android' }],
+  migrated: true, toMigrate: 0,
+};
+
+async function runAdminPage() {
+  const byId = new Map();
+  for (const m of adminPage.replace(adminScripts[0][0], '').matchAll(/<([a-z0-9]+)\b([^>]*)\bid="([^"]+)"([^>]*)>/g)) {
+    const node = new Node(m[1], m[3], /\shidden\b/.test(m[2] + m[4]));
+    const value = (m[2] + m[4]).match(/\svalue="([^"]*)"/);
+    if (value) node.value = value[1];
+    byId.set(m[3], node);
+  }
+  const made = [];
+  const clock = { now: NOW };
+  const timers = [];
+  class FakeDate extends Date {
+    constructor(...a) { super(...(a.length ? a : [clock.now])); }
+    static now() { return clock.now; }
+  }
+  const store = new Map();
+  const context = {
+    document: {
+      getElementById: (id) => byId.get(id) ?? null,
+      createElement: (tag) => { const n = new Node(tag); made.push(n); return n; },
+      querySelectorAll: () => [...made.filter((n) => n.dataset.act), byId.get('migrate-go'), byId.get('refresh')],
+    },
+    location: { hostname: 'localhost', hash: '', pathname: '/', origin: 'http://localhost:5002', assign() {} },
+    history: { replaceState() {} },
+    sessionStorage: { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v), removeItem: (k) => store.delete(k) },
+    navigator: { clipboard: { writeText: () => Promise.resolve() } },
+    fetch: async () => ({ ok: true, json: async () => ({ result: structuredClone(LISTED) }) }),
+    setInterval: (fn, ms) => { timers.push({ fn, ms }); return timers.length; },
+    clearInterval() {},
+    Date: FakeDate, TextEncoder, TextDecoder, URLSearchParams, btoa, atob, crypto: globalThis.crypto,
+  };
+  const { runInNewContext } = await import('node:vm');
+  runInNewContext(adminScript, context);
+  byId.get('emulator').fire('click');
+  for (let i = 0; i < 10; i += 1) await new Promise((r) => setImmediate(r));
+  assert.equal(byId.get('view-list').hidden, false, 'the list is shown');
+  return { byId, clock, timers, buttons: made.filter((n) => n.dataset.act) };
+}
+
+const metaLines = (box) => box.all().filter((n) => n.className === 'meta').map((n) => n.textContent);
+
+test('D-254 look fix 4: every Approve and Deny button has a label no other button shares', async () => {
+  const { buttons } = await runAdminPage();
+  assert.equal(buttons.length, 4 * 2 + 1 + 1);
+  const labels = buttons.map((b) => b.getAttribute('aria-label'));
+  assert.equal(new Set(labels).size, labels.length, `unique: ${JSON.stringify(labels)}`);
+  assert.ok(labels.includes('Approve Al, iPhone, account ending aaa111'));
+  assert.ok(labels.includes('Deny Al, iPhone, account ending bbb222'));
+  assert.ok(labels.includes('Approve No name yet, Android, account ending ccc333'));
+  assert.ok(labels.includes('Deny No name yet, Android, account ending ddd444'));
+  assert.ok(labels.includes('Deny No name yet, iPhone, account ending eee555'));
+  assert.ok(labels.includes('Approve No name yet, Android, account ending fff666'));
+});
+
+test('D-254 look fix 5: relative times are worked out again every minute, and when a folded list opens', async () => {
+  const { byId, clock, timers } = await runAdminPage();
+  assert.deepEqual(metaLines(byId.get('waiting')).map((t) => t.split(' · ').pop()),
+    ['asked just now', 'asked just now', 'asked just now', 'asked just now']);
+  assert.match(metaLines(byId.get('approved'))[0], /approved just now$/);
+  const minute = timers.filter((t) => t.ms === MIN);
+  assert.equal(minute.length, 1, 'one timer, every minute');
+  clock.now += 5 * MIN;
+  minute[0].fn();
+  assert.match(metaLines(byId.get('waiting'))[0], /asked 5 min ago$/, 'the minute timer');
+  assert.match(metaLines(byId.get('approved'))[0], /approved 5 min ago$/);
+  // Between ticks, opening a fold brings its times up to date; closing it does nothing.
+  clock.now += 2 * MIN;
+  const fold = byId.get('denied-fold');
+  fold.open = false;
+  fold.fire('toggle');
+  assert.match(metaLines(byId.get('denied'))[0], /denied 5 min ago$/, 'closing does not re-render');
+  fold.open = true;
+  fold.fire('toggle');
+  assert.match(metaLines(byId.get('denied'))[0], /denied 7 min ago$/, 'opening the fold');
+  byId.get('approved-fold').open = true;
+  clock.now += MIN;
+  byId.get('approved-fold').fire('toggle');
+  assert.match(metaLines(byId.get('approved'))[0], /approved 8 min ago$/, 'the other fold too');
+});

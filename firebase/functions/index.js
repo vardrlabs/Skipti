@@ -1930,6 +1930,18 @@ async function rowsIn(state) {
   return approvals.newestFirst(found.docs.map((d) => approvals.row(d.id, d.data())), approvals.LIST_MAX);
 }
 
+/** D-254 look fix 4: `rows` (the APPROVED list only) with a missing name
+ *  filled from the profile's (users/{uid}.name), so a migrated or
+ *  re-approved account is not "No name yet" on the admin page. Denied rows
+ *  are never passed in: a denial keeps no name (fix wave M5). */
+async function namedFromProfiles(rows) {
+  const nameless = rows.filter((r) => !r.name);
+  if (!nameless.length) return rows;
+  const profiles = await db.getAll(...nameless.map((r) => db.collection('users').doc(r.uid)));
+  const names = new Map(nameless.map((r, i) => [r.uid, approvals.profileName(profiles[i].exists ? profiles[i].data() : null)]));
+  return rows.map((r) => (names.get(r.uid) ? { ...r, name: names.get(r.uid) } : r));
+}
+
 /** Every profile (users/{uid}) with its approvals document, a page of
  *  approvals.BATCH at a time: `each(uid, profile, approvalData)` per page. */
 async function eachProfilePage(each) {
@@ -1958,7 +1970,8 @@ export const adminApprovals = onCall({ ...CALLABLE, cors: approvals.ADMIN_ORIGIN
   const action = request.data?.action;
   const marker = db.collection('meta').doc('approvalsMigration');
   if (action === 'list') {
-    const [pending, approved, denied] = await Promise.all(approvals.STATES.map(rowsIn));
+    const [pending, listed, denied] = await Promise.all(approvals.STATES.map(rowsIn));
+    const approved = await namedFromProfiles(listed);
     const migrated = (await marker.get()).exists;
     // Fix wave M1: counted every time, marker or not: the banner shows while
     // any profile has no decision (a 0.5.0 sign-up in the deploy window).

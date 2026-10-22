@@ -105,6 +105,18 @@ export function row(uid, data) {
   return out;
 }
 
+/** The name a profile (users/{uid}, its data or null) shows others, trimmed,
+ *  1 to 60 characters, or null. D-254 look fix 4: an approved account's row
+ *  lacking a name takes it (a migrated account never asked, and a denial
+ *  dropped a re-approved one's), and the migration copies it into the
+ *  approval it writes. A denied row never takes it (fix wave M5). */
+export function profileName(profile) {
+  const raw = profile?.name;
+  if (typeof raw !== 'string') return null;
+  const name = raw.trim();
+  return name && name.length <= 60 ? name : null;
+}
+
 /** The list's rows, newest request first, at most `max`. */
 export function newestFirst(rows, max = 500) {
   return [...rows].sort((a, b) => b.requestedAt - a.requestedAt || (a.uid < b.uid ? -1 : 1)).slice(0, max);

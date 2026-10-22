@@ -154,6 +154,9 @@
   // The Firebase session: memory only. A reload means signing in again.
   let session = null;
   let busy = false;
+  // D-254 look fix 5: every row's meta line with its account and list, so the
+  // relative times are worked out again without rebuilding the rows.
+  let stamps = [];
 
   const $ = (id) => document.getElementById(id);
 
@@ -366,11 +369,20 @@
     return parts.join(" · ");
   }
 
-  function actionButton(label, cls, name, run) {
+  // D-254 look fix 4: a label no other row's button shares (two accounts can share a name, or have none): the
+  // name, the phone and the end of the account id.
+  function whoOf(a) {
+    const parts = [a.name || "No name yet"];
+    if (a.platform) parts.push(PLATFORMS[a.platform] || a.platform);
+    parts.push("account ending " + String(a.uid || "").slice(-6));
+    return parts.join(", ");
+  }
+
+  function actionButton(label, cls, who, run) {
     const b = el("button", cls, label);
     b.type = "button";
     b.dataset.act = "1";
-    b.setAttribute("aria-label", label + " " + name);
+    b.setAttribute("aria-label", label + " " + who);
     b.disabled = busy;
     b.addEventListener("click", run);
     return b;
@@ -380,10 +392,13 @@
     const name = a.name || "No name yet";
     const box = el("div", "acct");
     const info = el("div");
-    info.append(el("div", "n", name), el("div", "meta", meta(a, section)));
+    const line = el("div", "meta", meta(a, section));
+    stamps.push({ node: line, a, section });
+    info.append(el("div", "n", name), line);
     const acts = el("div", "acts");
-    if (section !== "approved") acts.append(actionButton("Approve", "b1", name, () => decide(a.uid, "approved")));
-    if (section !== "denied") acts.append(actionButton("Deny", "warn", name, () => decide(a.uid, "denied")));
+    const who = whoOf(a);
+    if (section !== "approved") acts.append(actionButton("Approve", "b1", who, () => decide(a.uid, "approved")));
+    if (section !== "denied") acts.append(actionButton("Deny", "warn", who, () => decide(a.uid, "denied")));
     box.append(info, acts);
     return box;
   }
@@ -408,9 +423,16 @@
     $("waiting-title").textContent = "Waiting · " + pending.length;
     $("approved-title").textContent = "Approved · " + approved.length;
     $("denied-title").textContent = "Denied · " + denied.length;
+    stamps = [];
     fill("waiting", pending, "pending", "Nobody is waiting.");
     fill("approved", approved, "approved", "No approved accounts.");
     fill("denied", denied, "denied", "No denied accounts.");
+  }
+
+  // D-254 look fix 5: "just now" stays true: the times are worked out again every minute and when a folded list
+  // opens. Only the text of each meta line changes, so focus stays where it is.
+  function retime() {
+    for (const s of stamps) s.node.textContent = meta(s.a, s.section);
   }
 
   function load(note) {
@@ -456,6 +478,10 @@
   $("sign-out").addEventListener("click", () => signOut(""));
   $("refresh").addEventListener("click", () => { if (!busy && session) load(""); });
   $("migrate-go").addEventListener("click", migrate);
+  for (const fold of ["approved-fold", "denied-fold"]) {
+    $(fold).addEventListener("toggle", function () { if (this.open) retime(); });
+  }
+  setInterval(retime, 60000);
   $("copy").addEventListener("click", function () {
     const button = this;
     navigator.clipboard.writeText($("caller-uid").textContent).then(

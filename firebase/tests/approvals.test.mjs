@@ -656,6 +656,37 @@ test('D-254 migrate\'s write: a denial or a purge since the page was read wins',
   assert.equal(await approveFromBeforeGate(db, []), 0);
 });
 
+// D-254 look fix 4: a migrated or re-approved account is named on the admin
+// page from its profile; a denied one stays nameless (fix wave M5).
+test('D-254 look fix 4: approved rows without a name take the profile\'s, denied rows never; the migration copies it', async () => {
+  const at = (ms) => Timestamp.fromMillis(ms);
+  await db.doc('users/old').set({ participantId: P, createdAt: at(100), name: '  Old Timer  ' });
+  await db.doc('users/blank').set({ participantId: P, createdAt: at(200), name: '   ' });
+  await db.doc('users/waiting').set({ participantId: P, createdAt: at(300) });
+  await db.doc('approvals/waiting').set({ state: 'pending', requestedAt: at(5000), name: 'Wai', platform: 'ios' });
+  assert.deepEqual((await call('adminApprovals', ADMIN, { action: 'migrate' })).result, { approved: 3 });
+  assert.equal((await stored('approvals/old')).name, 'Old Timer', 'the migration copies the profile\'s name, trimmed');
+  assert.equal((await stored('approvals/blank')).name, undefined, 'a blank name is no name');
+  assert.equal((await stored('approvals/waiting')).name, 'Wai', 'no profile name: the request\'s stays');
+  // Approved before this fix (no name kept), and re-approved after a denial dropped it.
+  await db.doc('users/early').set({ participantId: P, name: 'Early' });
+  await db.doc('approvals/early').set({ state: 'approved', requestedAt: at(400), decidedAt: at(450), decidedBy: 'migration' });
+  await db.doc('users/back').set({ participantId: P, name: 'Back Again' });
+  await call('requestApproval', 'back', { name: 'Back', platform: 'android' });
+  await call('adminApprovals', ADMIN, { action: 'decide', uid: 'back', state: 'denied' });
+  assert.equal((await stored('approvals/back')).name, undefined);
+  let listed = (await call('adminApprovals', ADMIN, { action: 'list' })).result;
+  assert.equal(listed.denied.find((r) => r.uid === 'back').name, undefined, 'denied: never named from the profile');
+  await call('adminApprovals', ADMIN, { action: 'decide', uid: 'back', state: 'approved' });
+  await db.doc('users/named').set({ participantId: P, name: 'Profile Name' });
+  await db.doc('approvals/named').set({ state: 'approved', requestedAt: at(600), name: 'Asked As', platform: 'ios' });
+  await db.doc('approvals/gone').set({ state: 'approved', requestedAt: at(700), platform: 'ios' }); // no profile
+  listed = (await call('adminApprovals', ADMIN, { action: 'list' })).result;
+  const names = Object.fromEntries(listed.approved.map((r) => [r.uid, r.name ?? null]));
+  assert.deepEqual(names, { old: 'Old Timer', blank: null, waiting: 'Wai', early: 'Early', back: 'Back Again', named: 'Asked As', gone: null });
+  assert.equal((await stored('approvals/early')).name, undefined, 'the list writes nothing');
+});
+
 test('D-254 adminApprovals migrate: more profiles than one batch of 400 are all approved', async () => {
   const batch = db.batch();
   for (let i = 0; i < 450; i += 1) batch.set(db.doc(`users/u${String(i).padStart(3, '0')}`), { participantId: P });
