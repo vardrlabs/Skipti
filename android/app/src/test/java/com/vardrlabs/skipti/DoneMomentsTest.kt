@@ -752,6 +752,8 @@ class DoneMomentsTest {
             "OverviewTab.kt" to (1 to listOf("DoneCopy.GROUP_PICTURE_REMOVED", "DoneCopy.GROUP_PICTURE_SAVED")),
             "UsernameStep.kt" to (2 to listOf("DoneCopy.USERNAME_SAVED, PeopleCopy.handle(h)", "DoneCopy.USERNAME_SAVED, PeopleCopy.handle(saved)")),
             "AccountHubScreen.kt" to (1 to listOf("DoneCopy.SIGNED_OUT")),
+            // D-254: approval arriving, once; its words live in the gate's one table (ApprovalCopy, iOS's twin's).
+            "Approval.kt" to (1 to listOf("ApprovalCopy.APPROVED_TOAST")),
         )
         val found = mutableMapOf<String, Int>()
         for (f in mainSources()) {
@@ -768,7 +770,7 @@ class DoneMomentsTest {
                 assertFalse("${f.name}: no string literal in a post: $arg", '"' in arg)
                 assertTrue(
                     "${f.name}: the post reads DoneCopy: $arg",
-                    listOf("DoneCopy.", "DoneMoments.expense(", "DoneMoments.groupCreated(", "AddPersonCopy.done(").any { it in arg },
+                    listOf("DoneCopy.", "DoneMoments.expense(", "DoneMoments.groupCreated(", "AddPersonCopy.done(", "ApprovalCopy.APPROVED_TOAST").any { it in arg },
                 )
             }
             val words = posts.joinToString("\n")
@@ -1171,13 +1173,17 @@ class DoneMomentsTest {
         val seen = mutableSetOf<String>()
         for (signedIn in listOf(false, true)) for (method in listOf(null, SignInMethod.Apple.rowLabel, SignInMethod.Google.rowLabel))
             for (phones in listOf(null, 1, 12)) for (mode in AppearanceMode.entries) for (lock in LockTimeout.entries)
-                for (canLock in listOf(true, false)) {
-                    val facts = YouRowFacts(signedIn, method, phones, theme, mode, lock, canLock, "1.10.10")
+                // D-254: and every approval ("Waiting for approval", "Not approved" in the Account row).
+                for (canLock in listOf(true, false)) for (approval in ApprovalState.entries) {
+                    val facts = YouRowFacts(signedIn, method, phones, theme, mode, lock, canLock, "1.10.10", approval)
                     for (section in SettingsSection.entries) {
                         val parts = YouRows.parts(section, facts)
                         if (seen.add(parts.joinToString("|"))) rows += SummaryRow("You, $section", parts, tile = true, trailing = chevron)
                     }
                 }
+        // D-254: the Sync card's values while the account is not approved (no switch beside them), measured as a row.
+        rows += SummaryRow("Sync, waiting", listOf(ApprovalCopy.SYNC_WAITING_VALUE), trailing = chevron)
+        rows += SummaryRow("Sync, not approved", listOf(ApprovalCopy.SYNC_DENIED_VALUE), trailing = chevron)
         rows += SummaryRow("Haptics", listOf(DoneCopy.HAPTICS_SUMMARY), tile = true, trailing = toggle)
         rows += SummaryRow("Less motion", listOf(MotionCopy.SUMMARY), tile = true, trailing = toggle)
         // D-249 (decision 163): Spending on Home, the same switch row. Two lines: the approved words are wider than a

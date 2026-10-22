@@ -95,6 +95,22 @@ object PhonesSummary {
 }
 
 object Phones {
+    /** When a pending deletion happens (ms), or null. The marker is on `users/{uid}.deleteAt`; D-254: an account with no
+     *  profile, or not approved (waiting or denied: the rules refuse it a profile), carries it on its own
+     *  `approvals/{uid}` (the Functions' requestDeletion puts it there), so Keep my account is offered on the next
+     *  sign-in within the 7 days instead of the purge deleting the account unwarned. [profile] is null when there is no
+     *  profile document. */
+    suspend fun pendingDeletion(
+        approval: ApprovalState,
+        profile: suspend () -> Map<String, Any?>?,
+        approvalDoc: suspend () -> Map<String, Any?>?,
+    ): Long? {
+        val own = profile()
+        (own?.get("deleteAt") as? com.google.firebase.Timestamp)?.let { return CloudRecords.millis(it) }
+        if (own != null && Approval.allowsCloud(approval)) return null
+        return (approvalDoc()?.get("deleteAt") as? com.google.firebase.Timestamp)?.let(CloudRecords::millis)
+    }
+
     data class Row(
         val id: String, val name: String, val platform: String, val lastSeenMs: Long?, val signedOut: Boolean, val isThis: Boolean,
     )
@@ -417,9 +433,15 @@ fun DeletionPendingCard(dark: Boolean, modifier: Modifier = Modifier) {
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
         val uid = Account.uid() ?: return@LaunchedEffect
+        val store = LedgerStore(CloudSync.vaultPathOf(VaultGate.appContextRef))
+        val approval = withContext(Dispatchers.IO) { Approval.cached(store, uid) }
         dateMs = runCatching {
-            Cloud.db().collection("users").document(uid).get(Source.SERVER).awaitTask().getTimestamp("deleteAt")
-        }.getOrNull()?.let(CloudRecords::millis)
+            Phones.pendingDeletion(
+                approval,
+                profile = { Cloud.db().collection("users").document(uid).get(Source.SERVER).awaitTask().let { if (it.exists()) it.data.orEmpty() else null } },
+                approvalDoc = { Cloud.db().collection("approvals").document(uid).get(Source.SERVER).awaitTask().data },
+            )
+        }.getOrNull()
     }
     val at = dateMs ?: return
     Column(modifier.glassCard(dark)) {

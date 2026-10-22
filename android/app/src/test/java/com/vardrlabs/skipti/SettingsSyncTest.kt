@@ -39,7 +39,11 @@ class SettingsSyncTest {
         }
         val path = dir.resolve("vault-${System.nanoTime()}.db").toString()
         val store = LedgerStore(path) { SkiptiVault.open(path, keystore) }
-        if (owner != null) store.rawKvSet(Account.OWNER_KEY, owner.toByteArray(Charsets.UTF_8))
+        if (owner != null) {
+            store.rawKvSet(Account.OWNER_KEY, owner.toByteArray(Charsets.UTF_8))
+            // D-254: an owner here is an approved account (ApprovalTest covers the waiting one).
+            Approval.setCached(store, owner, ApprovalState.APPROVED)
+        }
         return store
     }
 
@@ -176,9 +180,28 @@ class SettingsSyncTest {
             assertEquals("stored on the phone as before", "norse", phone.appearance.getString("theme", null))
             assertEquals("no record (owner $owner, signed in $signedIn)", 0, store.allRecords().size)
         }
-        assertFalse(SettingsSync.writesRecord(uid = null, owner = uid))
-        assertFalse(SettingsSync.writesRecord(uid = uid, owner = null))
-        assertTrue(SettingsSync.writesRecord(uid = uid, owner = uid))
+        assertFalse(SettingsSync.writesRecord(uid = null, owner = uid, approval = ApprovalState.APPROVED))
+        assertFalse(SettingsSync.writesRecord(uid = uid, owner = null, approval = ApprovalState.APPROVED))
+        assertTrue(SettingsSync.writesRecord(uid = uid, owner = uid, approval = ApprovalState.APPROVED))
+        // D-254: the third condition: an account not approved (or not heard yet) writes no record.
+        for (state in listOf(ApprovalState.UNKNOWN, ApprovalState.PENDING, ApprovalState.DENIED)) {
+            assertFalse("$state", SettingsSync.writesRecord(uid = uid, owner = uid, approval = state))
+        }
+    }
+
+    /** D-254: a settings change while the account waits for approval is kept on this phone and writes no record (no
+     *  record to push later as stale); once approved, the same tap writes one. */
+    @Test
+    fun while_waiting_a_setting_change_writes_no_record() {
+        val store = tempStore(uid)
+        val phone = Phone()
+        Approval.setCached(store, uid, ApprovalState.PENDING)
+        assertFalse(SettingsSync.write("appearance.theme", "norse", store, phone.prefs, uid))
+        assertEquals("kept on the phone", "norse", phone.appearance.getString("theme", null))
+        assertEquals("no record while waiting", 0, store.allRecords().size)
+        Approval.setCached(store, uid, ApprovalState.APPROVED)
+        assertTrue("approved: written", SettingsSync.write("appearance.theme", "vardr", store, phone.prefs, uid))
+        assertEquals(1, store.allRecords().size)
     }
 
     /** Signed in with sync off: the record is written (it waits), and nothing is pushed: the push's gate (CloudSync's

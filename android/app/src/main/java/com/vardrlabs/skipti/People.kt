@@ -37,6 +37,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Source
 import kotlinx.coroutines.CancellationException
@@ -377,6 +378,8 @@ object People {
 
     suspend fun invite(store: LedgerStore, group: NamedGroupWire, member: MemberWire, person: FoundPerson) {
         val uid = Account.uid() ?: throw CloudFunctions.Failure.SignedOut()
+        // D-254: before the group is put in the cloud (a write the rules refuse an account not approved).
+        Approval.localRefusal("inviteUser", Approval.cached(store, uid))?.let { throw it }
         when (CloudSync.ensureGroup(group.group.id, group.group.name, uid)) {
             CloudSync.GroupState.MEMBER -> Unit
             CloudSync.GroupState.NOT_MEMBER -> throw CloudFunctions.Failure.Refused("PERMISSION_DENIED")
@@ -396,6 +399,8 @@ object People {
         val uid = Account.uid() ?: throw CloudFunctions.Failure.SignedOut()
         val participantId = recent.participantId ?: return
         val via = recent.viaGroupId ?: return
+        // D-254: before the group is put in the cloud (a write the rules refuse an account not approved).
+        Approval.localRefusal("inviteKnown", Approval.cached(store, uid))?.let { throw it }
         when (CloudSync.ensureGroup(group.group.id, group.group.name, uid)) {
             CloudSync.GroupState.MEMBER -> Unit
             CloudSync.GroupState.NOT_MEMBER -> throw CloudFunctions.Failure.Refused("PERMISSION_DENIED")
@@ -678,6 +683,11 @@ fun FindPersonScreen(vaultPath: String, group: NamedGroupWire, member: MemberWir
     }
 
     PushedPage(PeopleCopy.findTitle(member.name), dark, onBack, spacing = 12.dp) {
+        // D-254: one line instead of the search and Find friends in contacts while the account is not approved.
+        ApprovalCopy.invite(Approval.state)?.let {
+            Text(it, style = Type.bodyDim(dark))
+            return@PushedPage
+        }
         OutlinedTextField(
             value = query,
             onValueChange = { query = it },
@@ -809,6 +819,8 @@ fun AddPersonScreen(vaultPath: String, groupId: String, onBack: () -> Unit) {
     CoversShellToast()
     val scope = rememberCoroutineScope()
     val signedIn = remember { Account.isSignedIn() }
+    /** D-254: signed in, and the account not waiting or refused: Add by @username and the recents' invites are there. */
+    val invites = signedIn && ApprovalCopy.invite(Approval.state) == null
     var name by remember { mutableStateOf("") }
     var handle by remember { mutableStateOf("") }
     var looking by remember { mutableStateOf(false) }
@@ -895,7 +907,11 @@ fun AddPersonScreen(vaultPath: String, groupId: String, onBack: () -> Unit) {
                 keyboardActions = KeyboardActions(onDone = { if (found == null) addName() }),
                 modifier = Modifier.fillMaxWidth(),
             )
-            if (signedIn) {
+            val inviteLine = ApprovalCopy.invite(Approval.state)
+            if (signedIn && inviteLine != null) {
+                // D-254: one line instead of Add by @username while the account is not approved.
+                Text(inviteLine, style = Type.bodyDim(dark).copy(fontSize = 14.sp))
+            } else if (signedIn) {
                 OutlinedTextField(
                     value = handle,
                     onValueChange = { handle = it; found = null; missing = null },
@@ -945,7 +961,7 @@ fun AddPersonScreen(vaultPath: String, groupId: String, onBack: () -> Unit) {
                 Text(AddPersonCopy.RECENTS.uppercase(), style = Type.bodyDim(dark))
                 recents.forEach { r ->
                     val isAdded = r.id in added
-                    val onSkipti = signedIn && r.participantId != null
+                    val onSkipti = invites && r.participantId != null
                     Row(
                         Modifier
                             .fillMaxWidth()

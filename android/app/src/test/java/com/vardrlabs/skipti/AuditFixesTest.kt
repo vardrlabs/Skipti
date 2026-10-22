@@ -831,14 +831,19 @@ class AuditFixesTest {
     /** ProfileShare runs only for the vault's own account with sync on (iOS's `LaunchWork.signedInAccount`). */
     @Test
     fun the_profile_share_runs_only_for_the_vaults_owner() {
-        assertEquals("u1", ProfileShare.accountFor(syncOn = true, uid = "u1", owner = "u1"))
-        assertNull("another account", ProfileShare.accountFor(syncOn = true, uid = "u1", owner = "u2"))
-        assertNull("no owner, or one that could not be read", ProfileShare.accountFor(syncOn = true, uid = "u1", owner = null))
-        assertNull("signed out", ProfileShare.accountFor(syncOn = true, uid = null, owner = "u1"))
-        assertNull("sync off", ProfileShare.accountFor(syncOn = false, uid = "u1", owner = "u1"))
+        val ok = ApprovalState.APPROVED
+        assertEquals("u1", ProfileShare.accountFor(syncOn = true, uid = "u1", owner = "u1", approval = ok))
+        assertNull("another account", ProfileShare.accountFor(syncOn = true, uid = "u1", owner = "u2", approval = ok))
+        assertNull("no owner, or one that could not be read", ProfileShare.accountFor(syncOn = true, uid = "u1", owner = null, approval = ok))
+        assertNull("signed out", ProfileShare.accountFor(syncOn = true, uid = null, owner = "u1", approval = ok))
+        assertNull("sync off", ProfileShare.accountFor(syncOn = false, uid = "u1", owner = "u1", approval = ok))
+        // D-254: nor for an account not approved (or not heard yet).
+        for (state in listOf(ApprovalState.UNKNOWN, ApprovalState.PENDING, ApprovalState.DENIED)) {
+            assertNull("$state", ProfileShare.accountFor(syncOn = true, uid = "u1", owner = "u1", approval = state))
+        }
         val real = main("ProfileSync.kt").substringAfter("    val realAccount: (LedgerStore) -> String? = { store ->")
             .substringBefore("\n    }\n")
-        assertTrue(real, "accountFor(CloudSync.syncEnabled(store), Account.uid(), Account.storedOwner(store))" in real)
+        assertTrue(real, "accountFor(CloudSync.syncEnabled(store), uid, Account.storedOwner(store), Approval.cached(store, uid))" in real)
     }
 
     // ---- Look fix F4: a record for a group this account was removed from parks; it never stops the push ----

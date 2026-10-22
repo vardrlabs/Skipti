@@ -48,12 +48,26 @@ object CloudSync {
             val context = VaultGate.appContextRef ?: return
             // D-235 (M1): a token delete that could not finish is tried again, unless push is about to want the token.
             if (Account.uid() == null) Push.settleOwed(LedgerStore(vaultPathOf(context)))
+            // D-254: the account's approval is listened for, and asked for while it is not approved; the cloud work
+            // below runs only once it is ([ready], [registerPhone]).
+            Approval.front(Account.uid(), LedgerStore(vaultPathOf(context)))
             registerPhone(LedgerStore(vaultPathOf(context)), context)
             push()
             listen()
         } else {
             stopListening()
+            Approval.stopListening()
         }
+    }
+
+    /** D-254: approval taken away (approved to denied): the cloud stops as sync off stops it (the listeners down,
+     *  nothing pushed, push off at FCM; the device document is not written, the rules refuse it now). Local data is
+     *  untouched; approval given back starts it all again ([Approval.heard]). */
+    fun approvalWithdrawn() {
+        registered = null
+        stopListening()
+        val context = VaultGate.appContextRef ?: return
+        scope.launch { Push.stop(LedgerStore(vaultPathOf(context)), inCloud = false) }
     }
 
     /** The sync switch changed (Settings). D-196: pushes come with sync. */
@@ -82,6 +96,9 @@ object CloudSync {
     fun registerPhone(store: LedgerStore, context: Context) {
         // D-235 round 4 (M9): nor is this phone registered, or push started, for a session the vault does not own.
         val uid = CloudGate.owned(Account.uid(), Account.storedOwner(store)) ?: return
+        // D-254: nor for an account not approved (the rules refuse its profile and devices); push's restart below waits
+        // too.
+        if (Approval.gate(uid, Account.storedOwner(store), Approval.cached(store, uid)) == null) return
         if (registered == uid) {
             if (runCatching { syncEnabled(store) }.getOrDefault(false)) Push.start(store)
             return
@@ -104,6 +121,18 @@ object CloudSync {
             // D-197: whether people can find this account (on unless switched off).
             if (registered == uid) People.syncFindable(uid, store)
         }
+    }
+
+    /** D-254: the sign-in screen's username step and the username step itself register the profile directly (they need
+     *  it before a username can be set); through here, so an account not approved writes nothing the rules refuse, and
+     *  the vault's owner is checked as [registerPhone] checks it. Call off the main thread. */
+    suspend fun registration(uid: String, store: LedgerStore, appVersion: String): CloudProfile.Outcome {
+        if (Account.storedOwner(store) != uid) return CloudProfile.Outcome.Failed("This phone's ledger belongs to another account.")
+        val approval = Approval.cached(store, uid)
+        if (!Approval.allowsCloud(approval)) {
+            return CloudProfile.Outcome.Failed(if (approval == ApprovalState.DENIED) ApprovalCopy.CALL_DENIED else ApprovalCopy.CALL_WAITING)
+        }
+        return CloudProfile.register(uid, store, appVersion)
     }
 
     fun accountSignedOut() {
@@ -138,6 +167,9 @@ object CloudSync {
         // D-235 round 4 (shells review M9, decision 107's twin): only the vault's own account syncs it. A read that
         // fails is no owner: fail closed (nothing syncs this launch), and nobody is signed out for it.
         if (CloudGate.owned(uid, Account.storedOwner(store)) == null) return null
+        // D-254: and only when it is approved (the vault's copy of the last state heard), so a waiting account pushes
+        // and listens to nothing.
+        if (!Approval.allowsCloud(Approval.cached(store, uid))) return null
         return if (runCatching { syncEnabled(store) }.getOrDefault(false)) uid to store else null
     }
 

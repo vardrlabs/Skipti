@@ -136,8 +136,11 @@ object SettingsSync {
 
     // ---- The write funnel ----
 
-    /** Whether a change writes a record: this install is signed in to the vault's owner. No account, no record. */
-    fun writesRecord(uid: String?, owner: String?): Boolean = CloudGate.owned(uid, owner) != null
+    /** Whether a change writes a record: this install is signed in to the vault's owner. No account, no record.
+     *  D-254: and the account is approved; while it waits, a change is kept on this phone only, and the first catch-up
+     *  after approval fills the account's gaps with it ([afterReceive]). */
+    fun writesRecord(uid: String?, owner: String?, approval: ApprovalState): Boolean =
+        Approval.gate(uid, owner, approval) != null
 
     /** A record waits to go up since the last page close ([pageClosed] pushes it). Touched only on [work]. */
     private var unsent = false
@@ -185,7 +188,7 @@ object SettingsSync {
 
     /** The funnel's record: only signed in to the vault's owner, and only a value this build would apply. */
     private fun record(key: String, value: String, store: LedgerStore, uid: String?): Boolean {
-        if (!writesRecord(uid, Account.storedOwner(store)) || !accepts(key, value)) return false
+        if (!writesRecord(uid, Account.storedOwner(store), Approval.cached(store, uid)) || !accepts(key, value)) return false
         return runCatching { store.appendGroupOps(listOf(GroupOpIn.Setting(key, value)), Placing.NONE) }.isSuccess
     }
 

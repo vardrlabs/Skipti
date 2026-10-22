@@ -2302,11 +2302,14 @@ class ThemeArtTest {
         // D-216: 50, Appearance's "App icon" label. D-234 (A2): 49, the label went (the header row says it).
         // D-249: 54, Home's "Your spending" and the page's three (its total card's kicker, "Where the money went" and
         // "Expenses"; iOS's twin went 39 to 42).
-        const val SECTION_LABELS = 54
+        // D-254: 56, the Sync card's "Sync" while the account is not approved, and People's "Invite" over its one line
+        // (each the twin of an iOS section label).
+        const val SECTION_LABELS = 56
         // D-225 T7 (A7): + the vault recovery screen's "Ledger unavailable" (iOS's micro label).
         // D-225 fix wave (M3): 25: Add expense's four hint kickers are one call over `AddSheetCopy.hint` (4 - 1).
         // D-249: 30, the spending card's "This month", the table's three column heads and the detail's "Only you. Nothing
         // to split." (iOS's micro labels went 21 to 23, its detail line is a `micro`).
-        const val KICKERS = 30
+        // D-254: 31, the Sync card's value while the account is not approved ("Waiting" or "Off").
+        const val KICKERS = 31
     }
 }

@@ -167,6 +167,8 @@ data class YouRowFacts(
     val lockTimeout: LockTimeout,
     val lockAvailable: Boolean,
     val version: String,
+    /** D-254: the account's approval; waiting or not approved stands in for the method and phones. */
+    val approval: ApprovalState = ApprovalState.UNKNOWN,
 )
 
 /** D-222 (L58): each of You's rows' summary as parts, joined on screen by [Separator.annotated] (Norse's gold rune) and
@@ -179,6 +181,8 @@ object YouRows {
     fun parts(section: SettingsSection, facts: YouRowFacts): List<String> = when (section) {
         SettingsSection.PROFILE_ACCOUNT ->
             if (!facts.signedIn) listOf(YouCopy.NO_ACCOUNT)
+            // D-254: "Waiting for approval" or "Not approved" in place of "Google · 1 phone".
+            else if (ApprovalCopy.accountSummary(facts.approval) != null) listOfNotNull(ApprovalCopy.accountSummary(facts.approval))
             // A failed or unread count (null) and a count of 0 are left out: never "0 phones".
             else listOf(facts.methodLabel ?: YouCopy.SIGNED_IN) + listOfNotNull(facts.phoneCount?.takeIf { it >= 1 }?.let(PhonesCopy::count))
         SettingsSection.APPEARANCE -> listOf(facts.theme.label, ModeChoice.shown(facts.theme, facts.mode).chosen.label)
@@ -309,7 +313,10 @@ object Greeting {
     }
 }
 
-enum class AccountState { NO_ACCOUNT, ACTIVE }
+/** Which account state the screen is in. D-192 had no "waiting for approval" (a signed-in phone simply had the
+ *  account); D-254 brought it back with the approval gate: a signed-in account waits until the founder approves it
+ *  ([WAITING]), or was not approved ([NOT_APPROVED]). [ACTIVE] is approved, or not heard yet (the screens as before). */
+enum class AccountState { NO_ACCOUNT, ACTIVE, WAITING, NOT_APPROVED }
 
 /** Everything the hub renders, resolved. */
 data class AccountHubModel(
@@ -319,10 +326,17 @@ data class AccountHubModel(
     val showsAccountControls: Boolean,
 )
 
-/** The pure part, unit-testable without Compose. */
-fun accountHubModel(signedIn: Boolean, syncOn: Boolean): AccountHubModel =
-    if (signedIn) AccountHubModel(AccountState.ACTIVE, syncOn, showsAccountControls = true)
-    else AccountHubModel(AccountState.NO_ACCOUNT, syncOn, showsAccountControls = false)
+/** The pure part, unit-testable without Compose. D-254: a signed-in account's state follows its approval; Sign out and
+ *  Delete account are there in every signed-in state (leaving never waits). */
+fun accountHubModel(signedIn: Boolean, syncOn: Boolean, approval: ApprovalState): AccountHubModel {
+    if (!signedIn) return AccountHubModel(AccountState.NO_ACCOUNT, syncOn, showsAccountControls = false)
+    val state = when (approval) {
+        ApprovalState.PENDING -> AccountState.WAITING
+        ApprovalState.DENIED -> AccountState.NOT_APPROVED
+        ApprovalState.UNKNOWN, ApprovalState.APPROVED -> AccountState.ACTIVE
+    }
+    return AccountHubModel(state, syncOn, showsAccountControls = true)
+}
 
 /** D-217 (the Look Book's `.who`): You's name is the display face at 700 and its handle the body face at 500. */
 object YouStyle {
@@ -395,7 +409,7 @@ fun AccountHubScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var model by remember {
-        mutableStateOf(accountHubModel(signedIn = false, syncOn = true))
+        mutableStateOf(accountHubModel(signedIn = false, syncOn = true, approval = ApprovalState.UNKNOWN))
     }
     var busy by remember { mutableStateOf(false) }
     // D-172: how this phone signed in; null for a sign-in from before D-172.
@@ -416,7 +430,7 @@ fun AccountHubScreen(
         withContext(Dispatchers.IO) {
             val store = LedgerStore(vaultPath)
             method = Account.method(store)
-            model = accountHubModel(signedIn = Account.isSignedIn(), syncOn = CloudSync.syncEnabled(store))
+            model = accountHubModel(signedIn = Account.isSignedIn(), syncOn = CloudSync.syncEnabled(store), approval = Approval.state)
             name = runCatching { store.loadSelf()?.name }.getOrNull()
             avatar = runCatching { store.loadAvatar() }.getOrDefault(Avatar.None)
             avatarRead = true
@@ -434,9 +448,12 @@ fun AccountHubScreen(
 
     // D-198: and again after a sign-out while this page is open, which takes
     // the account controls away; D-145: and after a profile change.
-    LaunchedEffect(RemoteSignOut.signOuts, ProfileState.revision, section) { reload() }
+    // D-254: and when approval arrives (or is taken away) while this page is open, so the Sync card and the Account row
+    // change at once.
+    LaunchedEffect(RemoteSignOut.signOuts, ProfileState.revision, section, Approval.state) { reload() }
 
-    val signedIn = model.state == AccountState.ACTIVE
+    // D-254: every signed-in state is the account's (waiting and not approved keep Sign out and Delete account).
+    val signedIn = model.showsAccountControls
     // D-221 (Design 3): the setup steps' facts, null until first read. Read again on a profile, sync, currency, app
     // lock or username change, on coming back to You, and on every resume (notifications are allowed in the phone's
     // settings, outside SKIPTI).
@@ -570,6 +587,7 @@ fun AccountHubScreen(
             val rowFacts = YouRowFacts(
                 signedIn = signedIn, methodLabel = method?.rowLabel, phoneCount = phoneCount, theme = Appearance.theme,
                 mode = Appearance.mode, lockTimeout = AppLock.timeout, lockAvailable = lockAvailable, version = version.first,
+                approval = Approval.state,
             )
             // D-222 (L57): the card pads 0 and the list lays itself out at the Look Book's list padding. D-225 (Design 1):
             // the shared ListCard and ListRow draw it (nothing on screen changed).
@@ -650,7 +668,12 @@ fun AccountHubScreen(
                         }
                     }
                 }
-                SettingItem.SYNC -> SyncCard(
+                // D-254: while the account waits for approval, or was not approved, the card says so and has no switch.
+                SettingItem.SYNC -> if (model.state == AccountState.WAITING) {
+                    ApprovalSyncCard(dark, ApprovalCopy.SYNC_WAITING_VALUE, ApprovalCopy.SYNC_WAITING_BODY, Tok.accent(dark))
+                } else if (model.state == AccountState.NOT_APPROVED) {
+                    ApprovalSyncCard(dark, ApprovalCopy.SYNC_DENIED_VALUE, ApprovalCopy.SYNC_DENIED_BODY, Tok.textDim(dark))
+                } else SyncCard(
                     dark = dark,
                     syncOn = model.syncOn,
                     busy = busy,
@@ -891,6 +914,24 @@ private fun YourDataPage(dark: Boolean, signedIn: Boolean, onOpenExport: () -> U
             },
             onClose = { choosingCurrency = false },
         )
+    }
+}
+
+/** D-254: the Sync card while the account is not approved: the value and the words, no switch. iOS's twin is
+ *  `approvalSyncCard` in AccountHubScreen.swift. */
+@Composable
+private fun ApprovalSyncCard(dark: Boolean, value: String, body: String, valueColor: androidx.compose.ui.graphics.Color) {
+    Card(dark) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SectionLabel("Sync", dark)
+            Text(Type.kicker(value), style = Type.microLabel(dark).copy(color = valueColor))
+        }
+        Spacer(Modifier.height(10.dp))
+        Text(body, style = Type.body(dark).copy(fontSize = TypeScale.detail.sp))
     }
 }
 

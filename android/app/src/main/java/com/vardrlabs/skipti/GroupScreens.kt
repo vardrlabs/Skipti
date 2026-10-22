@@ -569,7 +569,14 @@ fun PeopleScreen(
                 )
             }
         }
-        if (invitable.isNotEmpty() && !isCopy) {
+        val inviteLine = ApprovalCopy.invite(Approval.state)
+        if (invitable.isNotEmpty() && !isCopy && inviteLine != null) {
+            // D-254: one line instead of the invite rows while the account is not approved.
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SectionLabel(InviteCopy.SECTION, dark)
+                CardCaption(inviteLine, dark)
+            }
+        } else if (invitable.isNotEmpty() && !isCopy) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 SectionLabel(InviteCopy.SECTION, dark)
                 ListCard(dark) {

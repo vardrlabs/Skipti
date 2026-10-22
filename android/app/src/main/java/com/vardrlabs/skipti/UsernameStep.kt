@@ -126,6 +126,8 @@ sealed class UsernameSaveFailure {
 
     companion object {
         fun from(error: Throwable): UsernameSaveFailure = when ((error as? CloudFunctions.Failure.Refused)?.status) {
+            // D-254: the account is not approved yet (or was not): its words, never the offline line.
+            null -> ApprovalCopy.failure(error)?.let(::Message) ?: Message(UsernameCopy.OFFLINE)
             "ALREADY_EXISTS" -> Taken
             "INVALID_ARGUMENT" -> NotAvailable
             "FAILED_PRECONDITION" -> Used
@@ -366,7 +368,8 @@ fun UsernameStep(
                 // The profile (and its participantId) first: setUsername
                 // refuses until it exists, and must never make a half one.
                 val version = AboutInfo.current(context).first
-                withContext(Dispatchers.IO) { CloudProfile.register(uid, store, version) }
+                // D-254: through the approval gate (an account not approved registers nothing).
+                withContext(Dispatchers.IO) { CloudSync.registration(uid, store, version) }
                 // D-211: the name just saved reaches the account's groups.
                 if (needsName) ProfileShare.request(store)
                 // `first`: never spends the one change. A username set on

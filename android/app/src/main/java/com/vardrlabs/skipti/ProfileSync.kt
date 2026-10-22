@@ -257,15 +257,18 @@ object ProfileShare {
     /** Tests only; production never reassigns. */
     @Volatile var ensure: suspend (String, String) -> NameOutcome = { uid, name -> realEnsure(uid, name) }
 
-    /** The signed-in account when sync is on and it is the vault's owner, else null (the share waits). */
+    /** The signed-in account when sync is on, it is the vault's owner and it is approved, else null (the share
+     *  waits). */
     val realAccount: (LedgerStore) -> String? = { store ->
-        accountFor(CloudSync.syncEnabled(store), Account.uid(), Account.storedOwner(store))
+        val uid = Account.uid()
+        accountFor(CloudSync.syncEnabled(store), uid, Account.storedOwner(store), Approval.cached(store, uid))
     }
 
     /** D-235 final wave (the owner gate, decision 107's twin; iOS's `LaunchWork.signedInAccount`): the account the
-     *  share runs for. Sync off, signed out, no owner, an unreadable one, or another account: none. */
-    fun accountFor(syncOn: Boolean, uid: String?, owner: String?): String? =
-        if (syncOn) CloudGate.owned(uid, owner) else null
+     *  share runs for. Sync off, signed out, no owner, an unreadable one, or another account: none. D-254: nor an
+     *  account not approved ([Approval.gate]). */
+    fun accountFor(syncOn: Boolean, uid: String?, owner: String?, approval: ApprovalState): String? =
+        if (syncOn) Approval.gate(uid, owner, approval) else null
 
     /** Tests only; production never reassigns. */
     @Volatile var account: (LedgerStore) -> String? = realAccount
