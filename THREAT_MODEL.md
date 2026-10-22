@@ -44,7 +44,11 @@ was never released publicly; it is in git history.
   write your personal ledger; only a group's members can read a group, and
   they can add records only in their own name; nobody can change who is in a
   group except through SKIPTI's Cloud Functions; nobody can list other users.
-  Each rule has a test that it refuses (the Firebase plan's unit 3).
+  Each rule has a test that it refuses (the Firebase plan's unit 3). Your
+  "Just me" expenses and your app settings (theme, text size and the like,
+  since 0.5.1) are records in your personal ledger, readable only by you. A
+  deleted group's id can never become a group again (0.5.1: the deletion
+  leaves a marker that the rules check).
 - **A12:** While SKIPTI is in early testing, a new account can write nothing
   to the cloud until the operator approves it: the rules refuse every create
   and update of an unapproved account (it may still read and delete what is
@@ -53,6 +57,10 @@ was never released publicly; it is in git history.
   refuses it. Approval is a document only Cloud Functions write; the
   function that sets it answers only the operator's own account, signed in
   with Google. Each refusal has a test (D-254).
+- **A5, bounded:** every group has daily limits on invitations, joins and
+  removals, and every account on the notifications its records can send
+  (0.5.1); a notification names its author as the cloud knows the account,
+  never as the author's phone chose to write it.
 - **A6 and A7:** The phone's ledger is encrypted (SQLCipher) with a key held
   in the platform keystore (Keychain, Android Keystore), with app-level
   auto-lock and a privacy cover when SKIPTI leaves the screen.
@@ -87,8 +95,17 @@ Removing them stops future access and nothing else.
 
 - **A hostile member can add or change expenses in the group.** Every record
   carries its author's account, set by the access rules rather than by the
-  app, so changes are attributable; edits and deletes are new records, so
-  history is never silently rewritten.
+  app, so changes are attributable in the cloud; edits and deletes are new
+  records, so history is never silently rewritten. Two limits of that: the
+  "added by" and "edited by" names the app shows come from the record as the
+  author's phone wrote them, not from the cloud's author (the cloud's author
+  is not yet carried into the phone's ledger); and a member can name someone
+  who is not in the group on an expense or a settlement, which reads as an
+  unknown member and is corrected like any other entry (a revision, or a
+  counter-settlement). A member who floods a group with the largest possible
+  amounts can push its totals past what the ledger can add up: that group
+  then reads "Amounts too large to add up" and the others are unaffected
+  (0.5.1).
 - **Personal transactions are never in a group.** They live in a different
   place in the cloud, readable only by you.
 - **An invite link admits whoever holds it.** Forwarding the link forwards
@@ -103,7 +120,11 @@ Removing them stops future access and nothing else.
 - **If your Google or Apple account is compromised,** the attacker can sign in
   to SKIPTI as you and read your cloud data. Your other phones are told when a
   new phone signs in, and "Sign out everywhere" ends every session (the
-  Firebase plan's unit 8).
+  Firebase plan's unit 8). Signing one phone out tells that phone, and from
+  then on the cloud refuses new records from it (0.5.1); an app modified to
+  hide its identity could still act for up to an hour, until its token
+  expires. A compromised account cannot weaken your phone's lock: the app
+  lock, its timeout and the screen privacy setting never leave the phone.
 
 ## Metadata the cloud learns
 
@@ -114,7 +135,12 @@ Notification text ("Emma added Dinner · $120.00 in Miami trip") passes
 through Apple's or Google's push service. When you sign in, an approval
 request holds the name you show others, your sign-in email if Apple or
 Google gave one, and your phone type; it is deleted with your account, and
-a denied request keeps neither the name nor the email.
+a denied request keeps neither the name nor the email. When a group is
+deleted, a marker keeps the group's id, who deleted it and the accounts
+that were in it, so that every phone can tell the group ended; it holds no
+expense. The operator keeps audit logs of its own reads and writes of the
+database (switched on with 0.5.1), so that "the operator could technically
+read" is at least visible after the fact.
 
 ## Explicitly out of scope
 

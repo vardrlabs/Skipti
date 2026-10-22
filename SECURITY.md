@@ -41,6 +41,14 @@ malicious operator; states its own limit nearby. Banned phrasings include
 "bank-grade", "military-grade", "unhackable", "100% private", "fully
 anonymous", and compliance badges used as marketing.
 
+## Disclosure of fixed flaws
+
+Every genuine flaw found in SKIPTI, by our own audits or by a report, is
+fixed first and then disclosed as a GitHub security advisory on this
+repository, with the affected and fixed versions, a CVSS 3.1 score and
+credit; a CVE is requested when a build that reached testers or the stores
+was affected. We never split or inflate a finding to earn one.
+
 ## Supported versions
 
 Only the latest release of each platform target receives security fixes.

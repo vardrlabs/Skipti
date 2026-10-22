@@ -10,7 +10,29 @@ Newest session log entries go at the bottom.
 
 ---
 
-## NOW: 2026-10-22 (session 12 CLOSING; next session = Fable's 0.5.1 security pass, opener `.drafts/stop/fable-opener-4.md`)
+## NOW: 2026-10-22 (session 13 CLOSING, Fable: the 0.5.1 pre-release security pass is DONE; next = the deploy day, opener `.drafts/stop/deploy-opener-1.md`)
+
+**RESUME (session 13 close; READ THIS FIRST):**
+- main holds D-256 (tombstone, decision 276), D-257 (per-group quotas, push cap, push line: G-04, G-17, G-18), D-258
+  (signed-out writes refused: G-26 narrowed), D-259 (one group's overflow no longer blanks Home; core refuses
+  `applock.*` / `privacy.*` setting keys) and D-260 (proofs compiled out of release; the 24th gate leg), merged with
+  `merge --no-ff` and gated TOGETHER: full gate 24 passed, 0 skipped at the D-260 merge (`.drafts/fable/pass-051/
+  merge2/gate.log`, 5m25s); the four earlier units' gate (23/23 at 0a5f77b1, `merge1/`) came before D-260. Records
+  D-256 to D-260 in BUILD-LOG (recorder at 24 legs; the four earlier evidence blocks were patched to carry the
+  release-proofs line by an asserted script edit, not buildlog_edit.py: check-buildlog passes). Decisions 267 to 278
+  (the founder's) and 279 to 316 (Fable's) in DECISIONS-TAKEN. Nothing deployed.
+- The pass's record: `.drafts/fable/pass-051/findings.md`; production read-only checks clean; the leads' reports in
+  `d249/`, `d244-d248/`, `release/`; CLOUD-SECURITY section 7 (the 0.5.1 pass paragraph; G-04, G-17, G-18, G-26
+  struck with residues; G-13 annotated) and the three completed advisories are in ./private (committed there).
+- Deploy day: `.drafts/release-051/deploy-day-security.md` (12 sections; Storage struck; audit logs on; the M8 nonce
+  fallback `.drafts/release-051/admin-nonce-fallback.patch`, hosting test 15/15 with it); `scripts/cloud-audit.sh`
+  section 6 checks the admin site (fails until it exists). CLOUD-SECURITY section 2 rows drafted in
+  `.drafts/fable/pass-051/records/cloud-security-rows.md` for deploy day.
+- Scheduled before 0.5.2, pre-approved: App Check (270), keyed fingerprints (271), API key restrictions (274); the
+  G-31 (6) `yousOf` cap, a per-group record cap, G-07 (authorUid into the vault).
+- REMIND: the Developer Tools exemption goes OFF before any signed or store build (CLAUDE.md 13).
+
+## (previous) NOW: 2026-10-22 (session 12 CLOSING; next session = Fable's 0.5.1 security pass, opener `.drafts/stop/fable-opener-4.md`)
 
 **RESUME (session 12 close; READ THIS FIRST):**
 - main is pushed with D-254 (the approval gate), D-255 (New York + USD pictures at full detail, ledger names wrap, the

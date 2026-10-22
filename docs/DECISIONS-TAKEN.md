@@ -1660,6 +1660,183 @@ Mock-up https://claude.ai/artifact/4ULGr42bEn7YUhSu7pQaTx (v1); README pick http
 - **257 (README):** a section "What it looks like" right after the intro, a 3 x 2 grid of shots 01, 04, 05, 07, 08, 09
   at full detail, each linked to its full-size file, no extra captions.
 
+### Session 13's opening round, 267 to 278: your answers to Fable (pop-ups, 2026-10-22, the 0.5.1 security pass)
+
+- **267 (disclosure):** 0.4.0 and 0.5.0 reached people outside Vardr Labs through TestFlight and Play internal
+  testing, so they count as RELEASED builds for the CVE rule: an advisory whose flaw was in a build they ran gets a CVE
+  request when the repo goes public.
+- **268 (disclosure, public wording):** the credit line on every advisory reads "Found in Vardr Labs' pre-release
+  security audit, carried out with Claude (Anthropic)." No model name.
+- **269 (scope):** of the G items 7.1 deferred to "public", the cheap half comes into this pass before 0.5.1 deploys:
+  G-17 (a per-author push cap), G-18 (the push line from checked fields), G-04 and G-23 (per-group daily quotas on
+  invites and joins), G-26 (a signed-out phone's writes refused by the rules), G-13 (proof screens compiled out of
+  release builds). The rest is done BEFORE THE 0.5.2 RELEASE, not at the app's public beta.
+- **270 (G-05, your yes on the dependency, CLAUDE.md 13 rule 2 and CONTRIBUTING rule 4):** App Check with both SDKs
+  (App Attest on iOS, Play Integrity on Android) is approved and scheduled for 0.5.2; enforcement in monitoring mode
+  first. Not in this pass.
+- **271 (G-22, your yes on the secret and the production rewrite):** keyed email fingerprints (a Secret Manager key,
+  about $0.06 a month; a one-time rewrite of the stored fingerprints run with you on a deploy day) are approved and
+  scheduled for 0.5.2. Not in this pass.
+- **272 (G-06):** Firestore Data Access audit logs are switched on by you on 0.5.1's deploy day (a console step on the
+  checklist, with a CLOUD-SECURITY section 2 row).
+- **273 (fix policy):** every genuine flaw the pass finds in the code since D-237 is fixed now, before the deploy,
+  whatever its severity: a unit each (tests, sabotage, gate, records, an advisory draft).
+- **274 (G-01):** the API keys are restricted together with App Check before 0.5.2, with a third, browser key for the
+  admin site then; nothing on 0.5.1's deploy day.
+- **275 (Cloud Storage):** stays off. Nothing of SKIPTI's is in the file buckets (group sync is Firestore; pictures
+  ride inside records since D-211), so deploy day deploys the Firestore rules only; `storage.rules` stays in the repo,
+  emulator-tested, for the day a bucket exists. The D-254 design's "Storage rules" step is struck.
+- **276 (option C, the tombstone):** built in this pass: `deleteGroup` writes a tombstone and the rules refuse creating
+  a group document with a deleted group's id; the phones read the tombstone for a vanished group. Deploys with 0.5.1.
+- **277 (production reads):** the read-only production checks read as D-237 did: configuration, structure, counts and
+  consistency; ids and field names, never record payloads, names or emails.
+- **278 (going public, U35):** the seven tracked files with `/Users/prithvi/...` paths take relative paths; `deploy/`
+  and `docs/DEPLOY-ORACLE.md` are removed from the public tree (vardrlabs/Skipti is the repo that goes public, never
+  icrkdev/Skipti); the history files (BUILD-LOG, WORKLOG, ADRs, plans) KEEP their em and en dashes for now: the dash
+  rule is for public-facing text, and you set it aside for these files ("maybe for later"). CLAUDE.md section 4's
+  "sweep until the whole-repo scope passes" is therefore not a condition of going public.
+
+### The 0.5.1 security pass's units, 279 to 316: D-256, D-259, D-257, D-258 and D-260 (Fable's pass, 2026-10-22; your 269 and 276 asked for them)
+
+Numbered in the order the units returned: D-256 R1 to R7, D-259 R1 to R5, D-257 R1 to R12, D-258 R1 to R7, D-260 R1 to
+R7. Source: each unit's report, `.drafts/fable/pass-051/dNNN/report.md`.
+
+- **279 (D-256, Fable's pass):** a purged account's uid stays in a tombstone's `uids`, and purge's own deletion of a
+  sole-member group writes no tombstone; why: `uids` is read only by the rules' get, a purged uid never signs in
+  again, and nobody else holds a copy of a sole member's group; risk if wrong: a list of dead uids lingers in
+  `deletedGroups`; overturn: strip the uid from tombstones in `purgeAccount`.
+- **280 (D-256, Fable's pass):** the deleter is always in `uids`, even when missing from `memberUids`; why: an old
+  group's creator may be absent from the member list, as `deletionAudience` already allows for; risk if wrong: none
+  beyond one extra uid; overturn: drop the caller from `tombstoneOf`.
+- **281 (D-256, Fable's pass):** a tombstone read with no answer counts as no tombstone, leaving D-252's neutral
+  read-only mark, and that copy is not asked again; why: the group read already proved the account cannot use it, and
+  read-only is the safe side; risk if wrong: a copy says "no longer available" rather than "deleted" for good unless
+  the notice arrives; overturn: re-ask the tombstone on a later launch.
+- **282 (D-256, Fable's pass):** no new refusal line, one new banner line "This group was deleted."; why: D-252's
+  refusal lines fit, but its banner line needs a name the tombstone does not carry; risk if wrong: a nameless banner
+  reads vaguer than the notice would; overturn: carry the name in the tombstone (it was left out on purpose).
+- **283 (D-256, Fable's pass):** `Notices.deletedMark` may rewrite a nameless deleted mark that is not yours with the
+  notice's name, never making a mark vaguer; why: the notice knows the deleter, the tombstone does not; risk if wrong:
+  a late notice relabels a mark; overturn: keep the first mark always.
+- **284 (D-256, Fable's pass):** `endIfDeleted` marks a copy only when a tombstone is readable; `.notMember` without
+  one (another account's id, or the approval gate) behaves as before; why: only a tombstone proves a deletion; risk if
+  wrong: a deleted group from before the deploy stays unmarked; overturn: treat `.notMember` alone as gone.
+- **285 (D-256, Fable's pass):** the invite paths keep their existing refusal error for a deleted group; the
+  read-only banner says why; why: no new error surface for a rare case; risk if wrong: an invite tap shows the generic
+  refusal; overturn: map the tombstone to a dedicated invite line.
+- **286 (D-259, Fable's pass):** the overflow isolation covers the add-up step, not only `balance_line`; why: with one
+  record fewer every group's own line fits but the totals overrun and Home blanks the same way, and People sum across
+  groups by name; risk if wrong: none found, the add-up is one more pass; overturn: isolate `balance_line` only.
+- **287 (D-259, Fable's pass):** when a sum overruns, the group adding the most in the overrun's direction is marked
+  (earliest on a tie), then the rest is added up again, one group per round; why: blaming whichever group tipped the
+  sum depends on order and would mark an honest group sitting after the hostile one (the test puts Trip first); risk
+  if wrong: an honest large group is marked beside a hostile one; overturn: mark every group in an overrunning sum.
+- **288 (D-259, Fable's pass):** `narrow_sum` refuses exactly i64::MIN in `balance_line` and `settled_progress`; why:
+  one member can make a victim's net exactly -2^63 (9,224 records, two creditors of 2^62), which fits i64 and which
+  iOS's `abs` / `magnitude` reads of balance amounts would trap on (found by reading, not reproduced); risk if wrong:
+  none, the value is never a real balance; overturn: let it through and clamp in each shell.
+- **289 (D-259, Fable's pass):** a group whose lines fit but whose settled meter overflows keeps its balance line and
+  draws no meter, and the card's "too large" line comes only from core's `overflowed` flag; why: one source of truth,
+  and the balance core could add up is still true; risk if wrong: a missing meter goes unexplained; overturn: show the
+  "too large" line for a meter overflow too.
+- **290 (D-259, Fable's pass):** the per-phone setting prefix check (`applock.`, `privacy.`) ignores ASCII case; why:
+  stricter at no cost, no shell applies a case variant, and refusing one closes it for any later build; risk if wrong:
+  a legitimate synced key starting `Applock.` is refused (none exists); overturn: compare exactly. (The field name
+  `overflowed` is the brief's own suggestion, recorded in the unit's report as its R6; not a separate decision.)
+- **291 (D-257, Fable's pass):** joins and removals are charged to the group inside their own transaction, invites in
+  a transaction of their own after the membership check and before the log read; why: a charge that commits only with
+  the join or removal means a link holder or a plain member cannot use up a group's joins or removals with calls that
+  fail, and no stranger can charge a group; risk if wrong: refused join and removal attempts are not counted per
+  group; overturn: call `charge(groupLimitId(...))` before the transaction.
+- **292 (D-257, Fable's pass):** adoptRemovals charges one removal per call, not per record; why: it is sole-member
+  only and `REMOVALS_MAX` bounds its records; risk if wrong: a sole member adopts many removals for one charge;
+  overturn: charge per record.
+- **293 (D-257, Fable's pass):** notice lengths are UTF-16 code units, as the rules' `size()` counts them (measured in
+  the emulator: 30 emoji pass, 31 refused; 61 euro signs pass), and both phones cut a long note at a whole code point
+  of at most 59 units plus an ellipsis; why: iOS cut by grapheme (could exceed the rules) and Android by unit (could
+  split a surrogate); now twins and never a lone surrogate; risk if wrong: an emoji cluster can be cut between its
+  code points; overturn: cut by grapheme once both runtimes agree.
+- **294 (D-257, Fable's pass):** the phone folds each run of control characters (C0, DEL, C1) and U+2028, U+2029 to
+  one space before trimming; why: notes may hold line breaks, the new rules refuse them in a title, and a refused
+  record would stall sync; risk if wrong: a multi-line note's push reads on one line; overturn: refuse such notes in
+  the app instead.
+- **295 (D-257, Fable's pass):** the amount is sent only when core's string is 1 to 40 units with no control
+  character, else left out, and never on a delete; why: the rules and the Function refuse anything else; risk if
+  wrong: a push without an amount; overturn: raise the bound in both rules and phones.
+- **296 (D-257, Fable's pass):** the phones no longer read `namedGroups()` for notices; why: naming who did it was its
+  only use there, and the Function now names the author; risk if wrong: none found; overturn: restore the read.
+- **297 (D-257, Fable's pass):** the old `{text, expense}` and new `{expense, kind, title, amount}` shapes never mix
+  (`{text, kind, ...}` is refused by the rules and by `push.notice`); why: one shape per record keeps both checks
+  exact; risk if wrong: a hybrid client is refused; overturn: none wanted.
+- **298 (D-257, Fable's pass):** a server profile name over 60 units reads "Someone", not cut; why: the rules cap
+  profile names at 60, so a longer one is not a name the app wrote; risk if wrong: a legacy long name reads
+  "Someone"; overturn: cut at 60.
+- **299 (D-257, Fable's pass):** an emulator seam in onGroupRecord: under `FUNCTIONS_EMULATOR === 'true'` the built
+  message and phone count are stored at `emulatorPushes/{recordId}` instead of calling FCM; no rule matches the
+  collection and production never sets the variable; why: there is no FCM emulator and the suite makes no network
+  call, so the name and cap tests need to see the message; risk if wrong: a misconfigured production writes a
+  Functions-only document instead of sending; overturn: delete the four lines and keep only the pure tests.
+- **300 (D-257, Fable's pass):** "logged once a day" is the `pushesCapped` mark on the author's counter, and records
+  without a notice are never charged; why: one log line per author per day, and no cost for silent records; risk if
+  wrong: none found; overturn: log every capped push.
+- **301 (D-257, Fable's pass):** lead (d) stays residue: the push title is the group document's name, not the log's
+  latest; why: `groupNameOf` needs a whole-log read per record and onGroupRecord reads only the group document; risk
+  if wrong: a push titled with the name before a rename; overturn: keep the latest name on the group document.
+- **302 (D-257, Fable's pass):** the emulator suite ran on ports offset by 10000 with its own `TMPDIR`, and the
+  `firebase.json` edit was reverted before the commit; why: parallel units shared the Mac; risk if wrong: none to the
+  product; overturn: not applicable.
+- **303 (D-258, Fable's pass):** a phone whose entry was flagged signed out BEFORE this sign-in (a push that beat the
+  registration's delete-and-remake) parks nothing and signs nothing out, and its records go up at the next push; why:
+  the rules refuse its records until the entry is remade, so parking would be wrong, and signing out a phone that just
+  signed in worse; risk if wrong: those records wait one extra push; overturn: kick a push after a successful
+  registration.
+- **304 (D-258, Fable's pass):** a phone-entry read with no answer parks as today; why: it keeps decision 114
+  unchanged; a retry would be kinder but changes 114; risk if wrong: a signed-out phone parks a record it should have
+  dropped; overturn: retry before parking.
+- **305 (D-258, Fable's pass):** the approval is read first (D-254 M1), then the phone's entry, only on a
+  PERMISSION_DENIED refusal that would park, once per one-by-one pass on both shells; why: the cheapest order that
+  tells the two refusals apart; risk if wrong: one extra read per pass; overturn: read the entry first.
+- **306 (D-258, Fable's pass):** one remote sign-out path: `signedOutElsewhere()` is the devices listener's former
+  body on both shells and the push calls it; the registration path is left as it was; why: "the existing path" is then
+  literally the same function; risk if wrong: none found; overturn: inline it again.
+- **307 (D-258, Fable's pass):** a signed-out entry refuses every update except `tokenRemovalOnly()`, which also
+  passes a lastSeen-only stamp when no token is left; kept, not tightened; why: it changes nothing but the time, keeps
+  the flag (tested), and is the approval gate's helper; risk if wrong: a signed-out phone can still touch its lastSeen;
+  overturn: refuse lastSeen-only updates on a signed-out entry.
+- **308 (D-258, Fable's pass):** Android's new entry read is bounded at 8 s (`GroupEnsure.READ_TIMEOUT_MS`) to match
+  iOS's `groupReadTimeout`, though Android's `serverApproval` stays unbounded; why: twins for the new read; risk if
+  wrong: none; overturn: not applicable.
+- **309 (D-258, Fable's pass):** the emulator suite ran on ports offset by 20000, `firebase.json` restored by copy
+  before the commit; why: not to meet D-256 or D-257 on the 10000 set; risk if wrong: none to the product; overturn:
+  not applicable.
+- **310 (D-260, Fable's pass):** `BalanceUi` and `SettleUi` stay in src/main and only the proof screens move, to new
+  files `BalanceScreenProof.kt` and `SettleScreenProof.kt`; why: the release report's condition ("after confirming no
+  ordinary screen uses BalanceUi") does not hold (ExpenseDetail, ExpenseList, Settled, OverviewTab, SettleAll and
+  AddExpense use BalanceUi; SettleAll and RemovalFlow use SettleUi; OverviewTab draws BalanceLineView), and new names
+  mean no file exists in both source sets; risk if wrong: none found; overturn: split the shared types out first.
+- **311 (D-260, Fable's pass):** `BalanceUi.computeLines` and `LedgerStore.loadGroupsOrSeed` become src/debug
+  extensions, the seed reading and writing through the public `rawKvGet` / `rawKvSet` rather than widening the private
+  `withVault` / `json`; why: call sites and tests unchanged, no private API widened for a proof; risk if wrong: two vault
+  opens instead of one, proof only; overturn: make the private members internal.
+- **312 (D-260, Fable's pass):** `HomeShell` goes from private to internal; why: the debug dispatch calls it for
+  groups-proof and store-shots; risk if wrong: wider visibility inside the module only; overturn: route through a
+  src/main entry point.
+- **313 (D-260, Fable's pass):** `ProofLaunch.emulators` is called inside the kept `ProofArgs.emulators` guard in
+  MainActivity and checks it again itself; why: the gate stays visible in src/main and the hook is safe on its own;
+  risk if wrong: none, a double check; overturn: drop either check.
+- **314 (D-260, Fable's pass):** the JVM source walkers include src/debug through one helper, `AppSources`, rather
+  than per-site edits; StoreShotsTest's src/main-only walk and ApprovalTest's "helper not declared in src/main" read
+  MAIN alone, deliberately; why: guards would otherwise silently stop covering the moved screens; risk if wrong: a
+  guard meant for shipped code also scans debug code; overturn: per-site walks.
+- **315 (D-260, Fable's pass):** the guard is one gate leg in `--full`, iOS and Android together, skipping where Xcode
+  is absent; why: one leg, one list owner; Linux CI would otherwise fail on the missing binary; risk if wrong: Linux CI
+  never runs the Android half; overturn: split the Android half into its own leg.
+- **316 (D-260, Fable's pass):** dispatch words are matched as string-literal words, not raw text, and the `when
+  (headless)` shape is banned instead of the six short words; why: `--store-shots`, `--emulators`, `--emulator-as` and
+  `--welcome` legitimately stay in ProofArgs, and balance, settle, add, signin, export and import are route names
+  elsewhere; risk if wrong: a proof dispatched by another shape slips past (the 23 names still catch the screens);
+  overturn: list the short words with an allow list.
+
 ### Siri and Gemini, 210 to 213: your answers (pop-up, 2026-10-21)
 
 - **210 (U15, U16):** Siri and Gemini come in **0.5.2**, not 0.5.1.

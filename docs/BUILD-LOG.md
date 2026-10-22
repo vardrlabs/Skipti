@@ -306,6 +306,11 @@ surface; 0026 the WebAuthn relying-party ID, superseded by 0027: the RP ID is `s
 | D-253 | **Polish the store shots showed (decisions 224 to 226 mine, 227 the founder's).** Appearance's text-size sample reads "Lunch with Luna · $48.00" (the founder's line, a play on his Runa; no brand in public art); the four split person rows (Exact, Percent, Shares, Adjustment) keep the person's name in front with the amount at the end once a value is typed (`FieldRow` takes a label on both shells; spoken "Amount for {name}"); the store seed gives its groups fixed ids so Aurora's tiles read the same on both phones (the tone function was already identical; core's ids are random). | The iOS look covered Home only (the simulator tool was not granted the throwaway device); Appearance and Exact on iOS are proven by tests. | `.drafts/u32/plan.md` (After the first capture), `.drafts/d253/` (look/, sab/, gate.log) |
 | D-254 | **The approval gate (the founder's decisions 228, 229, 233 to 235, 252; mine 239 to 251).** Anyone can sign in; until the founder approves the account the cloud does nothing for it (no sync, groups, invites, profile, phones, notifications) while the ledger on the phone works fully (guarantee 5, its last sentence reworded by him: "is on once your account is approved"). Truth is `approvals/{uid}`, written only by Functions: the Firestore and Storage rules refuse every client create/update of an unapproved account (reads and deletes untouched; a denied phone may clear its own push token), and every callable but sign-out, deletion, `requestApproval` and `adminApprovals` refuses it first (a structural test gates any new callable). A private admin page (its own Hosting target `skipti-26-admin`, no SDK, Google sign-in, the Function answering only `SKIPTI_ADMIN_UID` signed in with Google) lists Waiting / Approved / Denied with Approve and Deny and a re-runnable migration that approves every account that already had a profile. Both phones show "Waiting for approval" / "Not approved", the Sync card's early-testing words, a one-time toast on approval, waiting lines on invite, join, find and add; a front event re-reads the approval; a saved name re-asks; Profile and account puts sign-in, Sign out and the username first (his 252). Privacy page Version 3 (his 235). Two Opus reviews (server: 8 Minor; shells: 2 Important, 7 Minor), a look and a re-look on throwaway devices (2 Important, 3 Minor found and fixed). Nothing deployed. | Not deployed: the index, `adminApprovals`, the migration, the other Functions, the rules, Hosting (admin + privacy v3), then the apps, in that order (design section 9), on 0.5.1's deploy day after Fable's pass. | `docs/superpowers/specs/2026-10-21-approval-gate-design.md`, `.drafts/d254/` (mockup.html, shell-brief.md, review-server.md, review-shells.md, triage-*.md, look/, relook/, sab-server/, ios-sabotage/, android-sabotage/, stage1/, gate.log) |
 | D-255 | **Every public picture in New York and US dollars, at full real detail (the founder's decisions 232, 236 to 238, 253, 257, 261; mine 259, 260).** The founder had asked in session 11 for American names and dollars in the store pictures; it was never written down, and the re-capture kept Goa trip, Meera and the rupee. The store-shots seed (D-251, both shells, DEBUG only) becomes Hamptons weekend, Apartment 4B and Brooklyn dinners, Sam with Emma, Jake, Olivia and Ben, all USD (one group owes, so both directions show); pinned values re-derived independently from the brief. Home's ledger cards wrap a long name to two lines instead of cutting it (his 261: "Hamptons wee..."). Then the whole set again on throwaway devices: App Store 10 at 1320 x 2868, Play 8 at 1440 x 2560 (was 1080 x 1920; a throwaway phone at 560 dpi keeps the 411 dp layout), README composites with the screen at its native 1320 x 2868 pixels (checked pixel for pixel against the raw frames), film clips from both phones; afternoon greeting; every frame read by eye. Caption 2 becomes "Trips, roommates, dinners." (237). The README gains "What it looks like" (shots 01, 04, 05, 07, 08, 09). THREAT_MODEL's notification example went American in D-254. | The store pictures and films are his to upload; the README images add 11 MB to the repository (full detail, decision 238). | `.drafts/d255/` (brief.md, derive.py, derive.out, capture-brief.md, capture-report.md, capture-inputs.md, sabotage/, name2/, gate.log), `.drafts/u32/out/` (App Store, Play, README, contact sheet; v2 in out-v2/), `.drafts/u33/clips/` (v2 in clips-v2/) |
+| D-256 | **A deleted group leaves a tombstone, and its id can never be a group again (the founder's decision 276; mine 279 to 285; Fable's 0.5.1 security pass).** Problem: D-252 ended a deleted group on every phone, but a phone of the deleting account that still held a copy could create the same group document again and upload its records (`.drafts/groupdelete/rootcause.md`'s RESURRECT: create 200, the group listed again). Built: `deleteGroup` writes `deletedGroups/{g}` (byUid, `uids` = members, former members and the caller once each, `deletedAt` server time, no name; pure `groups.js` `tombstoneOf`) BEFORE `recursiveDelete`, so a failed write deletes nothing; the rules refuse a group create whose id has a tombstone (one `exists()` read per create) and let only an account in `uids` get one (no list, no client write); both phones (twins, `GroupGone`) read the tombstone only after a refused or missing group read or a refused create (server source, 8 s bound), mark the copy deleted ("You deleted {group}." on the deleter's phones; a nameless mark that is not yours reads the new banner line "This group was deleted.", which the notice may sharpen with the deleter's name), remove its listener and keep its records on the phone, unsent and unparked. Calls that shaped it: a purged uid stays listed and purge writes no tombstone (279); the deleter is always listed (280); a tombstone read with no answer is no tombstone, D-252's neutral mark (281); no new refusal line, one new banner line (282); the notice may rewrite a nameless mark, never vaguer (283); `.notMember` without a tombstone is as before (284); invite paths keep their refusal (285). Tallies at 47fac8a4: rules suite 322, iOS 1054, JVM 1255, cargo 418. Sabotage 9 rows (3 rules and Functions, 3 Android, 3 iOS): each exactly its intended reds, 0 compile errors, restored and `cmp` equal. Merged in 0f553fd6; the merged tree of all five units (with D-260's 24th leg) gated in `.drafts/fable/pass-051/merge2/gate.log`. | Not deployed: the rules first (safe, nothing writes a tombstone until the Functions do), then the Functions, with 0.5.1's set. No backfill for groups deleted before the deploy. No device look. | `.drafts/fable/pass-051/briefs/d256-tombstone.md`, `.drafts/fable/pass-051/d256/` (report.md, rules-full.log, ios-test-full.log, android-test.log, gate-fast.log, sab/ with firebase_sab.py, shell_sab.py and every row's log), `.drafts/fable/pass-051/merge2/gate.log`, `.drafts/fable/pass-051/records/d256/` |
+| D-257 | **Per-group daily quotas, a per-author push cap, and the push line built from checked fields (the founder's decision 269: G-04 and G-23, G-17, G-18; mine 291 to 302; Fable's 0.5.1 security pass).** Problem: the cloud's daily limits were per account only, so a group's invites, joins and removals had no ceiling (the remove, re-invite, rejoin cycle of lead (a)); any member could trigger an unbounded number of pushes; and the push line was text the author's phone wrote, naming anyone. Built: per-group counters at `limits/group-{g}` (Functions only; `groupInvites` 100 a day on createInvite, inviteUser and inviteKnown, charged once in a transaction of its own after the membership check and before the log read; `groupJoins` 50 read inside acceptInvite's transaction and written with the join, so a refused join spends none and leaves the invite unspent; `groupRemovals` 100 inside removeMember's and adoptRemovals' transactions), the existing "Too many for today. Try again tomorrow." refusal, the per-account limits unchanged; a per-author `pushes` cap of 300 a day charged in `onGroupRecord` before the group is read (past it the record stays, nothing is sent, the day is marked once and logged `push: capped`); the notice becomes `{expense, kind, title, amount?}` (the rules enumerate the kinds, cap the title at 61 and the amount at 40 UTF-16 units, one line each, no amount on a delete; the old `{text, expense}` still accepted for 0.5.0 phones and never mixed) and the Function builds the body from the author's SERVER profile name (else "Someone"), the kind, the title and the amount; both phones (twins, `PushNotice`) write the new shape, cut a long note at a whole code point and fold control characters to one line, and no longer read `namedGroups()` for notices. Calls that shaped it: 291 to 302 (joins and removals charged inside their transactions so refused calls spend nothing; one charge per adoptRemovals call; lengths in UTF-16 units, measured in the emulator; one line on the phone; the amount only when core's string fits; no `namedGroups()`; shapes never mix; an over-long server name reads "Someone"; an emulator seam under `FUNCTIONS_EMULATOR`; the cap marked once a day; the title stays the group document's name; offset emulator ports). Tallies at 244d321f: rules suite 328, iOS 1052, JVM 1253, cargo 418; title goldens re-derived in Python (13 cases). Sabotage 9 rows (7 rules and Functions, 1 iOS, 1 Android): each exactly its intended red, restored and `cmp` equal. Merged in 6142deaa; the merged tree of all five units (with D-260's 24th leg) gated in `.drafts/fable/pass-051/merge2/gate.log`. | Not deployed: the rules and the Functions together with D-254's set on 0.5.1's deploy day. `limits/group-{g}` documents outlive their group; the push title is the group document's name (lead (d)). No device look (nothing visible changes). | `.drafts/fable/pass-051/briefs/d257-rate-limits-push-line.md`, `.drafts/fable/pass-051/d257/` (report.md, rules-suite.log, ios-test-full.log, ios-app.log, android-test.log, gate-fast.log, goldens.py, sabotage.py, sabotage/ with results.jsonl and every row's log), `.drafts/fable/pass-051/merge2/gate.log`, `.drafts/fable/pass-051/records/d257/` |
+| D-258 | **A phone signed out from another phone can no longer write records (the founder's decision 269: G-26, narrowed, not closed; mine 303 to 309; Fable's 0.5.1 security pass).** Problem: signing one phone out from another was cooperative: the cloud marked the phone's device entry `signedOut`, but its token stayed valid and the rules let it keep writing records (and updating its entry) until the phone itself noticed. Built: rules `deviceSignedOut()` (the entry named by the record's own `deviceId`, proven 32 hex by `validRecord()` first, exists and says `signedOut`; a missing entry does not refuse, since a phone's first records can precede its registration) on both record creates, personal and group; a signed-out entry refuses every update but `tokenRemovalOnly()`; Functions unchanged. Both phones (twins, `CloudSync`): on a PERMISSION_DENIED upload refusal that would park, after the approval check, read the phone's own entry once per one-by-one pass (server source, bounded 8 s); signed out since this sign-in: stop, park nothing, and take the existing remote sign-out path (`signedOutElsewhere()`, now the devices listener's own body); signed out before this sign-in (a stale flag): stop, park nothing, sign nothing out; no answer or signed in: park as before. Calls that shaped it: the stale flag waits for the next push (303); no answer parks as today, decision 114 unchanged (304); read order approval then entry, once per pass (305); one remote sign-out path (306); the device update keeps the approval gate's `tokenRemovalOnly()` (307); Android's read bounded at 8 s like iOS's (308); emulator ports offset by 20000 (309). Tallies at f94b981d: rules suite 318, iOS 1052, JVM 1253, cargo 418. Sabotage 4 rows (2 rules, 1 iOS, 1 Android): each exactly its intended red, 0 compile errors, restored and `cmp` equal. Merged in 0a5f77b1, the controller resolving two server-read count conflicts with D-256 (iOS RolesTests 6, Android GroupEndTest 7); the merged tree of all five units (with D-260's 24th leg) gated in `.drafts/fable/pass-051/merge2/gate.log`. | Not deployed: the rules with 0.5.1's set. G-26 is narrowed to an unmodified app: a modified client can write under a device id with no entry; callables and group document updates are unchanged; the real end is still Sign out everywhere. | `.drafts/fable/pass-051/briefs/d258-signed-out.md`, `.drafts/fable/pass-051/d258/` (report.md, ios-test-full.log, ios-app-4.log, ios-classes.log, android-test-3.log, gate-fast.log, sabotage_rules.py, sabotage_shells.py, sabotage-*.log and .txt), `.drafts/fable/pass-051/merge2/gate.log`, `.drafts/fable/pass-051/records/d258/` |
+| D-259 | **One group's overflow no longer blanks Home, and core refuses the per-phone setting keys (a finding of Fable's 0.5.1 security pass; mine 286 to 290).** Problem: any approved member of ONE group could write 9,224 maximum-size expenses (each passing `ffi_check_expense` and the ingest checks) that push one member's net past i64; `overview` propagated the first group's error, so every other member's Home showed only "Could not load the ledger" for ALL their groups; one record fewer could overrun the totals the same way, or land a net of exactly i64::MIN, which iOS's `abs` / `magnitude` reads would trap on (found by reading, not reproduced). Built: core's `overview` in two passes: a group whose `balance_line` fails with `Overflow` is marked (`GroupNetOut.overflowed`, a new UniFFI field, bindings regenerated) and adds nothing; any other error still fails the overview; totals and People are summed in i128 and, if a sum does not fit, the group adding the most in the overrun's direction is marked (earliest on a tie) and the rest added up again, one group per round; `narrow_sum` refuses anything outside plus or minus i64::MAX (so i64::MIN too) in `balance_line` and `settled_progress`. Both phones (twins): the overflowed group's Home card says "Amounts too large to add up." in the dim body style and spoken label, and draws no settled meter; any other group's settled read goes through `settledOrNone`, so one meter's overflow never fails Home. Hardening folded in from the D-244 and D-248 review: core refuses group setting records whose key starts `applock.` or `privacy.` (ASCII case ignored) on encode and decode, listing such a record as rejected; the shells never wrote one, and two shell tests now write it by hand. Calls that shaped it: isolate the add-up step too (286); blame the group adding the most, not the one that tipped the sum (287); refuse exactly i64::MIN (288); a meter overflow keeps the balance line and drops only the meter (289); the prefix check ignores case (290). Tallies at 3e858c15: cargo 425, iOS 1053, JVM 1254; goldens re-derived in Python (`.drafts/d259/golden.py`). Sabotage 7 rows (5 core, 1 Android, 1 iOS): each exactly its intended reds, 0 compile errors in the counted run, restored and `cmp` equal. Merged in 2a8f4e5b; the merged tree of all five units (with D-260's 24th leg) gated in `.drafts/fable/pass-051/merge2/gate.log`. | Not released: it ships in the apps with 0.5.1 (no cloud change). The attacked group itself stays unusable until its records are deleted; other sums one member can push past i64 remain (the group page's stats, Your spending); no per-group record cap. No device look. | `.drafts/fable/pass-051/briefs/d259-overview-overflow.md`, `.drafts/fable/pass-051/d259/report.md`, `.drafts/fable/pass-051/d249/report.md` (the reproduction), `.drafts/d259/` (golden.py, golden.txt, fast-gate.log, cargo-test.log, core-builds.log, ios-app.log, android-test.log, sabotage.py, sabotage-core.txt, sab-ios.log, sab-android.log), `.drafts/fable/pass-051/merge2/gate.log`, `.drafts/fable/pass-051/records/d259/` |
+| D-260 | **The proof surfaces are compiled out of release builds (the founder's decision 269: G-13; mine 310 to 316; Fable's 0.5.1 security pass).** Problem: the measured release builds (`.drafts/fable/pass-051/release/report.md`) showed iOS's proof surfaces already compiled out except `BalanceScreen.swift`'s fixture ledger (121 symbols still in Release) and `SettleScreen.swift`, while every Android proof but the store-shots seed and EmulatorApproval shipped in the release dex, gated only at run time by `ProofArgs` (`FLAG_DEBUGGABLE`); turning them on needs a re-signed APK, so not a vulnerability, but G-13 exactly. Built: iOS `BalanceScreen.swift` and `SettleScreen.swift` whole in `#if DEBUG`, `LedgerStore.loadGroupsOrSeed` in `#if DEBUG`, `Cloud.emulator` a `static let false` outside DEBUG so its branches fold; Android moves every proof out of src/main into src/debug (one `Proofs.kt` with `ProofSurface(headless, args, vaultPath)` holding AppRoot's 20-arm proof `when` and `ProofLaunch.emulators`, plus EmulatorProofs, GroupsProof, SettleLook, ExportProof, ImportProof, ExpenseConflictProof, BarProof, BalanceScreenProof, SettleScreenProof, BalanceFixtures; mover `.drafts/fable/pass-051/d260/move.py`) with src/release stubs (`ProofSurface` false, the hook a no-op, `SettleLook` null and false); `ProofArgs` stays in src/main; the JVM source walkers read src/main and src/debug through one helper, `AppSources` (45 sites in 21 files). A 24th gate leg, `scripts/check-release-proofs.py` with its self-test (19 tests): `nm` over the gate's iOS Release binary for 22 proof names (with a positive control), and src/main plus src/release for 23 Android proof names, 17 dispatch words in string literals and no `when (headless)`; both lists live. Calls that shaped it: `BalanceUi` and `SettleUi` stay in src/main, only the proof screens move (310); fixtures and the seed as src/debug extensions (311); `HomeShell` internal (312); the launch hook inside the kept `ProofArgs` guard (313); one walker helper (314); one leg, skipping without Xcode (315); dispatch words matched in literals, the `when (headless)` shape banned (316). Tallies at 1b288c4f: iOS 1051, JVM 1252 (`--rerun`), cargo 418, the leg OK; the unsigned release APK 38,586,417 bytes (was 38,684,721), its dex 0 hits for every headless word and moved proof name. Sabotage 3 rows (a proof moved back, the iOS `#if DEBUG` removed, a probe in src/debug for the walkers): each exactly its intended red, restored and `cmp` equal. Merged in 70cc5f73; the merged tree of all five units gated in `.drafts/fable/pass-051/merge2/gate.log`. | Not released: ships in the apps with 0.5.1 (no cloud change). Android's `Cloud.emulator` branches still ship, inert; the gate's iOS Release build stays coverage-instrumented. | `.drafts/fable/pass-051/briefs/d260-proofs-out-of-release.md`, `.drafts/fable/pass-051/release/` (report.md and its probes), `.drafts/fable/pass-051/d260/` (report.md, move.py, ios-test-full.log, ios-app.log, android-app.log, android-release.log, jvm-final.log, gate-fast.log, leg-final.log, apk/probe-after.txt, ios-check-on-head-dump.txt, sabotage/), `.drafts/fable/pass-051/merge2/gate.log`, `.drafts/fable/pass-051/records/d260/` |
 | D-55 | **The networking boundary + OTP sign-in, end to end against the real relay.** The largest architectural gap closed: the relay is complete (auth, passkeys, subject-owned authz, restart-proven persistence — 163 tests) and the iOS app contained ZERO networking code. Boundary: `RelayTransport` protocol — URLSessionRelayTransport (real, localhost:8080) and a stub both satisfy it; screens talk to IdentityService, never to URLSession (ADR-0025's rule applied to networking). **D-27's contract is structural in the error type:** the 401 rejection maps to ONE `.rejected` case covering unknown accounts and wrong codes — the app cannot distinguish them and the UI copy never suggests which. OTP is the first leg landed (simpler transport — no entitlements); §4.2 makes passkeys the primary path and they follow over the SAME transport, recorded plainly. Tests: stub suite (uniform rejection across unknown/wrong-code shapes, 429/5xx mapping, malformed body → badResponse, session decode with explicit snake_case keys per D-18's wire format) + an E2E against a REAL running relay that SKIPS honestly when the relay is down (D-23: a skip is recorded, never mistaken for a pass). The E2E proved the request path + uniform rejection against the real axum handlers; a SUCCESSFUL verify is not provable from the test host (the relay never exposes the code — it goes out-of-band), covered server-side by the relay's own suite. ATS: NSAllowsLocalNetworking for the simulator's localhost; production rides the TLS deployment story | §4.2 makes passkeys primary; §5.8's deep-link hand-off and the D-41 subject-owned sync both need a signed-in subject, which this delivers | `ios/Skipti/Relay/IdentityService.swift`, `ios/Skipti/App/SignInScreen.swift`, `ios/SkiptiTests/RelayClientTests.swift` |
 | D-56 | **SyncService — the transport between the vault and the relay.** Pushes and pulls OPAQUE sealed blobs (hex-encoded) to/from the subject-owned bucket. D-18's cursor semantics respected (exclusive, 409 = normal); D-41's namespace (bucket = subject_id); §10.3 offline = default (.offline returned, local ledger stays authoritative). The E2E tests prove the transport against a real relay: unauthenticated push rejected by the auth gate, unauthenticated pull returns empty, request well-formed enough to route. The full push→pull round trip with a valid session is NOT provable here (the relay never exposes the OTP code — it goes out-of-band); covered server-side by the relay's own suite and locally by the vault tests. **The mnemonic golden flake (§5.6 recurrence):** the ffi.rs mnemonic golden called ffi_mnemonic_generate for a RANDOM kit, tampered word 0, and asserted validation fails — BIP-39's 4-bit checksum survives that ~1/16 of draws. Fixed by pinning the negative to entropy [0x42; 16] (the same fix mnemonic.rs got in D-49); the generate path is tested POSITIVELY only. AGENTS.md §7 gains the rule so it lives where sessions read | §6.4: the relay parses nothing; §10.3: offline is the default; D-18/D-41 respected, not reimplemented | `ios/Skipti/App/SyncService.swift`, `core/src/ffi.rs` (mnemonic golden), `AGENTS.md` (§7), `ios/SkiptiTests/SyncE2ETests.swift` |
 | D-57 | **Passkeys on iOS — §4.2's primary path over the same transport as D-55's OTP leg.** `PasskeyAuthService` is transport-only: register/authenticate start parse `challenge_id` + `publicKeyOptions` through webauthn-rs 0.5's REAL serde shape — options sit one level down under `publicKey` (the browser CredentialCreationOptions shape), camelCase inside (`pubKeyCredParams`), base64url unpadded; finish bodies match `RegisterPublicKeyCredential`/`PublicKeyCredential` field renames exactly (`rawId`/`clientDataJSON`/`attestationObject`/`authenticatorData`/`userHandle`), verified against the vendored crate source and pinned by capture-the-request tests on fixed bytes. Assertion finish carries optional `device_label` (D-34 parity: labels optional on both sign-in paths). D-27 stays structural: every 401 maps to ONE `.rejected` case across all four routes — the app cannot decompose it. `PasskeyCeremony` builds `ASAuthorizationPlatformPublicKeyCredential` requests from parsed options (provider keyed by RP ID; challenge/userID decoded; `excludeCredentials` gated to iOS 17.4 where the platform API exists) and maps results back into wire shapes. **Honest limit:** the controller ceremony cannot run until the associated-domains entitlement (`webcredentials:skipti.vardrlabs.com`), an AASA file served from https://skipti.vardrlabs.com, and TLS exist (ADR-0027) — no test claims otherwise; recorded in §4.4. E2E drives all four routes against a REAL relay: register/start returns parseable options whose RP ID is the dev default `localhost`; fabricated attestation / unknown account / garbage assertion reject uniformly. ALSO fixed here, found while wiring: the Xcode project file had `A10026` defined twice — committed HEAD failed `make ios-app` outright (SyncE2ETests compiled into the app target, XCTest unresolvable there) and in no resolution did SyncE2ETests ever run; unique IDs plus the missing test-phase entry brought its three tests to life against the live relay (incident §5.9). Full suite: **27 passed / 0 failed / 0 skipped** with the relay up | §4.2 makes passkeys primary; D-55 landed OTP first deliberately — same transport, same rejection contract | `ios/Skipti/Relay/{PasskeyAuthService,PasskeyCeremony}.swift`, `ios/SkiptiTests/PasskeyServiceTests.swift`, `ios/Skipti.xcodeproj/project.pbxproj` |
@@ -23784,6 +23789,511 @@ wrap), h (the app lock), c (four takes). Every output frame read by eye: no rupe
 | W1 | iOS ledger name back to one line | the two new HomePartsTests (8 assertions, three themes) |
 | W2 | Android ledger name back to `maxLines = 1` | `a_ledger_cards_name_takes_two_lines`, `row_titles_end_in_an_ellipsis` |
 
+### D-256: a deleted group leaves a tombstone, and its id can never be a group again, 2026-10-22
+
+Tallies from the unit's own run at 47fac8a4 in its worktree (`/private/tmp/skipti-d256`, branch `d256-tombstone`,
+before the merge); the merged tree's full gate below (main after all five units of the pass were merged: D-256, D-259, D-257,
+D-258 and D-260; its stamp names the commit; `.drafts/fable/pass-051/merge2/gate.log`):
+
+```
+GATE PASSED: 24 passed, 0 skipped
+
+Evidence (paste into docs/BUILD-LOG.md §3 when claiming progress):
+
+  gate: full  ·  2026-10-22T09:34:48Z  ·  branch main  ·  commit 70cc5f73
+  cargo fmt --all -- --check                                 exit 0
+  cargo clippy --workspace --all-targets -- -D warnings      exit 0
+  float audit (ADR-0002: no f32/f64 in core/src)             exit 0
+  buildlog structure (D-number contiguity, fences)           exit 0
+  swift interpolation (no literal backslash-paren in UI strings) exit 0
+  swift autolink (no email/URL in string-literal UI titles)  exit 0
+  swift list rows (no styled button as a clear list row)     exit 0
+  em dashes (D-228: no U+2014 or U+2013 on the public surface) exit 0
+  gate self-test (D-137 heavy-leg proof and hook routing)    exit 0
+  cargo test --workspace                                     425 passed, 0 failed
+  cargo build -p skipti-core --target wasm32-unknown-unknown exit 0
+  cargo test --workspace --release -- --ignored              exit 0 (~40s sweeps)
+  bindings freshness (regenerate == committed)               exit 0 (byte-identical)
+  kotlin bindings compile standalone (bytes != buildable)    KOTLIN BINDINGS COMPILE OK
+  cargo audit                                                exit 0
+  cargo deny check (ADR-0012 banned SDK scan)                exit 0
+  SBOM generation (cargo cyclonedx)                          exit 0
+  firebase rules (emulators: every refusal tested)           RULES TESTS PASSED
+  npm audit (Cloud Functions' dependencies)                  exit 0 (no high or critical)
+  make ios-app (build + simulator tests)                     TEST SUCCEEDED
+  make android-app (core .so + APK packaging)                BUILD SUCCESSFUL
+  make android-test (JVM goldens against real core)          per-class tally printed; exits non-zero on any failure
+  licence inventory (regenerate == committed)                exit 0 (current)
+  release proofs (D-260: no proof in either release build)   RELEASE PROOFS OK
+```
+
+Merged tree: cargo test 425 passed, 0 failed; iOS Executed 1058 tests, with 0 failures (0 unexpected); JVM 1259 tests, 0 failed, one variant (play debug; XML written 05:34:37). The unit's own run at 47fac8a4: emulator suite
+`RULES TESTS PASSED (322 tests)` (`.drafts/fable/pass-051/d256/rules-full.log`; new: 2 rules tests, 3 Functions
+tests); iOS `Executed 1054 tests, with 0 failures (0 unexpected)` plus the Release build (`ios-test-full.log`,
+`ios-app2.log`; GroupEndTests 15, 3 new); JVM `TOTAL 1255 executions = 1255 tests x 1 variant(s), 0 failed`, XML
+written 03:55:32 by that run (`android-test.log`; GroupEndTest 15, 3 new); fast gate `GATE PASSED: 11 passed, 0
+skipped`, cargo test 418 passed (`gate-fast.log`). A first `make ios-app` (`ios-app.log`) died when the test host was
+SIGKILLed in D248FixesTests under load from the other units' runs (load about 100, 3.9 GB swap): unrelated, re-run
+green.
+
+**The problem.** D-252 ended a deleted group on every phone, but a phone of the deleting account that still held a
+copy could put it back: `ensureGroup` created the group document again (200) and uploaded its records
+(`.drafts/groupdelete/rootcause.md`, RESURRECT). The founder chose option C, the tombstone (decision 276).
+
+**What was built.** Functions: `tombstoneOf(memberUids, former, caller)` (`groups.js`, pure: byUid, `uids` deduplicated,
+no name); `deleteGroup` awaits `deletedGroups/{g}.set({...tombstoneOf, deletedAt})` before `recursiveDelete`, so a
+failed tombstone write fails the call before anything is deleted; `purgeAccount` untouched. Rules: the group create
+adds `!exists(deletedGroups/$(groupId))`; `deletedGroups/{g}` allows only `get`, for `request.auth.uid in
+resource.data.uids`. Shells (twins, iOS `Roles.swift` / Android `Roles.kt` `GroupGone`): `Tombstone(byYou, at)`,
+`asksTombstone` (refused or not found only), a `deleted` outcome in `decide`, `mark(for:tombstone:now:)`,
+`createRefused`; `GroupEndCopy.wasDeleted` "This group was deleted." for a nameless mark that is not yours;
+`Notices.deletedMark` lets the notice rewrite such a mark with the deleter's name; `CloudSync.tombstoneRead` (server
+source, bounded 8 s, read only); `ensureGroup` on `.notMember` runs `endIfDeleted` (own signed-in account only):
+marks the copy deleted, removes its listener, refreshes screens. The RESURRECT trace now: create refused (403), group
+read refused, `.notMember`, tombstone readable, deleted mark, listener removed, records kept on the phone, unsent,
+unparked.
+
+**Calls taken** (decisions 279 to 285): a purged uid stays in `uids` and purge's own deletion of sole-member groups
+writes no tombstone (279); the deleter is always listed, as `deletionAudience` does (280); a tombstone read with no
+answer counts as none and leaves D-252's neutral read-only mark (281); no new refusal line, one new banner line (282);
+the notice may rewrite a nameless mark, never make one vaguer (283); `endIfDeleted` marks only with a tombstone (284);
+invite paths keep their refusal error (285).
+
+**Deploy order.** The rules first is safe (the guard refuses only ids whose tombstone exists, and nothing writes one
+until the Functions deploy), then the Functions. A shell meeting no rule for the tombstone get is refused and reads it
+as no tombstone.
+
+**Sabotage** (`.drafts/fable/pass-051/d256/sab/`: `firebase_sab.py`, `shell_sab.py`, one log and backup per row; each
+row anchored once, zero compile or rules errors, exactly the intended tests red, restored, `cmp` equal):
+
+| Row | Sabotage (file: edit; expected red; restored, `cmp` equal) | Red |
+|---|---|---|
+| F1 | `firebase/firestore.rules`: the group create's `!exists(deletedGroups/...)` guard removed; expected: the rules test and the Functions RESURRECT test; restored, `cmp` equal | `D-256: a deleted group's id can never be created again, by anyone, even as its only member`, `D-256: the deleting account's other phone cannot put the deleted group back (rootcause.md's RESURRECT, now refused)` only |
+| F2 | `firebase/firestore.rules`: the tombstone get widened to `signedIn()`; expected: the rules stranger test and RESURRECT; restored, `cmp` equal | `D-256: an account the tombstone lists reads it; a stranger does not; nobody lists or writes one`, `D-256: the deleting account's other phone cannot put the deleted group back (rootcause.md's RESURRECT, now refused)` only |
+| F3 | `firebase/functions/index.js`: `deleteGroup`'s tombstone set removed; expected: the tombstone test, RESURRECT and the pure wiring test; restored, `cmp` equal | `D-256: who a tombstone names: every member, the removed and the deleter, once each; whose delete it was`, `D-256: deleteGroup leaves a tombstone: whose delete, every account that held the group, the time; no name`, `D-256: the deleting account's other phone cannot put the deleted group back (rootcause.md's RESURRECT, now refused)` only |
+| A1 | `Roles.kt`: `decide` makes refused or not found always READ_ONLY; expected: the tombstone decision test; 0 compile errors; restored, `cmp` equal | `GroupEndTest.a_tombstone_turns_a_gone_group_into_a_deleted_copy` only |
+| A2 | `GroupSettings.kt`: the nameless deleted banner uses `deletedBanner`; expected: the tombstone copy test; restored, `cmp` equal | `GroupEndTest.a_tombstones_copy_reads_as_a_deletion` only |
+| A3 | `Roles.kt`: `deletedMark` keeps any deleted mark; expected: the tombstone copy test; restored, `cmp` equal | `GroupEndTest.a_tombstones_copy_reads_as_a_deletion` only |
+| I1 | `Roles.swift`: as A1; expected: the tombstone decision test (two assertions); 0 compile errors; restored, `cmp` equal | `GroupEndTests.testATombstoneTurnsAGoneGroupIntoADeletedCopy` only |
+| I2 | `GroupSettings.swift`: as A2; expected: the tombstone copy test; restored, `cmp` equal | `GroupEndTests.testATombstonesCopyReadsAsADeletion` only |
+| I3 | `Roles.swift`: as A3; expected: the tombstone copy test; restored, `cmp` equal | `GroupEndTests.testATombstonesCopyReadsAsADeletion` only |
+
+### D-257: per-group daily quotas, a per-author push cap, and the push line built from checked fields, 2026-10-22
+
+Tallies from the unit's own run at 244d321f in its worktree (`/private/tmp/skipti-d257`, branch `d257-limits`, before
+the merge); the merged tree's full gate below (main after all five units of the pass were merged: D-256, D-259, D-257,
+D-258 and D-260; its stamp names the commit; `.drafts/fable/pass-051/merge2/gate.log`):
+
+```
+GATE PASSED: 24 passed, 0 skipped
+
+Evidence (paste into docs/BUILD-LOG.md §3 when claiming progress):
+
+  gate: full  ·  2026-10-22T09:34:48Z  ·  branch main  ·  commit 70cc5f73
+  cargo fmt --all -- --check                                 exit 0
+  cargo clippy --workspace --all-targets -- -D warnings      exit 0
+  float audit (ADR-0002: no f32/f64 in core/src)             exit 0
+  buildlog structure (D-number contiguity, fences)           exit 0
+  swift interpolation (no literal backslash-paren in UI strings) exit 0
+  swift autolink (no email/URL in string-literal UI titles)  exit 0
+  swift list rows (no styled button as a clear list row)     exit 0
+  em dashes (D-228: no U+2014 or U+2013 on the public surface) exit 0
+  gate self-test (D-137 heavy-leg proof and hook routing)    exit 0
+  cargo test --workspace                                     425 passed, 0 failed
+  cargo build -p skipti-core --target wasm32-unknown-unknown exit 0
+  cargo test --workspace --release -- --ignored              exit 0 (~40s sweeps)
+  bindings freshness (regenerate == committed)               exit 0 (byte-identical)
+  kotlin bindings compile standalone (bytes != buildable)    KOTLIN BINDINGS COMPILE OK
+  cargo audit                                                exit 0
+  cargo deny check (ADR-0012 banned SDK scan)                exit 0
+  SBOM generation (cargo cyclonedx)                          exit 0
+  firebase rules (emulators: every refusal tested)           RULES TESTS PASSED
+  npm audit (Cloud Functions' dependencies)                  exit 0 (no high or critical)
+  make ios-app (build + simulator tests)                     TEST SUCCEEDED
+  make android-app (core .so + APK packaging)                BUILD SUCCESSFUL
+  make android-test (JVM goldens against real core)          per-class tally printed; exits non-zero on any failure
+  licence inventory (regenerate == committed)                exit 0 (current)
+  release proofs (D-260: no proof in either release build)   RELEASE PROOFS OK
+```
+
+Merged tree: cargo test 425 passed, 0 failed; iOS Executed 1058 tests, with 0 failures (0 unexpected); JVM 1259 tests, 0 failed, one variant (play debug; XML written 05:34:37). The unit's own run at 244d321f: emulator suite
+`RULES TESTS PASSED (328 tests)` on the committed content with offset ports (`.drafts/fable/pass-051/d257/rules-suite.log`;
+new: rules 1, people 2, push 2, functions 4, groups-functions 2); iOS `Executed 1052 tests, with 0 failures (0
+unexpected)` under `Test Suite 'All tests' passed`, with the Release build (`ios-test-full.log`, `ios-app.log`; one new
+test); JVM `TOTAL 1253 executions = 1253 tests x 1 variant(s), 0 failed`, all 65 XML files written 04:28:56 by that run
+(`android-test.log`; AccountTest 50, one new); fast gate `GATE PASSED: 11 passed, 0 skipped`, cargo test 418 passed
+(`gate-fast.log`); the title goldens re-derived in Python (`goldens.py`, 13 cases).
+
+**The problem** (CLOUD-SECURITY G-04, G-23, G-17, G-18; the founder brought them into this pass, decision 269). The
+daily limits were per account, so a group's invites, joins and removals had no ceiling of their own (lead (a): remove,
+re-invite, rejoin); any member could make the cloud send an unbounded number of pushes; and a push's line was text the
+author's phone wrote, so it could name anyone and say anything.
+
+**What was built.** Quotas: `people.js` `LIMITS` gains `groupInvites` 100, `groupJoins` 50, `groupRemovals` 100 and
+`pushes` 300 (a comment per number); `groupLimitId(g)` = `group-{g}` in `limits/` (Functions only; account uids are
+alphanumeric, so no clash); `charge(id, kind)` takes any counter id; `groupChargeIn(tx, g, kind)` reads the group's
+counter inside the caller's transaction and returns the write. Invites charge once in their own transaction after the
+membership or target check and before `refuseHeld` reads the log; acceptInvite reads `groupJoins` right after the
+group-exists check and writes it with the join; removeMember and adoptRemovals read `groupRemovals` first and write it
+with the removal records. Push cap: `chargePush(state, today)` returns `{send, write, log}`; past 300 the day is marked
+`pushesCapped` once and later pushes write nothing; a new UTC day resets; `onGroupRecord` charges after `push.notice`
+and the authorUid check, BEFORE reading the group, and logs `push: capped` (info, no uid). The line: `validNotice` in
+the rules takes `{expense, kind, title, amount?}` (exact keys, kind in added, changed, deleted; title 1 to 61, amount 1
+to 40 and never on a delete, both through `oneLine`, which refuses C0, DEL, C1, U+2028 and U+2029) or the old `{text,
+expense}`; `push.js` re-checks the new shape or returns `{expense, legacy: true}` for the old (its text checked, never
+used); `authorName` is the trimmed server name of 1 to 60, else "Someone"; the body is `{name} {kind} {title}` plus ` ·
+{amount}`, legacy `{name} changed an expense`; `onGroupRecord` reads `users/{authorUid}` only when there are phones to
+send to; the title stays `groups/{g}.name`. Phones (twins: iOS `Push.swift`, Android `Push.kt`): `PushNotice.Notice`,
+`notice(_:thisDevice:expenses:locale:)` without the `groups` parameter, `oneLine`, `title`, `field`; `CloudSync` writes
+`PushNotice.field(notice)`. The activity feed is untouched.
+
+**Calls taken** (decisions 291 to 302): joins and removals charged inside their own transactions, invites in one of
+their own before the log read, so refused calls spend nothing and a stranger cannot charge a group (291); adoptRemovals
+charges one per call (292); lengths are UTF-16 code units, measured in the Firestore emulator (30 emoji pass, 31
+refused; 61 euro signs pass) and pinned in `rules.test.mjs`, both phones cutting at a whole code point of at most 59
+units plus an ellipsis (293); one line on the phone: each run of control characters and U+2028, U+2029 becomes one
+space (294); the amount is sent only when core's string is 1 to 40 units with no control character (295); the phones
+no longer read `namedGroups()` for notices (296); old and new shapes never mix (297); a server name over 60 units reads
+"Someone" (298); the emulator seam stores the built message at `emulatorPushes/{recordId}` under `FUNCTIONS_EMULATOR`
+(no rule matches it; production never sets the variable) (299); the cap's "logged once a day" is the `pushesCapped`
+mark, and records without a notice are never charged (300); lead (d) stays residue: the title is the group document's
+name (301); the suite ran on ports offset by 10000 with its own `TMPDIR`, `firebase.json` reverted before the commit
+(302).
+
+**Sabotage** (`.drafts/fable/pass-051/d257/sabotage.py`; logs, backups and `results.jsonl` in `sabotage/`; each row
+anchored once, zero compile or rules errors, exactly the intended test red, restored, `cmp` equal). S5i's first parse
+used the old XCTest line pattern and found nothing (results.jsonl's first S5i line, `pass: false`); its log was re-read
+with Xcode 27's `Test case '...' failed on` pattern (the second S5i line) and the runner fixed; the row below is the
+re-read.
+
+| Row | Sabotage (file: edit; expected red; restored, `cmp` equal) | Red |
+|---|---|---|
+| S1a | `firebase/functions/people.js`: `groupJoins: 50` to 51; expected: the people test of a group's day; restored, `cmp` equal | `D-257: a group's day: 100 invites, 50 joins, 100 removals, each refused past its limit, again the next UTC day` only |
+| S1b | `firebase/functions/index.js`: acceptInvite's group charge made a no-op; expected: the functions test that a join is charged; restored, `cmp` equal | `D-257: a join is charged to the group with the join; a full day refuses it, the invite unspent; a refused join spends none` only |
+| S1c | `firebase/functions/index.js`: removeMember's group charge made a no-op; expected: the groups-functions test that removeMember charges; restored, `cmp` equal | `D-257: removeMember charges the group's day with the removal; a refused call spends none; a full day refuses` only |
+| S1d | `firebase/functions/index.js`: inviteKnown's group charge removed; expected: the functions test that each invite path charges; restored, `cmp` equal | `D-257: each invite path charges the group once, a member's call only; a full day refuses all three, nothing written` only |
+| S2 | `firebase/functions/index.js`: the push cap's return removed; expected: the functions test of the 301st push; restored, `cmp` equal | `D-257: the 301st push of an author's day is held back: the record stays, nothing is sent` only |
+| S3 | `firebase/firestore.rules`: `oneLine(n.title, 61)` to 62; expected: the rules test of a notice of kind, title and amount; restored, `cmp` equal | `D-257: a notice of kind, title and amount: the kinds enumerated, one line each, bounded, nothing else` only |
+| S4 | `firebase/functions/index.js`: the body built from `record.notice.text` when present; expected: the functions test that the push names the author; restored, `cmp` equal | `D-257: the push names the author as the server holds them, never the line the phone wrote` only |
+| S5i | `ios/Skipti/App/Push.swift`: the title cut by `prefix(59)` graphemes; expected: the iOS whole-character cut test (52 passed, 1 failed, 0 compile errors); restored, `cmp` equal | `AccountTests.testAPushTitleIsOneLineCutAtAWholeCharacter` only |
+| S5a | `android/app/src/main/java/com/vardrlabs/skipti/Push.kt`: the surrogate guard removed; expected: the Android whole-character cut test (1 failure, 0 compile errors); restored, `cmp` equal | `AccountTest.a_push_title_is_one_line_cut_at_a_whole_character` only |
+
+### D-258: a phone signed out from another phone can no longer write records, 2026-10-22
+
+Tallies from the unit's own run at f94b981d in its worktree (`/private/tmp/skipti-d258`, branch `d258-signed-out`,
+before the merge); the merged tree's full gate below (main after all five units of the pass were merged: D-256, D-259, D-257,
+D-258 and D-260; its stamp names the commit; `.drafts/fable/pass-051/merge2/gate.log`):
+
+```
+GATE PASSED: 24 passed, 0 skipped
+
+Evidence (paste into docs/BUILD-LOG.md §3 when claiming progress):
+
+  gate: full  ·  2026-10-22T09:34:48Z  ·  branch main  ·  commit 70cc5f73
+  cargo fmt --all -- --check                                 exit 0
+  cargo clippy --workspace --all-targets -- -D warnings      exit 0
+  float audit (ADR-0002: no f32/f64 in core/src)             exit 0
+  buildlog structure (D-number contiguity, fences)           exit 0
+  swift interpolation (no literal backslash-paren in UI strings) exit 0
+  swift autolink (no email/URL in string-literal UI titles)  exit 0
+  swift list rows (no styled button as a clear list row)     exit 0
+  em dashes (D-228: no U+2014 or U+2013 on the public surface) exit 0
+  gate self-test (D-137 heavy-leg proof and hook routing)    exit 0
+  cargo test --workspace                                     425 passed, 0 failed
+  cargo build -p skipti-core --target wasm32-unknown-unknown exit 0
+  cargo test --workspace --release -- --ignored              exit 0 (~40s sweeps)
+  bindings freshness (regenerate == committed)               exit 0 (byte-identical)
+  kotlin bindings compile standalone (bytes != buildable)    KOTLIN BINDINGS COMPILE OK
+  cargo audit                                                exit 0
+  cargo deny check (ADR-0012 banned SDK scan)                exit 0
+  SBOM generation (cargo cyclonedx)                          exit 0
+  firebase rules (emulators: every refusal tested)           RULES TESTS PASSED
+  npm audit (Cloud Functions' dependencies)                  exit 0 (no high or critical)
+  make ios-app (build + simulator tests)                     TEST SUCCEEDED
+  make android-app (core .so + APK packaging)                BUILD SUCCESSFUL
+  make android-test (JVM goldens against real core)          per-class tally printed; exits non-zero on any failure
+  licence inventory (regenerate == committed)                exit 0 (current)
+  release proofs (D-260: no proof in either release build)   RELEASE PROOFS OK
+```
+
+Merged tree: cargo test 425 passed, 0 failed; iOS Executed 1058 tests, with 0 failures (0 unexpected); JVM 1259 tests, 0 failed, one variant (play debug; XML written 05:34:37). The unit's own run at f94b981d: emulator suite `RULES
+TESTS PASSED (318 tests)` (tests 318, pass 318, fail 0, as the report read it off
+`/private/tmp/skipti-d258-tmp/rules2.log`, which is no longer on disk; the sabotage logs `sabotage-S1.log` and
+`sabotage-S2.log` beside the report show the same 318-test suite with exactly the one D-258 test red, and the merged
+gate's rules leg ran the suite green); iOS `Executed 1052 tests, with 0 failures (0 unexpected)`, 0 restarts, with the
+Release build (`.drafts/fable/pass-051/d258/ios-test-full.log`, `ios-app-4.log`; the three affected classes alone,
+`Executed 178 tests, with 0 failures`, `ios-classes.log`); JVM `TOTAL 1253 executions = 1253 tests x 1 variant(s), 0
+failed`, XML written 05:06:14 by that run after the sabotage restore (`android-test-3.log`); fast gate `GATE PASSED: 11
+passed, 0 skipped`, cargo test 418 passed (`gate-fast.log`). Two earlier full iOS runs were killed mid-way when other
+units' runs installed the app on the same simulator; the run above had the device alone. The merge (0a5f77b1) met two
+conflicts in the server-read count guards, both units having added a read: the controller resolved them to iOS
+`RolesTests` 6 and Android `GroupEndTest` 7.
+
+**The problem** (CLOUD-SECURITY G-26; decision 269). Signing one phone out from another set its device entry's
+`signedOut`, but the phone's token stayed valid and nothing in the rules read the flag: until the phone itself noticed
+(its devices listener), it could keep writing records and updating its entry.
+
+**What was built.** Rules: `deviceSignedOut()` = the entry `users/{uid}/devices/{request.resource.data.deviceId}`
+exists and `signedOut` is true; `&& !deviceSignedOut()` on the personal and the group record create, after
+`validRecord()` (so the id is proven 32 hex before it enters a path); a missing entry does not refuse; the device
+update becomes `isUser(uid) && ((approved() && resource.data.get('signedOut', false) != true) || tokenRemovalOnly())`.
+Functions unchanged. The rules test (`rules.test.mjs`, with `DROP` support in `write`): a signed-out phone's personal
+and group records refused; a signed-in phone unaffected; a phone with no entry still writes; `signedOut: false` writes;
+on the signed-out entry a name, a version and a new token are refused and the token removal goes through; deleting and
+remaking the entry (a sign-in after a stale flag) writes again; another account's signed-out entry with the same id
+changes nothing. Shells (twins): `CloudSync.signedOutElsewhere()` (the devices listener's former body, which the
+listener now calls); `uploadOneByOne` / `oneByOne` take a `phone` read and return the flag; on a permission refusal,
+after the approval check, the entry is read once per call; `PhoneFlag` (signedIn, signedOut, signedOutBefore, unknown)
+and a pure `phoneFlag` using `Phones.signedOutSince`; `serverPhone` (server source, iOS `groupReadTimeout`, Android
+`GroupEnsure.READ_TIMEOUT_MS`); `pushAll` runs `signedOutElsewhere()` on signedOut before parking. Tests: iOS
+`ApprovalTests.testASignedOutPhonesRefusalIsNotParked`, Android
+`AuditFixesTest.a_signed_out_phones_refusal_is_not_parked` (signedOut and signedOutBefore stop with nothing parked and
+the entry read once; signedIn and unknown park as before; an invalid argument parks without a read; an unapproved
+account stops on the approval and never reads the entry; the pure reading; source-order guards for the read, the
+sign-out path and the server-only bounded read); the server-read count guards name the new read.
+
+**Calls taken** (decisions 303 to 309): a flag set before this sign-in parks nothing and signs nothing out, and the
+records go up at the next push once the registration remakes the entry (303); no answer parks as today, keeping
+decision 114 (304); approval first, then the entry, only on a refusal that would park, once per pass (305); one remote
+sign-out path, the same function on both shells (306); a signed-out entry takes no update but `tokenRemovalOnly()`,
+which also passes a lastSeen-only stamp when no token is left, kept as the approval gate's helper (307); Android's new
+read bounded at 8 s to match iOS (308); emulator ports offset by 20000, `firebase.json` restored by copy before the
+commit (309).
+
+**Read cost.** One more document read per record create once the entry exists (always, after registration); whether a
+batch is billed one entry read or one per record was not measured (the emulator does not bill), so the upper bound is
+one per record create. A push's batch now makes one more distinct access (approvals, one per group, the entry): a
+batch touching 19 or more groups exceeds the 20-access limit, is refused and falls to the one-by-one path, slower but
+never parked (not tested in the emulator).
+
+**Sabotage** (`.drafts/fable/pass-051/d258/`: `sabotage_rules.py`, `sabotage_shells.py`, `sabotage-S1.log`,
+`sabotage-S2.log`, `sabotage-rules.txt`, `sabotage-ios.{log,txt}`, `sabotage-android.{log,txt}`; each row anchored
+once, zero compile or rules errors, exactly the intended test red, restored, `cmp` equal; the app and JVM results were
+rebuilt after the restores). The iOS runner's line "compile errors: 4" counts the four XCTest assertion lines its
+pattern also matches (`sabotage-ios.log` lines 871 to 874, all in the target test); the build had none.
+
+| Row | Sabotage (file: edit; expected red; restored, `cmp` equal) | Red |
+|---|---|---|
+| S1 | `firebase/firestore.rules`: `deviceSignedOut()` returns `false && exists(...)` (both record creates lose the guard); expected: the D-258 rules test only (317 of 318 pass); restored, `cmp` equal | `D-258: a phone signed out from another phone writes no record and updates nothing but its token removal` only |
+| S2 | `firebase/firestore.rules`: the device update back to `(approved() \|\| tokenRemovalOnly())`; expected: the D-258 rules test only (317 of 318 pass); restored, `cmp` equal | `D-258: a phone signed out from another phone writes no record and updates nothing but its token removal` only |
+| S3 | `ios/Skipti/App/CloudSync.swift`: the no-park return gated on `flag.flagged, flag == .unknown` (never true); expected: the iOS signed-out test only (178 run in 3 classes, 4 assertion failures, 0 compile errors); restored, `cmp` equal | `ApprovalTests.testASignedOutPhonesRefusalIsNotParked` only |
+| S4 | `android/app/src/main/java/com/vardrlabs/skipti/CloudSync.kt`: `if (read.flagged && read == PhoneFlag.UNKNOWN) return ...`; expected: the Android signed-out test only (full JVM suite, 0 compile errors); restored, `cmp` equal | `AuditFixesTest.a_signed_out_phones_refusal_is_not_parked` only |
+
+### D-259: one group's overflow no longer blanks Home, and core refuses the per-phone setting keys, 2026-10-22
+
+Tallies from the unit's own run at 3e858c15 in its worktree (`/private/tmp/skipti-d259`, branch `d259-overflow`,
+commits 65323add and 3e858c15, before the merge); the merged tree's full gate below (main after all five units of the pass were merged: D-256, D-259, D-257,
+D-258 and D-260; its stamp names the commit; `.drafts/fable/pass-051/merge2/gate.log`):
+
+```
+GATE PASSED: 24 passed, 0 skipped
+
+Evidence (paste into docs/BUILD-LOG.md §3 when claiming progress):
+
+  gate: full  ·  2026-10-22T09:34:48Z  ·  branch main  ·  commit 70cc5f73
+  cargo fmt --all -- --check                                 exit 0
+  cargo clippy --workspace --all-targets -- -D warnings      exit 0
+  float audit (ADR-0002: no f32/f64 in core/src)             exit 0
+  buildlog structure (D-number contiguity, fences)           exit 0
+  swift interpolation (no literal backslash-paren in UI strings) exit 0
+  swift autolink (no email/URL in string-literal UI titles)  exit 0
+  swift list rows (no styled button as a clear list row)     exit 0
+  em dashes (D-228: no U+2014 or U+2013 on the public surface) exit 0
+  gate self-test (D-137 heavy-leg proof and hook routing)    exit 0
+  cargo test --workspace                                     425 passed, 0 failed
+  cargo build -p skipti-core --target wasm32-unknown-unknown exit 0
+  cargo test --workspace --release -- --ignored              exit 0 (~40s sweeps)
+  bindings freshness (regenerate == committed)               exit 0 (byte-identical)
+  kotlin bindings compile standalone (bytes != buildable)    KOTLIN BINDINGS COMPILE OK
+  cargo audit                                                exit 0
+  cargo deny check (ADR-0012 banned SDK scan)                exit 0
+  SBOM generation (cargo cyclonedx)                          exit 0
+  firebase rules (emulators: every refusal tested)           RULES TESTS PASSED
+  npm audit (Cloud Functions' dependencies)                  exit 0 (no high or critical)
+  make ios-app (build + simulator tests)                     TEST SUCCEEDED
+  make android-app (core .so + APK packaging)                BUILD SUCCESSFUL
+  make android-test (JVM goldens against real core)          per-class tally printed; exits non-zero on any failure
+  licence inventory (regenerate == committed)                exit 0 (current)
+  release proofs (D-260: no proof in either release build)   RELEASE PROOFS OK
+```
+
+Merged tree: cargo test 425 passed, 0 failed; iOS Executed 1058 tests, with 0 failures (0 unexpected); JVM 1259 tests, 0 failed, one variant (play debug; XML written 05:34:37). The unit's own run: fast gate `GATE PASSED: 11 passed, 0
+skipped`, `cargo test --workspace: 425 passed, 0 failed` (lib 413) (`.drafts/d259/fast-gate.log`); JVM `TOTAL 1254
+executions = 1254 tests x 1 variant(s), 0 failed`, all 64 XML files written 04:50:24, after the last core build and
+the shell edits (`.drafts/d259/android-test.log`); iOS `Executed 1053 tests, with 0 failures (0 unexpected)` under
+`Test Suite 'All tests' passed`, with the Release build linked (`.drafts/d259/ios-app.log`; the worktree's
+`ios-test-full.log` is gone with the worktree). Bindings: `make bindings`, then `make ios-core`, `make android-core`
+and `cargo build -p skipti-core` before any shell test (`.drafts/d259/core-builds.log`). Goldens re-derived in Python
+(`.drafts/d259/golden.py`, `golden.txt`: 9,224 records; 2^62 = 4,611 x 10^15 + 686,018,427,387,904; Trip at i64::MIN +
+808; totals -1,500 without Trip; People 10^19, past i64).
+
+**The problem** (a finding of the pass, from the D-249 probe, `.drafts/fable/pass-051/d249/report.md`). Any approved
+member of ONE group can write 9,224 expenses of `MAX_AMOUNT_MINOR` (10^15 minor units) on one member, each passing
+`ffi_check_expense` and the ingest checks; the rules put no count, rate or per-author cap on record writes (D-257's
+cap limits pushes, not records), and 9,224 small writes fit Firestore's free daily quota and take minutes. That
+member's net passes i64: `balance_line`, `settled_progress` and `overview` returned `Overflow`, and since `overview`
+propagated the first group's error, every other member's Home showed only "Could not load the ledger" for ALL their
+groups, including groups the attacker is not in. One record fewer overruns the totals the same way (via
+`accumulate`), or, with two payer ids (the payer is payload-supplied), lands a net of exactly i64::MIN, which fits i64
+and which iOS's many `abs(...)` / `Int64(x.magnitude)` reads of balance amounts would trap on (RemovalFlow already
+notes it; found by reading, NOT reproduced on a device). Before the fix the only recovery was thousands of delete
+records or leaving the group; removing the attacker does not remove their records.
+
+**What was built.** Core: `overview` in two passes. Per group, `balance_line`'s `Err(Overflow)` marks the group (empty
+`nets`, `overflowed: true`, a new UniFFI field; bindings regenerated and committed); any other error still returns
+`Err` (a bug, not an attack). Adding up (`add_up`): totals and People are summed in i128; if a total or a person's
+amount does not fit (`narrow_sum`), the group adding the most in the overrun's direction is marked (earliest on a
+tie) and the rest added up again, one group per round, so it ends. `narrow_sum` (ffi.rs) is `Overflow` unless
+`|v| <= i64::MAX`, used for `balance_line`'s entries, transfers and viewer net and `settled_progress`'s settled and
+outstanding; other `narrow` call sites unchanged. Shells (twins): `LedgerLine.tooLarge`, `LedgerCards.line(_:tooLarge:)`,
+`LedgerCopy.tooLarge` "Amounts too large to add up." (the existing LedgerCopy parity test compares both), drawn in the
+dim body text and spoken; `HomeOverview.load` skips the settled meter for an overflowed group and reads every other
+group's through `settledOrNone` (core's `Overflow` is no meter, any other error rethrown); `HomeOverview.tooLarge`
+reads core's flag. The group page was checked and left as it was: both shells show "Could not load the group." when
+its reads throw (for the 9,224-record group the first throw is `ffiGroupStats`'s "amount overflow"). Settings: core's
+`SETTING_PER_PHONE_PREFIXES` (`applock.`, `privacy.`) are refused by `check_setting` in `validate`, so encode and decode
+both refuse and the projection lists the record in `rejected`; no production shell code changed (both shells already
+write only the synced keys), and two shell tests (iOS `SettingsSyncTests.testTheExcludedKeysNeverSync`, Android
+`SettingsSyncTest.the_excluded_keys_never_sync`) now write such a record by hand, as a modified client would.
+
+**Tests.** Core: `an_overflowed_group_is_marked_and_the_others_are_unchanged` (the d249 reproduction, Trip between
+Flat and Goa; the honest groups, totals and People equal the overview without Trip; one record fewer adds up;
+`settled_progress` is Overflow), `a_net_of_exactly_i64_min_is_out_of_range`,
+`a_total_past_the_bound_drops_the_group_adding_the_most`, `a_persons_amount_past_the_bound_drops_one_group`,
+`an_error_other_than_overflow_still_fails_the_overview` (negative), `a_per_phone_setting_key_is_refused`,
+`a_per_phone_setting_record_lands_in_rejected`; each shell a pure test of the card line.
+
+**Calls taken** (decisions 286 to 290): the isolation covers the add-up step too, since one record fewer failed the
+whole overview on the totals (286); when a sum overruns, the group adding the most in its direction is marked, not
+the one that happened to tip it, which the test pins by putting Trip first (287); `narrow_sum` refuses exactly
+i64::MIN (288); a group whose lines fit but whose meter overflows keeps its balance line and draws no meter, and the
+card's line comes only from core's flag (289); the per-phone prefix check ignores ASCII case (290). The field name
+`overflowed` is the brief's own suggestion.
+
+**Sabotage** (`.drafts/d259/sabotage.py`; output `sabotage-core.txt`, `sab-android.log`, `sab-ios.log`; each row
+anchored once, exactly the intended tests red, restored, `cmp` equal). S7's first try had a compile error (`isEmpty()`)
+and was rerun as `isEmpty` with zero errors; the row below is the rerun. S3's runner listed a stray `|` token among its
+reds (a parsing artifact of its output); the two named tests are the reds (`test result: FAILED. 411 passed; 2
+failed`). The runner restored with `shutil.copy2` (old mtimes), so the first fast gate after it ran a stale sabotaged
+binary (S5) and showed 2 reds; touching the three files fixed it, the runner now uses `shutil.copy`, and each row's
+own result stands (each row's edit forced a full crate rebuild).
+
+| Row | Sabotage (file: edit; expected red; restored, `cmp` equal) | Red |
+|---|---|---|
+| S1 | `core/src/overview.rs`: the per-group `Err(Overflow)` returns the error (isolation removed); expected: the overflow tests (3 failed, 410 passed, no compile error); restored, `cmp` equal | `overview::tests::an_overflowed_group_is_marked_and_the_others_are_unchanged`, `overview::tests::a_net_of_exactly_i64_min_is_out_of_range`, `overview::tests::an_error_other_than_overflow_still_fails_the_overview` only |
+| S2 | `core/src/overview.rs`: `adds > w` to `adds < w` (the smallest contributor dropped); expected: the total-past-the-bound test; restored, `cmp` equal | `overview::tests::a_total_past_the_bound_drops_the_group_adding_the_most` only |
+| S3 | `core/src/overview.rs`: `* value.signum()` removed (direction ignored); expected: the two add-up tests; restored, `cmp` equal | `overview::tests::a_total_past_the_bound_drops_the_group_adding_the_most`, `overview::tests::a_persons_amount_past_the_bound_drops_one_group` only |
+| S4 | `core/src/ffi.rs`: `narrow_sum`'s bound to `> MAX + 1` (i64::MIN let through); expected: the i64::MIN test; restored, `cmp` equal | `overview::tests::a_net_of_exactly_i64_min_is_out_of_range` only |
+| S5 | `core/src/straumr/groups.rs`: the per-phone check made `if per_phone && key.is_empty()`; expected: the two per-phone tests; restored, `cmp` equal | `straumr::groups::tests::a_per_phone_setting_key_is_refused`, `straumr::groups::tests::a_per_phone_setting_record_lands_in_rejected` only |
+| S6 | `HomeParts.kt`: `line(nets, tooLarge)` always `line(nets)`; expected: the Android too-large card test (HomePartsTest 39 tests, 1 failure); restored, `cmp` equal, class green after | `HomePartsTest.a_too_large_group_says_so_in_place_of_its_balance` only |
+| S7 | `HomeParts.swift`: the same; expected: the iOS too-large card test (HomePartsTests: 1 failed, 31 passed, zero compile errors on the rerun); restored, `cmp` equal | `HomePartsTests.testATooLargeGroupSaysSoInPlaceOfItsBalance` only |
+
+### D-260: the proof surfaces are compiled out of release builds, 2026-10-22
+
+Tallies from the unit's own run at 1b288c4f in its worktree (`/private/tmp/skipti-d260`, branch `d260-proofs`, before
+the merge); the merged tree's full gate below (main after all five units of the pass were merged: D-256, D-259, D-257,
+D-258 and D-260; its stamp names the commit; `.drafts/fable/pass-051/merge2/gate.log`). This unit adds the gate's 24th
+leg, so the line reads 24 passed:
+
+```
+GATE PASSED: 24 passed, 0 skipped
+
+Evidence (paste into docs/BUILD-LOG.md §3 when claiming progress):
+
+  gate: full  ·  2026-10-22T09:34:48Z  ·  branch main  ·  commit 70cc5f73
+  cargo fmt --all -- --check                                 exit 0
+  cargo clippy --workspace --all-targets -- -D warnings      exit 0
+  float audit (ADR-0002: no f32/f64 in core/src)             exit 0
+  buildlog structure (D-number contiguity, fences)           exit 0
+  swift interpolation (no literal backslash-paren in UI strings) exit 0
+  swift autolink (no email/URL in string-literal UI titles)  exit 0
+  swift list rows (no styled button as a clear list row)     exit 0
+  em dashes (D-228: no U+2014 or U+2013 on the public surface) exit 0
+  gate self-test (D-137 heavy-leg proof and hook routing)    exit 0
+  cargo test --workspace                                     425 passed, 0 failed
+  cargo build -p skipti-core --target wasm32-unknown-unknown exit 0
+  cargo test --workspace --release -- --ignored              exit 0 (~40s sweeps)
+  bindings freshness (regenerate == committed)               exit 0 (byte-identical)
+  kotlin bindings compile standalone (bytes != buildable)    KOTLIN BINDINGS COMPILE OK
+  cargo audit                                                exit 0
+  cargo deny check (ADR-0012 banned SDK scan)                exit 0
+  SBOM generation (cargo cyclonedx)                          exit 0
+  firebase rules (emulators: every refusal tested)           RULES TESTS PASSED
+  npm audit (Cloud Functions' dependencies)                  exit 0 (no high or critical)
+  make ios-app (build + simulator tests)                     TEST SUCCEEDED
+  make android-app (core .so + APK packaging)                BUILD SUCCESSFUL
+  make android-test (JVM goldens against real core)          per-class tally printed; exits non-zero on any failure
+  licence inventory (regenerate == committed)                exit 0 (current)
+  release proofs (D-260: no proof in either release build)   RELEASE PROOFS OK
+```
+
+Merged tree: cargo test 425 passed, 0 failed; iOS Executed 1058 tests, with 0 failures (0 unexpected); JVM 1259 tests, 0 failed, one variant (play debug; XML written 05:34:37). The unit's own run at 1b288c4f: iOS `Executed 1051 tests,
+with 0 failures (0 unexpected)` under `Test Suite 'All tests' passed`, then the Release build (52,225,336 bytes, 8,965
+`___profc_` coverage counters; `.drafts/fable/pass-051/d260/ios-test-full.log`, `ios-app.log`); JVM `./gradlew
+:app:testPlayDebugUnitTest --rerun` at 09:27Z, 64 classes, 1252 tests, 0 failed, 0 skipped, XML fresh (as the report
+read them; `make android-test` just before reported the same 1252 from cache, so the rerun is the tally); `make
+android-app` BUILD SUCCESSFUL with the Play manifest check (`android-app.log`); `env -u SKIPTI_STORE_FILE ./gradlew
+--no-daemon --offline :app:assemblePlayRelease` BUILD SUCCESSFUL, app-play-release-unsigned.apk 38,586,417 bytes, was
+38,684,721 (`android-release.log`); the leg `RELEASE PROOFS OK: iOS 171288 symbols, none of 22 proof names; Android
+src/main + src/release, none of 23 proof names or 17 proof words` and its self-test `Ran 19 tests ... OK`
+(`leg-final.log`); fast gate `GATE PASSED: 11 passed, 0 skipped`, cargo test 418 passed (`gate-fast.log`). Control:
+the same iOS check over the investigator's HEAD Release symbol dump reports BalanceScreen (266 symbols) and Fixtures
+(10), and over the HEAD Android sources 140 findings (`ios-check-on-head-dump.txt`). Release dex probe
+(`apk/probe-after.txt`): 0 hits for every headless word, every moved proof name, GROUP-END, group-end.txt,
+@example.test, Goa Trip, BalanceFixtures, loadGroupsOrSeed; the remaining hits are expected (ProofArgs and its words,
+the release stubs, Android's `Cloud.emulator` branches, `BalanceUi.headerFor`'s "Goa trip" fallback, LedgerStore's
+legacy fixture names).
+
+**The problem** (CLOUD-SECURITY G-13; decision 269; measured in `.drafts/fable/pass-051/release/report.md`). iOS
+compiled every proof out except `BalanceScreen.swift` (Fixtures and `Source.fixture`, 121 symbols in Release) and
+`SettleScreen.swift`; Android shipped every proof but the store-shots seed and EmulatorApproval in the release dex (R8
+off), gated at run time by `ProofArgs` (`FLAG_DEBUGGABLE`). Turning them on needs a re-signed APK (a different
+identity: no update over the real app, no Keystore key, no data), so not a vulnerability and no advisory; G-13 asked
+for the proofs to be absent, not only gated.
+
+**What was built.** iOS: `BalanceScreen.swift` and `SettleScreen.swift` whole in `#if DEBUG`; `loadGroupsOrSeed` in
+`#if DEBUG` (its one caller was already DEBUG); `Cloud.emulator` a `@MainActor static var` in DEBUG and `static let
+emulator = false` outside it, so the branches in FirebaseConfig, Invites, Push and Approval fold (0 "will never be
+executed" warnings in Release). Android, exact moves from src/main to src/debug: AppRoot's `when (headless)` (20 arms)
+to `Proofs.kt` `ProofSurface(headless, args, vaultPath): Boolean`; the onCreate emulator hook to `ProofLaunch.emulators`;
+NotificationProof, EmulatorSignIn and GroupEndProof to `Proofs.kt`; Account.kt's four emulator proofs to
+`EmulatorProofs.kt`; GroupsProof and GroupsProofSeed to `GroupsProof.kt`; SettleLook to `SettleLook.kt`; the export,
+import and expense-conflict proofs to their own files (`seedConflict` an extension, call site unchanged); BarProof to
+`BarProof.kt`; the proof halves of BalanceScreen.kt and SettleScreen.kt to `BalanceScreenProof.kt` and
+`SettleScreenProof.kt`; `BalanceFixtures.kt` whole, with `computeLines` and `loadGroupsOrSeed` as extensions. src/release
+stubs: `Proofs.kt` (`ProofSurface` false, `ProofLaunch.emulators` a no-op) and `SettleLook.kt` (`draft()` and `typed()`
+null, `noLock()` false). src/main keeps `ProofArgs`, `BalanceUi`, `BalanceLineView` and `SettleUi`; AppRoot calls `if
+(ProofSurface(headless, args, vaultPath)) return` and `ProofLaunch.emulators(...)` inside the kept `ProofArgs.emulators`
+guard. Tests: `AppSources.kt` (`walk()`, `listFiles{}`, `read(name)` over src/main and src/debug) used by every src/main
+walker (45 sites in 21 files; StoreShotsTest's walk stays src/main on purpose); the source-reading tests learn the new
+paths; HomeTabsTest's two anchors, which had been passing vacuously after `HomeShell` became internal (a missing anchor
+returns the whole file), fixed. The leg: `scripts/check-release-proofs.py`, one `run_gate` in `--full` after `make
+android-app` (skips, never passes, without Xcode): iOS `xcrun nm -j` of the Release product, demangled, coverage
+counters' path prefix dropped, 22 names matched as words, each commented, with HomeShell and LedgerStore required as a
+positive control (a stripped or wrong binary fails); Android src/main and src/release with comments removed by a small
+Kotlin lexer, 23 proof names as words, 17 dispatch words in string literals (with or without `--`), no `when
+(headless)`, src/main must call ProofSurface and keep ProofArgs, src/release must hold the three stubs; every listed
+name must still be declared in `ios/Skipti/App` or src/debug. Its self-test `scripts/test_check_release_proofs.py`
+(19 tests, about 5 s).
+
+**Calls taken** (decisions 310 to 316): `BalanceUi` and `SettleUi` stay in src/main because ordinary screens use them;
+only the proof screens move, to new file names (310); `computeLines` and `loadGroupsOrSeed` become src/debug
+extensions, the seed going through the public `rawKvGet` / `rawKvSet` (311); `HomeShell` private to internal (312);
+`ProofLaunch` runs inside the kept `ProofArgs.emulators` guard and checks it again itself (313); the walkers include
+src/debug through one helper, with two deliberate src/main-only reads (314); one leg for both shells, skipping where
+Xcode is absent (315); dispatch words matched as string-literal words and the `when (headless)` shape banned, since the
+long words stay in ProofArgs and the short ones are route names elsewhere (316).
+
+**Sabotage** (sized to the risk: the two rows the brief names plus one for the walker change;
+`.drafts/fable/pass-051/d260/sabotage/`: backups and `S1-compile.log`, `S1-leg.log`, `S2-release-build.log`,
+`S2-leg.log`, `S3-jvm.log`). S1 and S2's red is the gate leg, not a test, so their rows state what the leg printed.
+
+| Row | Sabotage (file: edit; expected red; restored, `cmp` equal) | Red |
+|---|---|---|
+| S1 | `android/app/src/debug/java/com/vardrlabs/skipti/BarProof.kt` moved back into src/main (`mv`); expected: the leg red; restored by moving it back, `cmp` equal, leg OK | debug and release Kotlin compile (exit 0); `check-release-proofs.py` exits 1: `proof name BarProof` at main/.../BarProof.kt:86, plus `stale list: BarProof is declared nowhere in src/debug` |
+| S2 | `ios/Skipti/App/BalanceScreen.swift` and `LedgerStore.swift`: the file's `#if DEBUG` / `#endif` and `loadGroupsOrSeed`'s removed (one row: either alone does not compile); expected: the leg red after a Release build; both restored from backup, `cmp` equal, `make ios-app` rebuilt Release after, leg OK | Release build exit 0, 0 errors; `check-release-proofs.py` exits 1: BalanceScreen 266 symbols, Fixtures 10 |
+| S3 | `android/app/src/debug/java/com/vardrlabs/skipti/BarProof.kt`: `private val d260Probe = "decodeByteArray("` (proves the walkers now see src/debug); expected: the safe-image guard (1252 run, 1 failed); restored, `cmp` equal, JVM rerun 1252 and 0 failed | `AuditFixesTest.every_decode_of_a_picture_goes_through_safe_image` only |
+
 ## 4. Gap register (open, honest)
 
 ### 4.1 Blocking store-policy compliance later
@@ -27146,6 +27656,77 @@ wrap), h (the app lock), c (four takes). Every output frame read by eye: no rupe
   they never reach a public picture.
   (f) iPhone clip c keeps a brief keyboard dip per field (the app drops focus for a moment as the sum line appears);
   You's ring reads "3 of 5" on iPhone and "2 of 4" on Android in the shots (the AVD has no screen lock: device setup).
+- **D-256's residue, stated not implied:**
+  (a) Not deployed: the rules first, then the Functions, with 0.5.1's set (CLOUD-SECURITY section 2 rows drafted in
+  `.drafts/fable/pass-051/records/cloud-security-rows.md`).
+  (b) No backfill: a group deleted before the deploy has no tombstone (its documents are gone; the founder's two test
+  groups were ended by D-252), so its id is guarded only from the deploy on.
+  (c) A copy already marked vanished is not upgraded by a tombstone; only the notice can sharpen it.
+  (d) A tombstone read with no answer counts as none (decision 281): the copy keeps D-252's neutral read-only mark and
+  is never asked again.
+  (e) A purged account's uid stays in `uids` (decision 279; read only by the rules' get); purge's deletion of a
+  sole-member group writes no tombstone.
+  (f) The deleted group's records stay on the phone, unsent and unparked; invite paths still throw their existing
+  refusal (decision 285).
+  (g) No device look: the banner line is pinned by tests on both shells only.
+- **D-257's residue, stated not implied:**
+  (a) Not deployed: the rules and the Functions go together with D-254's set on 0.5.1's deploy day (CLOUD-SECURITY
+  section 2 rows drafted in `.drafts/fable/pass-051/records/cloud-security-rows.md`).
+  (b) `limits/group-{g}` documents outlive their group (`deleteGroup` does not delete them; D-256 edited it in
+  parallel). Each holds a day and at most four counts.
+  (c) A member can spend their own group's 100 invites a day (createInvite has no per-account limit): any per-group
+  quota is such a lever. Joins and removals cannot be spent by refused calls (decision 291).
+  (d) Title and amount stay the author's free text within the bounds. Bidi controls (U+202A to U+202E, U+2066 to
+  U+2069) are not refused: they are Cf, like the ZWJ emoji need. Lead (c) stands: the name is the server's, but still
+  text the account chose.
+  (e) Lead (d): the push title is the group document's name, stale after a rename (decision 301).
+  (f) A long note can still be cut between the code points of one emoji cluster (grapheme cutting cannot be twinned:
+  the JVM test runtime's BreakIterator differs from Android's ICU).
+  (g) 0.5.0 phones' pushes read "{name} changed an expense", adds included, until they update.
+  (h) No device look: nothing visible changes, and pushes cannot be received from the emulators.
+- **D-258's residue, stated not implied:**
+  (a) Not deployed: the rules go with 0.5.1's set (CLOUD-SECURITY section 2 rows drafted in
+  `.drafts/fable/pass-051/records/cloud-security-rows.md`).
+  (b) G-26 is NARROWED, not closed. A modified client still writes: the rule reads the device id the record CLAIMS, so
+  a modified app can write under an id with no entry (or create a fresh entry under a new id, which the create rule
+  allows, and write under that). It now holds for an unmodified app, or one that keeps its own id. The real end is
+  still Sign out everywhere (refresh tokens revoked; an ID token stays valid up to an hour).
+  (c) Callables are unchanged (they cannot know the device): a modified client keeps calling them for up to an hour
+  after a single-phone sign-out; `signOutEverywhere` revokes.
+  (d) Group document updates (rename, emoji) and the profile update carry no device id: unchanged.
+  (e) A record authored under another device id whose entry is signed out is refused and, this phone's own entry
+  being fine, parked as any refusal is (not expected in practice: pending records are this phone's).
+  (f) Stale-flag records (decision 303) wait for the next push rather than going up right after the registration.
+  (g) One more read per record create, billed per record at most (unmeasured); a batch touching 19 or more groups now
+  falls to the one-by-one path (untested in the emulator).
+  (h) The unit's green rules-suite log (`/private/tmp/skipti-d258-tmp/rules2.log`) was not kept; the count 318 rests
+  on the report and the two sabotage logs. No device look.
+- **D-259's residue, stated not implied:**
+  (a) The attacked group itself stays unusable (its card says "Amounts too large to add up.", its page shows the error
+  line) until the records are deleted: thousands of delete records, or leaving the group; removing the attacker does
+  not remove their records. A per-group record cap, or a cap on a group's absolute sum, needs a rules change: not this
+  unit.
+  (b) Other sums one member can push past i64 are left: the group page's `ffiGroupStats` (an error line), Your spending
+  "All my spending" (the Spending card shows its own failure line; Home stays), `balances_compute` (RemovalFlow
+  already clamps).
+  (c) `narrow` elsewhere (split shares, parse, FX, redistribute) still allows i64::MIN; those take bounded inputs.
+  (d) The i64::MIN trap on iOS (decision 288) was found by reading and is not reproduced on a device; core now refuses
+  the value, so no shell sees it.
+  (e) No end-to-end shell test loads 9,224 records through a real vault: the core test proves the isolation, and each
+  shell has a pure test of the new field plus `settledOrNone`.
+  (f) No device look: the card line is text in the existing dim style.
+- **D-260's residue, stated not implied:**
+  (a) Android's `Cloud.emulator` is not a constant in release: its Firestore and Functions emulator branches
+  (`useEmulator` x3, `localhost:5001`) still ship, inert. The brief did not ask and the leg does not check it; a
+  follow-up would match iOS.
+  (b) `BalanceUi.headerFor` / `spokenHeaderFor` (with the "Goa trip" fallback) are now called only by the debug proof
+  screen and tests, and stay in src/main with `BalanceUi`; LedgerStore's legacy fixture names (Rahul, Priya, Amit) and
+  `ProofArgs`' own words still appear in the release dex (expected).
+  (c) The gate's iOS Release build stays coverage-instrumented (the release report's side finding 1: not this unit's);
+  the leg reads it correctly, dropping the coverage counters' path prefix.
+  (d) The leg checks Android's SOURCES (src/main plus src/release), not a release APK: the gate builds none. The
+  Android half could run alone on Linux CI; the one leg skips there with the iOS half.
+  (e) No look: nothing user-visible changed.
 - **No local profile name.** The no-account path has nothing a user can open
   and later attach an account to. When an account is added its name should
   seed the profile and stay editable.
@@ -29984,3 +30565,13 @@ t and import (D-119): GUARANTEES #4 is now true
 2026-10-22 (D-254): new accounts wait for approval before anything is kept in the cloud. Anyone can sign in, and the ledger on the phone works fully meanwhile; the phone says so plainly and starts syncing the moment the account is approved. The founder approves on a small private page. Profile and account now puts your sign-in, Sign out and your username first. Ships with 0.5.1; nothing is deployed yet.
 
 2026-10-22 (D-255): the store pictures, the film clips and the README now show a New York ledger in US dollars, at the full detail the phones draw, and a long group name on Home wraps to a second line instead of being cut off.
+
+2026-10-22 (D-256): a deleted group stays deleted. Deleting a group now leaves a small marker in the cloud, so another phone that still held the group can never bring it back; that phone shows the group as deleted and keeps what was on it. Ships with 0.5.1; nothing is deployed yet.
+
+2026-10-22 (D-257): the cloud now limits each group's invites, joins and removals per day, and how many notifications one person's changes can send in a day; and a notification's words are now put together by the cloud from the expense's checked details and the sender's own profile name, rather than taken from the sender's phone. Nothing you see in the app changes. Ships with 0.5.1; nothing is deployed yet.
+
+2026-10-22 (D-258): when you sign a phone out from another phone, the cloud now refuses anything new that phone tries to save, and the phone signs itself out the moment it is refused, instead of waiting to notice on its own. Sign out everywhere remains the complete answer for a lost phone. Ships with 0.5.1; nothing is deployed yet.
+
+2026-10-22 (D-259): one group with impossibly large amounts can no longer blank your whole Home. That group's card now says "Amounts too large to add up." and every other group, your totals and your people show as usual. The app also refuses to take the app lock and privacy settings from a group's records: those stay on each phone. Ships with 0.5.1.
+
+2026-10-22 (D-260): the test-only screens are now left out of the builds people install, on both phones, rather than only switched off; a new gate check fails if one ever comes back. Nothing you see changes. Ships with 0.5.1.

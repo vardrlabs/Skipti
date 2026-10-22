@@ -148,12 +148,12 @@ private/          vardrlabs/skipti-private (git-ignored, its own repo): the two 
 ## 4. The gate — the only definition of green
 
 ```bash
-./scripts/gate.sh --full     # 23 legs; ~8 min since the exemption reached Claude (D-144), 20–40 min without it (§7)
+./scripts/gate.sh --full     # 24 legs since D-260; ~8 min since the exemption reached Claude (D-144), 20–40 min without it (§7)
 ./scripts/gate.sh            # fast gate: 11 legs, the cheap ones plus clippy, cargo test, wasm
 ./scripts/gate.sh --cheap    # 8 legs that take seconds; the hook's usual mode (D-137)
 ```
 
-The 23 legs (D-228): cargo fmt · cargo clippy `-D warnings` · float audit
+The 24 legs (D-260): cargo fmt · cargo clippy `-D warnings` · float audit
 (ADR-0002) · buildlog structure · swift interpolation · swift autolink · swift
 list rows (D-139) · em dashes (D-228: `scripts/check-em-dashes.py` and its self-test; no U+2014 or
 U+2013 on the public surface: app copy (Swift under `ios/Skipti` but the bindings, shipped Kotlin), Rust core
@@ -163,7 +163,7 @@ pages, public docs including NOTICE) · gate self-test
 `cargo test --workspace` · wasm32 build · release `--ignored` sweeps · bindings
 freshness · kotlin bindings compile standalone · cargo audit · cargo deny ·
 SBOM · `make ios-app` (build + simulator tests) · `make android-app` ·
-`make android-test` · licence inventory (`scripts/licences.py --check`, D-146:
+`make android-test` · release proofs (D-260: `scripts/check-release-proofs.py` and its self-test: `nm` over the gate's iOS Release product finds no proof symbol, Android's src/main and src/release hold no proof name or launch word; after `make android-app`) · licence inventory (`scripts/licences.py --check`, D-146:
 the list both apps show on their Licences page, regenerated and compared) ·
 firebase rules (D-193: `scripts/firebase-rules-test.sh`, the Firestore and
 Storage emulators run `firebase/tests/*.test.mjs`, every refusal asserted; it
@@ -601,8 +601,8 @@ compaction.
 - The number of gate legs is the gate's own `GATE PASSED: N passed` line, not a
   count of `run_gate` lines: `cargo test` is recorded through `record` directly,
   and audit, deny and the SBOM run through `run_gate` on `case` lines that start
-  with `audit)` and so on — a `^\s*run_gate` grep finds 20 lines: the function
-  definition and 19 of the 23 legs (D-228).
+  with `audit)` and so on — a `^\s*run_gate` grep finds 21 lines: the function
+  definition and 20 of the 24 legs (D-260).
 - As of D-128: **iOS 114 executed, 8 skipped** (relay-dependent), **JVM 236 =
   118 tests × 2 flavours**, **cargo test 291**. As of D-135: **iOS 133 executed,
   8 skipped**; JVM 250 (125 × 2); cargo 327.

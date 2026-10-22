@@ -85,6 +85,20 @@ d = json.load(sys.stdin); r = d.get("result", d)
 print(" ".join(sorted(c["name"].split("/")[-1] for c in r.get("channels", r))))' 2>/dev/null)
 if [ "$channels" = live ]; then ok "Hosting channels: live only"; else bad "Hosting channels: ${channels:-unreadable}"; fi
 
+# 6. The admin site (D-254, the approvals page; its own Hosting site, deployed with 0.5.1): the page byte for byte,
+# its pinned script hash, and the headers that keep it private (no referrer, no indexing, no caching).
+ADMIN="${SKIPTI_ADMIN_SITE:-https://skipti-26-admin.web.app}"
+admin_hash=$(python3 -c '
+import json; d = json.load(open("firebase/firebase.json"))
+t = [h for h in d["hosting"] if h.get("target") == "admin"][0]
+print([x["value"] for r in t["headers"] for x in r["headers"] if x["key"] == "Content-Security-Policy"][0].split("script-src ")[1].split(";")[0])')
+admin_headers=$(curl -sI "$ADMIN/" | tr -d '\r')
+if printf '%s' "$admin_headers" | grep -qi "^content-security-policy:.*script-src $admin_hash;"; then ok "admin page carries its pinned script hash"; else bad "admin CSP: $(printf '%s' "$admin_headers" | grep -i '^content-security-policy:' | cut -c1-120)"; fi
+for h in 'referrer-policy: no-referrer' 'x-robots-tag: noindex, nofollow' 'cache-control: no-store' 'x-content-type-options: nosniff'; do
+  if printf '%s' "$admin_headers" | grep -qi "^$h"; then ok "admin header $h"; else bad "admin header missing: $h"; fi
+done
+if curl -s "$ADMIN/" | cmp -s - firebase/admin/index.html; then ok "admin page is the repo's, byte for byte"; else bad "admin page differs from the repo (or is not deployed)"; fi
+
 echo
 if [ "$fails" -eq 0 ]; then echo "CLOUD AUDIT PASSED"; exit 0; fi
 echo "CLOUD AUDIT FAILED ($fails)"; exit 1
