@@ -1,8 +1,16 @@
 package com.vardrlabs.skipti
 
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
+import uniffi.skipti_core.BalanceLineOut
 import uniffi.skipti_core.ConversionInput
 import uniffi.skipti_core.ExpenseInput
 import uniffi.skipti_core.IdAmount
+import uniffi.skipti_core.ffiBalanceLine
+import uniffi.skipti_core.ffiCreateGroup
+
+// D-260 (G-13, decision 269): the fixture ledger is a proof's alone, so it lives in src/debug (with the fixture seed
+// and the fixture viewer's balance lines below): a release build carries none of it.
 
 /**
  * The fixture ledger behind the balance and list screens: a value-for-value
@@ -108,4 +116,51 @@ object BalanceFixtures {
     /** The FFI inputs the fixture path computes from. */
     fun dto(groupID: String, nowMs: Long = System.currentTimeMillis()): List<ExpenseInput> =
         dtoRecords(groupID, nowMs).map { it.toInput() }
+}
+
+/**
+ * The screen's one computation path: REAL core, viewer-framed (D-47),
+ * then magnitude-sorted for render. D-260: an extension in src/debug (the
+ * viewer is the fixture's ada), no longer a member of the shipped [BalanceUi].
+ */
+fun BalanceUi.computeLines(expenses: List<ExpenseInput>, group: String?): List<BalanceLineOut> =
+    BalanceUi.sortedLines(ffiBalanceLine(expenses, emptyList(), emptyList(), emptyList(), BalanceFixtures.ada, group))
+
+/** The vault's group list as [LedgerStore] writes it (its own Json settings). */
+private val fixtureJson = Json {
+    ignoreUnknownKeys = true
+    explicitNulls = false
+}
+private val fixtureGroupList = ListSerializer(GroupDTO.serializer())
+
+/**
+ * PROOF SURFACES AND TESTS ONLY (D-136): users' paths call `loadGroups()`
+ * or `namedGroups()`, which never seed.
+ *
+ * Loads the groups, seeding the fixture group through `ffiCreateGroup`
+ * on first run: the id is generated IN CORE and the settlement currency
+ * is fixed from then on (§5.2). Mirrors iOS exactly, including the
+ * fall-through: corrupt group JSON re-seeds rather than throwing (the
+ * expenses envelope is the guarded one; groups only name the header).
+ * D-260: an extension in src/debug through the store's raw kv access (a read, then a write), no longer a member of the
+ * shipped [LedgerStore].
+ */
+fun LedgerStore.loadGroupsOrSeed(): List<GroupDTO> {
+    rawKvGet(LedgerStore.GROUPS_KEY)?.let { data ->
+        // fall through to re-seed on corrupt JSON, exactly as iOS's try? does
+        runCatching { fixtureJson.decodeFromString(fixtureGroupList, data.decodeToString()) }.getOrNull()?.let { return it }
+    }
+    val created = ffiCreateGroup(
+        name = "Goa Trip",
+        settlementCurrency = "INR",
+        members = BalanceFixtures.names.keys.sorted(),
+    )
+    val group = GroupDTO(
+        id = created.id,
+        name = created.name,
+        settlementCurrency = created.settlementCurrency,
+        members = created.members,
+    )
+    rawKvSet(LedgerStore.GROUPS_KEY, fixtureJson.encodeToString(fixtureGroupList, listOf(group)).toByteArray(Charsets.UTF_8))
+    return listOf(group)
 }

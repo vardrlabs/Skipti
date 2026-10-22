@@ -14,7 +14,7 @@ import org.junit.Test
 class ScreenBarsTest {
     private val dir = java.io.File("src/main/java/com/vardrlabs/skipti")
 
-    private fun mainFiles(): List<java.io.File> = dir.walkTopDown().filter { it.isFile && it.extension == "kt" }.toList()
+    private fun mainFiles(): List<java.io.File> = AppSources.walk().filter { it.isFile && it.extension == "kt" }.toList()
 
     private fun src(name: String): String = java.io.File(dir, name).readText()
 

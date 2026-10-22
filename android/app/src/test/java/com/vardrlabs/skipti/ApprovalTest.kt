@@ -47,7 +47,7 @@ class ApprovalTest {
     private fun main(name: String) = File("src/main/java/com/vardrlabs/skipti/$name").readText()
     private fun swift(name: String) = File("../../ios/Skipti/App/$name").readText()
     private fun mainSources(): List<Pair<String, String>> =
-        File("src/main/java/com/vardrlabs/skipti").listFiles { f -> f.name.endsWith(".kt") }!!.sortedBy { it.name }
+        AppSources.listFiles { f -> f.name.endsWith(".kt") }!!.sortedBy { it.name }
             .map { it.name to it.readText() }
 
     /** The text after [from], up to the first [to] after it. */
@@ -568,7 +568,8 @@ class ApprovalTest {
         assertTrue("put(\"sub\", ADMIN)\n            put(\"user_id\", ADMIN)" in debug)
         assertTrue("suspend fun approve(uid: String): Boolean = false" in release)
         for (word in listOf("URL", "http", "Cloud", "admin")) assertFalse("the stub makes no call: $word", word in release.substringAfter("object EmulatorApproval"))
-        for ((name, text) in mainSources()) assertFalse("$name declares the helper", "object EmulatorApproval" in text)
+        // src/main alone (what ships): the helper is src/debug's (D-260: mainSources() walks both).
+        for (f in AppSources.MAIN.listFiles { f -> f.name.endsWith(".kt") }!!) assertFalse("${f.name} declares the helper", "object EmulatorApproval" in f.readText())
         assertEquals("emulator-admin", EmulatorApproval.ADMIN)
         val token = EmulatorApproval.adminToken().split(".")
         assertEquals(3, token.size)
@@ -584,8 +585,9 @@ class ApprovalTest {
         }
         // One call in each proof: the four Account proofs and the group-end proof.
         val calls = mainSources().flatMap { (name, text) -> text.lines().filter { "EmulatorApproval.approve(" in it }.map { name } }
-        assertEquals(listOf("Account.kt", "Account.kt", "Account.kt", "Account.kt", "AppRoot.kt"), calls)
-        assertTrue("object GroupEndProof" in main("AppRoot.kt"))
+        // D-260 (G-13): the four emulator proofs and the group-end proof moved to src/debug.
+        assertEquals(listOf("EmulatorProofs.kt", "EmulatorProofs.kt", "EmulatorProofs.kt", "EmulatorProofs.kt", "Proofs.kt"), calls)
+        assertTrue("object GroupEndProof" in AppSources.read("Proofs.kt"))
     }
 
     // ---- The shells fix wave (review-shells.md, triage-shells.md) ----
@@ -789,7 +791,12 @@ class ApprovalTest {
         // Every path that saves your own name asks (the proofs, approved emulator accounts, excepted).
         val saves = mainSources().filter { (_, t) -> Regex("""\.setYourName\(""").containsMatchIn(t) }.map { it.first }.toSet()
         assertEquals(
-            setOf("Account.kt", "AppRoot.kt", "GroupScreens.kt", "GroupsTab.kt", "ImportFlow.kt", "ProfileConfirm.kt", "UsernameStep.kt"),
+            // D-260 (G-13): the proofs moved to src/debug (EmulatorProofs.kt, Proofs.kt, GroupsProof.kt), which this walk
+            // now reads, the store-shots seed (StoreShots.kt, a proof) with them.
+            setOf(
+                "EmulatorProofs.kt", "GroupScreens.kt", "GroupsProof.kt", "ImportFlow.kt", "ProfileConfirm.kt", "Proofs.kt",
+                "StoreShots.kt", "UsernameStep.kt",
+            ),
             saves,
         )
         assertEquals("Your name and a new group's name", 2, main("GroupScreens.kt").split("Approval.nameSaved(store)").size - 1)

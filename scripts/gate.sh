@@ -449,6 +449,25 @@ if [ $FULL -eq 1 ]; then
     skip_gate "licence inventory (regenerate == committed)" \
       "the Android SDK/NDK or Studio JBR is unavailable on this machine"
   fi
+
+  # --- No proof surface in a release build (D-260, G-13, decision 269) ----------
+  # The proof screens and seeds (launch arguments the looks, sabotage runs and emulator proofs use) are Debug only:
+  # iOS keeps them inside `#if DEBUG`, Android in src/debug with src/release stubs. iOS: `nm` over the Release binary
+  # `make ios-app` built above (unsigned, unstripped, coverage-instrumented: the counters' paths are dropped), no
+  # proof type's symbol. Android: a SOURCE check of src/main and src/release (comments removed): no proof name or
+  # dispatch word. It is a source check because the gate builds no release APK. Both name lists, and why each name is
+  # there, are in the script; its self-test runs in the same leg. Needs the iOS leg's binary, so it skips (never a
+  # pass) where Xcode is absent.
+  release_proofs() {
+    python3 scripts/check-release-proofs.py && python3 scripts/test_check_release_proofs.py
+  }
+  if ios_tooling_present; then
+    run_gate "release proofs (D-260: no proof in either release build)" "RELEASE PROOFS OK" \
+      release_proofs
+  else
+    skip_gate "release proofs (D-260: no proof in either release build)" \
+      "the iOS Release binary needs Xcode (make ios-app)"
+  fi
 fi
 
 # --- Summary and evidence ---------------------------------------------------

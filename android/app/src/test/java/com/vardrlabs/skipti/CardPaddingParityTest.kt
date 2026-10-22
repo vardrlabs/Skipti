@@ -176,7 +176,7 @@ class CardPaddingParityTest {
         assertEquals("iOS cards with their own padding and no Android pair", emptyList<String>(), unclaimedIos)
 
         val claimedAndroid = pairs.map { it.android }.map { it.file to call(it, swift = false).range.first }.toSet()
-        val unclaimedAndroid = android.listFiles { f -> f.name.endsWith(".kt") }!!.flatMap { f ->
+        val unclaimedAndroid = AppSources.listFiles { f -> f.name.endsWith(".kt") }!!.flatMap { f ->
             val src = f.readText()
             kotlinPadded.findAll(src)
                 .filter { m -> (f.name to m.range.first - 1) !in claimedAndroid }

@@ -168,7 +168,7 @@ class ChangeMotionTest {
     @Test
     fun the_shell_moves_its_pages_through_the_door() {
         val root = src("AppRoot.kt")
-        val shell = root.substringAfter("private fun HomeShell(").substringBefore("\n}\n")
+        val shell = root.substringAfter("internal fun HomeShell(").substringBefore("\n}\n")
         assertEquals("one read of the door in the shell", 1, shell.split("val reduce = rememberMotionState().reduce").size - 1)
         assertTrue(
             "the route's page",
@@ -591,7 +591,7 @@ class ChangeMotionTest {
         assertTrue("change()\n            return" in fade)
         assertFalse("lowPower" in fade)
         // Every caller is a person's own change: the theme cards, the mode control, the welcome's look; never sync.
-        val callers = java.io.File("src/main/java/com/vardrlabs/skipti").walkTopDown().filter { it.isFile && it.extension == "kt" }
+        val callers = AppSources.walk().filter { it.isFile && it.extension == "kt" }
             .flatMap { f -> Regex("""ThemeCrossfade\.change\(""").findAll(f.readText()).map { f.name } }.toList().sorted()
         assertEquals(listOf("AccountHubScreen.kt", "AccountHubScreen.kt", "Welcome.kt"), callers)
         assertFalse("ThemeCrossfade" in src("SettingsSync.kt"))

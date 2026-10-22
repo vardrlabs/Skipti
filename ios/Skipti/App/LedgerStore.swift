@@ -273,6 +273,8 @@ extension LedgerStore {
         return decoded
     }
 
+    #if DEBUG
+    // D-260 (G-13, decision 269): the proofs' seed, Debug builds only.
     /// Loads the groups, seeding the fixture group through
     /// `ffiCreateGroup` on first run: the id is generated IN CORE and the
     /// settlement currency is fixed from then on (§5.2).
@@ -302,6 +304,7 @@ extension LedgerStore {
         )
         return [group]
     }
+    #endif
 
     /// The offline path for §5.2's reference rates: the LAST KNOWN set
     /// lives in the vault and works with no network.

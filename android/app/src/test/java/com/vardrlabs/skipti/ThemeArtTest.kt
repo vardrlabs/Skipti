@@ -678,7 +678,7 @@ class ThemeArtTest {
         for (banned in listOf(".shadow(", "dropShadow", "blur", "Brush.")) assertFalse(banned, banned in glow)
         // Every use: the card, the hero and the ledger card (its ripple's clip would cut glassCard's glow, so it draws
         // one before the clip, Norse only), nowhere else (the definition aside).
-        val files = java.io.File("src/main/java/com/vardrlabs/skipti").listFiles()!!.filter { it.name.endsWith(".kt") }
+        val files = AppSources.listFiles()!!.filter { it.name.endsWith(".kt") }
         val uses = files.associate { it.name to it.readText().replace("fun Modifier.norseEdgeGlow(", "").split(".norseEdgeGlow(").size - 1 }
             .filterValues { it > 0 }
         // D-249: + the Ledger page's rows (a card with a selection, its glow before the clip, as the ledger card's).
@@ -1067,7 +1067,7 @@ class ThemeArtTest {
         assertEquals(dot!!.groupValues[1], ReticleGlyph.DOT)
     }
 
-    private fun src(name: String) = java.io.File("src/main/java/com/vardrlabs/skipti/$name").readText()
+    private fun src(name: String) = AppSources.read(name)
 
     /** The shared components read the per-theme decisions. */
     @Test
@@ -1088,8 +1088,7 @@ class ThemeArtTest {
     /** No primary action is drawn as a raw accent-filled Button (they would miss Vardr Labs' outline). */
     @Test
     fun no_raw_accent_filled_buttons_remain() {
-        val dir = java.io.File("src/main/java/com/vardrlabs/skipti")
-        val offenders = dir.listFiles { f -> f.name.endsWith(".kt") }!!.filter { f ->
+        val offenders = AppSources.listFiles { f -> f.name.endsWith(".kt") }!!.filter { f ->
             Regex("""buttonColors\(\s*containerColor\s*=\s*(tint \?: )?Tok\.accent\(dark\)""").containsMatchIn(f.readText()) && f.name != "GroupScreens.kt"
         }.map { it.name }
         assertEquals(emptyList<String>(), offenders)
@@ -1099,8 +1098,7 @@ class ThemeArtTest {
      *  branch), so Vardr Labs' plain words and the other themes' tonal look reach every secondary action. */
     @Test
     fun no_raw_outlined_buttons_remain() {
-        val dir = java.io.File("src/main/java/com/vardrlabs/skipti")
-        val offenders = dir.listFiles { f -> f.name.endsWith(".kt") }!!.filter { f ->
+        val offenders = AppSources.listFiles { f -> f.name.endsWith(".kt") }!!.filter { f ->
             f.name != "GroupScreens.kt" && Regex("""\bOutlinedButton\b""").containsMatchIn(f.readText())
         }.map { it.name }
         assertEquals(emptyList<String>(), offenders)
@@ -1111,8 +1109,7 @@ class ThemeArtTest {
      *  shape); a tone-filled CircleShape initial stays round beside Norse's diamonds. */
     @Test
     fun no_tone_filled_circle_initial_remains() {
-        val dir = java.io.File("src/main/java/com/vardrlabs/skipti")
-        val offenders = dir.listFiles { f -> f.name.endsWith(".kt") }!!.filter { f ->
+        val offenders = AppSources.listFiles { f -> f.name.endsWith(".kt") }!!.filter { f ->
             Regex("""\.background\(\s*\w*tone\w*\.fill\([^)]*\)\s*,\s*(androidx\.compose\.foundation\.shape\.)?CircleShape""").containsMatchIn(f.readText())
         }.map { it.name }
         assertEquals(emptyList<String>(), offenders)
@@ -1192,8 +1189,7 @@ class ThemeArtTest {
     @Test
     fun the_ornament_is_norses_alone_and_sits_on_the_four_roots() {
         assertEquals(listOf(false, true, false), AppTheme.entries.map(TitleOrnaments::shows))
-        val dir = java.io.File("src/main/java/com/vardrlabs/skipti")
-        val users = dir.listFiles { f -> f.name.endsWith(".kt") && f.name != "ThemeArt.kt" && f.name != "SkiptiBar.kt" }!!
+        val users = AppSources.listFiles { f -> f.name.endsWith(".kt") && f.name != "ThemeArt.kt" && f.name != "SkiptiBar.kt" }!!
             .filter { "TitleOrnament(" in it.readText() }.map { it.name }.sorted()
         // D-217 Task 6: the ornament is drawn by TabRootScaffold (SkiptiBar.kt) alone, under the large title, for
         // `ornament = true`; no screen draws one of its own (they all did before the scaffold).
@@ -1208,7 +1204,8 @@ class ThemeArtTest {
         assertEquals("one ornament site in SkiptiBar.kt", 1, src("SkiptiBar.kt").split("TitleOrnament(").size - 1)
         // D-217: You is a pushed page (an inline title on iOS), so it has no ornament; the four tab roots do: each
         // is a TabRootScaffold with `ornament = true`, and nothing else in the app calls the scaffold with it.
-        val callers = dir.listFiles { f -> f.name.endsWith(".kt") && f.name != "SkiptiBar.kt" }!!
+        // D-260: BarProof.kt (src/debug, a look's tool) draws each bar form over rows, the tab root's included.
+        val callers = AppSources.listFiles { f -> f.name.endsWith(".kt") && f.name != "SkiptiBar.kt" && f.name != "BarProof.kt" }!!
             .filter { "TabRootScaffold(" in it.readText() }.map { it.name }.sorted()
         assertEquals(listOf("ExpenseListScreen.kt", "GroupsTab.kt", "OverviewTab.kt", "SettleAll.kt"), callers)
         for (f in callers) {
@@ -1282,9 +1279,8 @@ class ThemeArtTest {
 
     @Test
     fun no_middle_dot_join_is_left_in_app_ui() {
-        val dir = java.io.File("src/main/java/com/vardrlabs/skipti")
         val offenders = mutableListOf<String>()
-        dir.listFiles { f -> f.name.endsWith(".kt") && f.name != "Push.kt" && f.name != "ThemeArt.kt" }!!.forEach { f ->
+        AppSources.listFiles { f -> f.name.endsWith(".kt") && f.name != "Push.kt" && f.name != "ThemeArt.kt" }!!.forEach { f ->
             f.readLines().forEachIndexed { i, line ->
                 val code = line.trim()
                 if (!code.startsWith("//") && !code.startsWith("*") && !code.startsWith("/**") && " \u00B7 " in code) offenders += "${f.name}:${i + 1}"
@@ -1297,8 +1293,7 @@ class ThemeArtTest {
      *  hints, warnings, proof results, row flags and person or debt labels keep the plain kicker). */
     @Test
     fun section_labels_carry_the_mark_and_the_rest_do_not() {
-        val dir = java.io.File("src/main/java/com/vardrlabs/skipti")
-        val all = dir.listFiles { f -> f.name.endsWith(".kt") && f.name != "ThemeArt.kt" && f.name != "Tokens.kt" }!!.joinToString("\n") { it.readText() }
+        val all = AppSources.listFiles { f -> f.name.endsWith(".kt") && f.name != "ThemeArt.kt" && f.name != "Tokens.kt" }!!.joinToString("\n") { it.readText() }
         assertEquals(SECTION_LABELS, Regex("""\bSectionLabel\(""").findAll(all).count())
         assertEquals(KICKERS, Regex("""Type\.kicker\(""").findAll(all).count())
     }
@@ -1482,7 +1477,7 @@ class ThemeArtTest {
         assertFalse("no inside border", "border(" in body)
         // Every caller lays the edge before any clip of its chain: a clip before it would cut the outer half away.
         var callers = 0
-        for (file in java.io.File("src/main/java/com/vardrlabs/skipti").listFiles()!!.filter { it.name.endsWith(".kt") }) {
+        for (file in AppSources.listFiles()!!.filter { it.name.endsWith(".kt") }) {
             val text = file.readText()
             var at = text.indexOf(".tileEdge(")
             while (at >= 0) {
@@ -1584,7 +1579,7 @@ class ThemeArtTest {
             // D-225 T7: AddExpenseScreen.kt 0 (an item line is a list card, Design 11).
             // D-248 (U30.4): ExpenseListScreen.kt 0, the foot Undo row went (the Undo is the done toast), as iOS's.
             "About.kt" to 0, "AddExpenseScreen.kt" to 0, "ExpenseDetailScreen.kt" to 3, "ExpenseListScreen.kt" to 0,
-            "GroupScreens.kt" to 0, "GroupSettings.kt" to 2, "RemovalFlow.kt" to 2, "SettleAll.kt" to 1, "SettleScreen.kt" to 1,
+            "GroupScreens.kt" to 0, "GroupSettings.kt" to 2, "RemovalFlow.kt" to 2, "SettleAll.kt" to 1, "SettleScreenProof.kt" to 1,
             "OverviewTab.kt" to 1,
         )
         val own = Regex("""RoundedCornerShape\((8|10|12|14|16|18)\.dp\)|RoundedCornerShape\(radius\.dp\)""")
@@ -1639,8 +1634,7 @@ class ThemeArtTest {
      *  miss it: no site draws a `buttonRadius` rounded rectangle of its own. */
     @Test
     fun every_control_takes_the_shape_from_the_one_decision() {
-        val dir = java.io.File("src/main/java/com/vardrlabs/skipti")
-        for (f in dir.listFiles { x -> x.name.endsWith(".kt") }!!.filter { it.name !in setOf("Appearance.kt", "ThemeArt.kt") }) {
+        for (f in AppSources.listFiles { x -> x.name.endsWith(".kt") }!!.filter { it.name !in setOf("Appearance.kt", "ThemeArt.kt") }) {
             assertTrue("${f.name} draws a button radius of its own", "buttonRadius" !in f.readText())
         }
         for ((file, count) in listOf("GroupScreens.kt" to 2, "OverviewTab.kt" to 1, "Invites.kt" to 1)) {
@@ -1834,7 +1828,7 @@ class ThemeArtTest {
         m.groupValues[1].takeIf { "norseEdge" in text.substring(m.range.last, end) }
     }.toList()
 
-    private fun mainSources() = java.io.File("src/main/java/com/vardrlabs/skipti").walkTopDown()
+    private fun mainSources() = AppSources.walk()
         .filter { it.isFile && it.name.endsWith(".kt") }.toList()
         // D-220 fix wave (Minor 16): a scan over an empty list passes anything.
         .also { check(it.size > 50) { "main sources not found: ${it.size}" } }
@@ -1856,16 +1850,18 @@ class ThemeArtTest {
             "ExpenseListScreen.kt" to 1,
             // FoundPerson.detail [People.swift:218]
             "People.kt" to 1,
-            // BalanceUi.headerFor (a SectionLabel, two separators) and the two staleness lines [BalanceScreen.swift:416, 203, 204]
-            "BalanceScreen.kt" to 4,
+            // BalanceUi.headerFor (a SectionLabel, two separators) [BalanceScreen.swift:416]
+            "BalanceScreen.kt" to 2,
+            // D-260 (G-13): the proof screen's two staleness lines, moved to src/debug [BalanceScreen.swift:203, 204]
+            "BalanceScreenProof.kt" to 2,
             // GroupsCopy.detail [GroupsScreen.swift:322]
             "GroupsTab.kt" to 1,
             // OverviewCopy.settlesIn [OverviewScreen.swift:29]; D-249: the no-group hero's link separator [heroDim(Separator.meta)]
             "OverviewTab.kt" to 2,
             // RolesCopy.balanceHere [Roles.swift:185]
             "Roles.kt" to 1,
-            // the two staleness lines and the "Settle in" SectionLabel [SettleScreen.swift:94, 95, 113]
-            "SettleScreen.kt" to 3,
+            // the two staleness lines and the "Settle in" SectionLabel [SettleScreen.swift:94, 95, 113]; D-260: src/debug
+            "SettleScreenProof.kt" to 3,
         )
         val actual = sources.filter { it.name != "ThemeArt.kt" }
             .associate { it.name to Regex("""Separator\s*\.\s*meta\s*\(""").findAll(it.readText()).count() }.filterValues { it > 0 }
@@ -1876,8 +1872,8 @@ class ThemeArtTest {
             Triple("GroupSettings.kt", "Text(open.withRunes(), style = Type.body(dark).copy(fontSize = 14.sp))", 1),
             Triple("ExpenseListScreen.kt", "Text(title.withRunes(), style = Type.name(dark, 15), maxLines = 2, overflow = TextOverflow.Ellipsis)", 1),
             Triple("People.kt", "person.detail(contacts)?.let { Text(it.withRunes(), style = Type.bodyDim(dark)) }", 1),
-            Triple("BalanceScreen.kt", "}).withRunes(),\n                        style = Type.microLabel(dark).copy(color = Tok.owed(dark)),", 1),
-            Triple("SettleScreen.kt", "}).withRunes(),\n                        style = Type.microLabel(dark).copy(color = Tok.owed(dark)),", 1),
+            Triple("BalanceScreenProof.kt", "}).withRunes(),\n                        style = Type.microLabel(dark).copy(color = Tok.owed(dark)),", 1),
+            Triple("SettleScreenProof.kt", "}).withRunes(),\n                        style = Type.microLabel(dark).copy(color = Tok.owed(dark)),", 1),
             // D-220 (L25): the photo lines only; the plain card and the tile row draw their parts with Separator.annotated.
             Triple("GroupsTab.kt", "GroupsCopy.detail(named.members.size, named.group.settlementCurrency).withRunes(),", 1),
             Triple("OverviewTab.kt", "OverviewCopy.settlesIn(n.members.size, n.group.settlementCurrency).withRunes()", 1),

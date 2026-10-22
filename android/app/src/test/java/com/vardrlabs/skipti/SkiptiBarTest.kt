@@ -110,7 +110,9 @@ class SkiptiBarTest {
         assertFalse(src.contains("BAR_HEIGHT.dp + 8.dp"))
         // D-217 look fix 1: the tab root's alone now (the scaffold's padding and its collapse arithmetic) and the proof
         // rows'; a pushed page and a sheet start where iOS's container does ([scrollTop], [formTop], [LARGE_SHEET_TOP]).
-        assertEquals(3, src.split("BarDecisions.CONTENT_TOP_PAD").size - 1)
+        // D-260 (G-13): the proof rows moved to src/debug's BarProof.kt.
+        assertEquals(2, src.split("BarDecisions.CONTENT_TOP_PAD").size - 1)
+        assertEquals(1, AppSources.read("BarProof.kt").split("BarDecisions.CONTENT_TOP_PAD").size - 1)
         assertEquals(1, src.split("= CONTENT_TOP_PAD + LARGE_SHEET_TITLE_EXTRA").size - 1)
     }
 

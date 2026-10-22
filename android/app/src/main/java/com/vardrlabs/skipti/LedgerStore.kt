@@ -1563,43 +1563,6 @@ class LedgerStore(
     }
 
     /**
-     * PROOF SURFACES AND TESTS ONLY (D-136): users' paths call `loadGroups()`
-     * or `namedGroups()`, which never seed.
-     *
-     * Loads the groups, seeding the fixture group through `ffiCreateGroup`
-     * on first run: the id is generated IN CORE and the settlement currency
-     * is fixed from then on (§5.2). Mirrors iOS exactly, including the
-     * fall-through: corrupt group JSON re-seeds rather than throwing (the
-     * expenses envelope is the guarded one; groups only name the header).
-     */
-    fun loadGroupsOrSeed(): List<GroupDTO> = withVault { vault ->
-        val data = vault.kvGet(GROUPS_KEY)
-        if (data != null) {
-            try {
-                return@withVault json.decodeFromString(groupList, data.decodeToString())
-            } catch (_: Exception) {
-                // fall through to re-seed, exactly as iOS's try? does
-            }
-        }
-        val created: GroupWire = ffiCreateGroup(
-            name = "Goa Trip",
-            settlementCurrency = "INR",
-            members = BalanceFixtures.names.keys.sorted(),
-        )
-        val group = GroupDTO(
-            id = created.id,
-            name = created.name,
-            settlementCurrency = created.settlementCurrency,
-            members = created.members,
-        )
-        vault.kvSet(
-            GROUPS_KEY,
-            json.encodeToString(groupList, listOf(group)).toByteArray(Charsets.UTF_8),
-        )
-        listOf(group)
-    }
-
-    /**
      * Reads the groups WITHOUT seeding, so a fresh install writes nothing at
      * all. An unreadable group list is an error (LedgerCorruptException),
      * never "no groups": D-136 removed the `emptyList()` that hid corruption

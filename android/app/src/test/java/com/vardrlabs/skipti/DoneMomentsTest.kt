@@ -259,7 +259,7 @@ class DoneMomentsTest {
      *  touch-feedback setting); `Haptics.play` reads the switch. */
     @Test
     fun haptics_have_one_door() {
-        val files = java.io.File("src/main").walkTopDown().filter { it.isFile && it.extension in setOf("kt", "java") }.toList()
+        val files = AppSources.walk().filter { it.isFile && it.extension in setOf("kt", "java") }.toList()
         assertTrue("main sources found", files.size > 20)
         val door = files.single { it.name == "DoneMoments.kt" }
         for (f in files) {
@@ -488,7 +488,7 @@ class DoneMomentsTest {
         assertTrue("the content first, then the scrim over it", draw.indexOf("drawContent()") in 0 until draw.indexOf("drawRect("))
         assertTrue("the window's colour", "DoneDim.window(dark)" in dim)
         assertTrue("out to the window's edges", "positionInRoot()" in dim)
-        val shell = kt("AppRoot.kt").substringAfter("private fun HomeShell(").substringBefore("\n}\n")
+        val shell = kt("AppRoot.kt").substringAfter("internal fun HomeShell(").substringBefore("\n}\n")
         val ground = shell.indexOf(".auroraBackground(dark)\n    ) {")
         val refresh = shell.indexOf("PullToRefreshBox(")
         assertTrue("the shell's ground is drawn before (under) the dimmed content: $ground $refresh", ground in 0 until refresh)
@@ -542,7 +542,7 @@ class DoneMomentsTest {
         for (r in listOf(null, "account", "account/appearance", "profile", "people/x", "expense/x", "join", "devices", "group-settings/x", "activity", "export", "signin")) {
             assertFalse("$r keeps the shell's toast", ToastCover.covers(r))
         }
-        val shell = kt("AppRoot.kt").substringAfter("private fun HomeShell(").substringBefore("\n}\n")
+        val shell = kt("AppRoot.kt").substringAfter("internal fun HomeShell(").substringBefore("\n}\n")
         val cover = shell.indexOf("if (ToastCover.covers(route)) CoversShellToast()")
         assertTrue("the shell covers its toast for such a route, before it draws one", cover in 0 until shell.indexOf("when (shown) {"))
         assertTrue("the add-person screen covers it", "CoversShellToast()" in body(kt("People.kt"), "AddPersonScreen"))
@@ -603,7 +603,7 @@ class DoneMomentsTest {
     @Test
     fun the_shell_never_dims_the_bar() {
         val root = kt("AppRoot.kt")
-        val shell = root.substringAfter("private fun HomeShell(").substringBefore("\n}\n")
+        val shell = root.substringAfter("internal fun HomeShell(").substringBefore("\n}\n")
         val refresh = shell.indexOf("PullToRefreshBox(")
         val refreshArgs = shell.substring(refresh).substringBefore(") {")
         assertTrue("the dim is on the tab content", ".doneDim(" in refreshArgs)
@@ -695,7 +695,7 @@ class DoneMomentsTest {
     // ---- Task 6: the call sites (the twins of iOS's Task 5 guards) ----
 
     private fun mainSources(): List<java.io.File> =
-        java.io.File("src/main/java/com/vardrlabs/skipti").walkTopDown().filter { it.isFile && it.extension == "kt" }.toList()
+        AppSources.walk().filter { it.isFile && it.extension == "kt" }.toList()
 
     /** The text between the parentheses of the call whose `(` ends at [open] in [src]. */
     private fun argsAt(src: String, open: Int): String {
@@ -927,7 +927,7 @@ class DoneMomentsTest {
         val notice = root.substringAfter("if (LedgerErase.notice) {").substringBefore("\n    }\n")
         assertTrue("the erased screen over the root, closed by OK", "ErasedScreen(onDone = { LedgerErase.notice = false })" in notice)
         assertTrue("and by Back", "BackHandler { LedgerErase.notice = false }" in notice)
-        val shell = root.substringAfter("private fun HomeShell(").substringBefore("\n}\n")
+        val shell = root.substringAfter("internal fun HomeShell(").substringBefore("\n}\n")
         val you = shell.substringAfter("\"account\", \"account/profile\"").substringBefore("return\n")
         assertTrue("You dims under a first group's overlay", ".doneDim(youPlay, dark)" in you && "DoneOverlay(youPlay, dark)" in you)
         val create = body(kt("GroupScreens.kt"), "CreateGroupScreen")
@@ -1053,7 +1053,7 @@ class DoneMomentsTest {
         val join = root.substringAfter("} else if (openedInvite != null) {").substringBefore("} else {")
         assertTrue("an opened invite's join covers the toast", "CoversShellToast()" in join)
         val src = kt("AppRoot.kt")
-        val shell = src.substringAfter("private fun HomeShell(").substringBefore("\n}\n")
+        val shell = src.substringAfter("internal fun HomeShell(").substringBefore("\n}\n")
         assertEquals("the overlay is composed only inside HomeShell", Regex("""DoneOverlay\(""").findAll(src).count(), Regex("""DoneOverlay\(""").findAll(shell).count())
         val app = root.substringAfter("when (kitLoaded) {")
         assertTrue("which the lock replaces", app.indexOf("if (AppLock.locked) {") in 0 until app.indexOf("AppLockScreen()") && app.indexOf("AppLockScreen()") < app.indexOf("HomeShell("))
@@ -1074,7 +1074,7 @@ class DoneMomentsTest {
         assertFalse("another group", ToastCover.pushed(PushCover.group(g), route = null, group = "c".repeat(32), onBalance = true))
         assertFalse("another tab", ToastCover.pushed(PushCover.group(g), route = null, group = g, onBalance = false))
         assertFalse("opened from Balance", ToastCover.pushed(null, route = null, group = g, onBalance = true))
-        val shell = kt("AppRoot.kt").substringAfter("private fun HomeShell(").substringBefore("\n}\n")
+        val shell = kt("AppRoot.kt").substringAfter("internal fun HomeShell(").substringBefore("\n}\n")
         assertTrue("the phones push marks it", "route = \"devices\"\n            pushCover = PushCover.PHONES" in shell)
         assertTrue("the group push marks it", "openGroup = pushedGroup\n            pushCover = PushCover.group(pushedGroup)" in shell)
         val rule = "val pushCovered = ToastCover.pushed(pushCover, route, openGroup, selectedTab == HomeTab.BALANCE)"
@@ -1113,7 +1113,7 @@ class DoneMomentsTest {
         val take = create.indexOf("home?.let { homeKeep?.take(it) }")
         assertTrue("taken before the moment is posted", take in 0 until create.indexOf("DoneCenter.post("))
         assertTrue("and before the route closes", take in 0 until create.indexOf("onCreated(created.group.id)"))
-        val shell = kt("AppRoot.kt").substringAfter("private fun HomeShell(").substringBefore("\n}\n")
+        val shell = kt("AppRoot.kt").substringAfter("internal fun HomeShell(").substringBefore("\n}\n")
         assertTrue("the shell hands Home's keep to a create that returns to Balance", "homeKeep = if (fromYou) null else homeKeep" in shell)
         val overview = kt("OverviewTab.kt").substringAfter("\nfun OverviewScreen(").substringBefore("\n}\n")
         assertTrue("Home reads the same way", "keep.take(withContext(Dispatchers.IO) { HomeKeep.read { LedgerStore(vaultPath) } })" in overview)

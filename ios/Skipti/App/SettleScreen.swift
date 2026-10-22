@@ -1,5 +1,7 @@
 import SwiftUI
 
+#if DEBUG
+// D-260 (G-13, decision 269): a proof surface (`--settle`, `--settle-vault`), Debug builds only.
 /// §5.8's settle-up screen, where the product's legal boundary lives.
 /// SKIPTI records that a debt was settled; it never moves money, never
 /// holds funds, never links an account (ADR-0008, §13.2). Every string on
@@ -341,3 +343,4 @@ struct SettleScreen: View {
         }
     }
 }
+#endif

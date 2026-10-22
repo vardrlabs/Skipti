@@ -49,7 +49,7 @@ class SpendingTest {
     private fun main(name: String) = java.io.File("src/main/java/com/vardrlabs/skipti/$name").readText()
     private fun swift(name: String) = java.io.File("../../ios/Skipti/App/$name").readText()
     private fun mainSources(): Map<String, String> =
-        java.io.File("src/main/java/com/vardrlabs/skipti").listFiles { f -> f.name.endsWith(".kt") }!!.associate { it.name to it.readText() }
+        AppSources.listFiles { f -> f.name.endsWith(".kt") }!!.associate { it.name to it.readText() }
 
     /** A SharedPreferences held in memory (the JVM has no Android preferences). */
     private class MapPrefs : SharedPreferences {
@@ -191,7 +191,8 @@ class SpendingTest {
         )) {
             // The fixture BalanceScreen (a launch-arg proof surface, never a person's Home) keeps its own empty words.
             for ((file, text) in sources) {
-                if (file == "BalanceScreen.kt" && gone.startsWith("Create a group, join")) continue
+                // D-260 (G-13): the proof screen moved to src/debug's BalanceScreenProof.kt.
+                if (file == "BalanceScreenProof.kt" && gone.startsWith("Create a group, join")) continue
                 assertFalse("$file still says $gone", gone in text)
             }
         }

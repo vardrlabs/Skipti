@@ -217,7 +217,7 @@ class HomeTabsTest {
         assertTrue("the bar reads the shell's backdrop", "LocalShellBackdrop.current" in bar)
         assertTrue("through the film decision", "TabBarGround.film(" in bar)
         assertTrue("as glass", "backdropGlass(" in bar)
-        val shell = main("AppRoot.kt").substringAfter("private fun HomeShell(")
+        val shell = main("AppRoot.kt").substringAfter("internal fun HomeShell(")
         assertTrue("the shell provides it", "LocalShellBackdrop provides" in shell)
         assertTrue("and the bar's height", "LocalShellBarInset provides" in shell)
         val scaffold = main("SkiptiBar.kt").substringAfter("fun TabRootScaffold(").substringBefore("\n}\n")
@@ -232,7 +232,7 @@ class HomeTabsTest {
      *  inset) or reads `LocalShellBarInset.current` itself. A new page under the bar fails here until it does. */
     @Test
     fun every_page_under_the_tab_bar_keeps_it_clear() {
-        val shell = main("AppRoot.kt").substringAfter("private fun HomeShell(")
+        val shell = main("AppRoot.kt").substringAfter("internal fun HomeShell(")
         val start = shell.indexOf("when (page.tab) {") // D-250: the tab's page reads its own place
         // D-224: the first group's overlay sits between the pages and the bar; it is not a page.
         val end = shell.indexOf("DoneOverlay(donePlay, dark)", start)
@@ -241,7 +241,7 @@ class HomeTabsTest {
             .findAll(shell.substring(start, end)).map { it.groupValues[1] }.toSet()
         // D-249: Your spending's page, over Balance (the card) or Expenses (the Just me header).
         assertEquals(setOf("GroupPage", "SpendingScreen", "OverviewScreen", "GroupsTab", "ExpenseListScreen", "SettleAllScreen"), pages)
-        val sources = java.io.File("src/main/java/com/vardrlabs/skipti").walkTopDown()
+        val sources = AppSources.walk()
             .filter { it.isFile && it.name.endsWith(".kt") }.toList()
             .also { check(it.size > 50) { "main sources not found: ${it.size}" } }
         for (page in pages) {
