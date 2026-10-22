@@ -193,13 +193,16 @@ fun LedgerStore.renameGroup(groupId: String, name: String) {
 object ReadOnlyBanner {
     /** The banner's first line. D-252 (decision 218): a group that left the account's listing says it neutrally (a
      *  removal and a deletion read the same from outside), and a group this account deleted reads "You deleted
-     *  {group}." on every one of its phones (the deleting one and those its notice reached). */
+     *  {group}." on every one of its phones (the deleting one and those its notice reached). D-256: another account's
+     *  deletion known only from its tombstone reads "This group was deleted." (no name to give). */
     fun title(mark: ReadOnlyDTO, date: String, group: String): String {
         // D-229 decision 45: its own one line, and no second.
         if (mark.kind == ReadOnlyDTO.PLACE_LOST) return RolesCopy.PLACE_LOST_BANNER
         if (mark.kind == ReadOnlyDTO.VANISHED) return GroupEndCopy.NO_LONGER_SHARED
         if (mark.kind == "removed") return RolesCopy.removedBanner(mark.by, date)
-        return if (mark.byYou == true) GroupEndCopy.youDeleted(group) else RolesCopy.deletedBanner(mark.by, date)
+        if (mark.byYou == true) return GroupEndCopy.youDeleted(group)
+        // D-256 (decision 276): a deletion known from its tombstone names nobody.
+        return if (mark.by.isEmpty()) GroupEndCopy.WAS_DELETED else RolesCopy.deletedBanner(mark.by, date)
     }
 
     /** The banner's second line; none for a group whose place is lost (D-229). */

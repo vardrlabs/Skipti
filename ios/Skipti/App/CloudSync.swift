@@ -476,8 +476,8 @@ final class CloudSync {
         // D-235 round 4 (shells review I1, Android's GroupEnsure): offline, the create never completes (it resolves on
         // the server's acknowledgement) and "Making an invite" spun for good; bounded, it falls to the server read,
         // which is bounded too, and no answer is `.offline`.
-        return await decideGroup(create: { try await doc.setData(CloudRecords.groupDocument(name: name, uid: uid)) },
-                                 read: {
+        let state = await decideGroup(create: { try await doc.setData(CloudRecords.groupDocument(name: name, uid: uid)) },
+                                      read: {
             // It exists: readable means a member (the rules refuse anyone
             // else); a refusal means someone else's group with this id.
             do {
@@ -490,6 +490,35 @@ final class CloudSync {
                 return .offline
             }
         })
+        // D-256 (decision 276): a create the rules refused because the group was deleted (its tombstone) ends here.
+        if state == .notMember { await endIfDeleted(groupId, uid: uid) }
+        return state
+    }
+
+    /// D-256 (decision 276): `deletedGroups/{g}` from the server, in bounded time, for the account `uid`: nil when the
+    /// rules refuse it (not one of its accounts, or there is none: a missing tombstone reads as refused), when it is
+    /// not there, or with no answer. Only a read: nothing is written.
+    static func tombstoneRead(_ groupId: String, uid: String) async -> GroupGone.Tombstone? {
+        await Bounded.value(seconds: groupReadTimeout, otherwise: nil) {
+            guard let snapshot = try? await Cloud.db.collection("deletedGroups").document(groupId).getDocument(source: .server),
+                  snapshot.exists else { return nil }
+            return GroupGone.tombstone(snapshot.data(), uid: uid)
+        }
+    }
+
+    /// D-256 (decision 276): after `ensureGroup` found the group neither creatable nor readable, its tombstone says
+    /// whether it was deleted; if so the copy turns read-only in the deletion's words (`GroupGone.createRefused`), its
+    /// listener stops and the screens read it again: its waiting records stay on this phone, never parked or sent,
+    /// and an invite stops at once. Only for the vault's own signed-in account, over an unmarked copy or a lost place.
+    private static func endIfDeleted(_ groupId: String, uid: String) async {
+        guard let mark = GroupGone.createRefused(await tombstoneRead(groupId, uid: uid), now: Date()),
+              let ready = CloudSync.shared.ready(uid: Account.shared.uid), ready.uid == uid else { return }
+        do {
+            guard GroupGone.marks(over: try ready.store.readOnlyChecked()[groupId]) else { return }
+            try ready.store.markReadOnly(groupId, mark)
+        } catch { return }
+        CloudSync.shared.groupListeners?.remove(groupId)
+        SyncStatus.shared.changed()
     }
 
     static let groupCreateTimeout: TimeInterval = 8
@@ -643,10 +672,13 @@ final class CloudSync {
         }
     }
 
-    /// The one read for a group `checkVanished` chose: the removal's own (`groupRead`), no new server read.
+    /// The one read for a group `checkVanished` chose: the removal's own (`groupRead`). D-256 (decision 276): when it
+    /// says refused or not found, one more: the group's tombstone (`tombstoneRead`), which says it was deleted.
     private func askVanished(_ groupId: String, uid: String, store: LedgerStore) {
         Task { @MainActor in
-            let outcome = GroupGone.decide(GroupGone.read(await Self.groupRead(groupId), uid: uid))
+            let read = GroupGone.read(await Self.groupRead(groupId), uid: uid)
+            let tombstone = GroupGone.asksTombstone(read) ? await Self.tombstoneRead(groupId, uid: uid) : nil
+            let outcome = GroupGone.decide(read, tombstone: tombstone)
             let sync = CloudSync.shared
             // Signed out, or listening as someone else, while it was asked: what it said does not count.
             guard sync.groupsListener != nil, Account.shared.uid == uid else { return }
@@ -657,13 +689,14 @@ final class CloudSync {
                 sync.vanishAsked.remove(groupId)
                 sync.vanishListing = nil
                 return
-            case .readOnly:
+            case .readOnly, .deleted:
                 sync.vanishAsked.remove(groupId)
                 // Listed again meanwhile, or a notice marked it first: the newer word stands.
-                guard !sync.listedNow.contains(groupId) else { return }
+                guard !sync.listedNow.contains(groupId),
+                      let mark = GroupGone.mark(for: outcome, tombstone: tombstone, now: Date()) else { return }
                 do {
                     guard GroupGone.marks(over: try store.readOnlyChecked()[groupId]) else { return }
-                    try store.markReadOnly(groupId, GroupGone.mark(at: Date()))
+                    try store.markReadOnly(groupId, mark)
                 } catch { return }
                 sync.groupListeners?.remove(groupId)
                 SyncStatus.shared.changed()

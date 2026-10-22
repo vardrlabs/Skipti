@@ -192,7 +192,9 @@ service cloud.firestore {
       allow get: if signedIn()
         && (request.auth.uid in resource.data.memberUids || request.auth.uid in resource.data.get('former', {}));
       allow list: if signedIn() && request.auth.uid in resource.data.memberUids;
+      // D-256 (decision 276): never with the id of a deleted group (its tombstone, below, is there for good).
       allow create: if approved()
+        && !exists(/databases/$(database)/documents/deletedGroups/$(groupId))
         && hasOnly(['name', 'memberUids', 'createdBy', 'createdAt', 'emoji'])
         && request.resource.data.memberUids == [request.auth.uid]
         && request.resource.data.createdBy == request.auth.uid
@@ -213,6 +215,15 @@ service cloud.firestore {
           || (signedIn() && formerAt(groupId) != null && resource.data.createdAt <= formerAt(groupId).at);
         allow create: if isMember(groupId) && approved() && validRecord();
       }
+    }
+
+    // D-256 (decision 276): a deleted group's tombstone, written only by
+    // deleteGroup (byUid, uids, deletedAt; no name). An account it lists (a
+    // member, a removed member or the deleter) reads it, so each of its phones
+    // can say the group was deleted; nobody lists them, and no client writes
+    // or deletes one, the admin's account included.
+    match /deletedGroups/{groupId} {
+      allow get: if signedIn() && request.auth.uid in resource.data.uids;
     }
 
     // D-254: an account reads its own approval (the phone listens to it and

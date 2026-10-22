@@ -462,6 +462,79 @@ test('D-252: deleteGroup pushes to the other members only; the deleting account 
   assert.match(tellBody, /loud\.map\(async \(u\) =>/, 'only the loud accounts\' phones are read for a push');
 });
 
+// ---- D-256 (decision 276): the tombstone ----
+
+/** A phone's own write, as the apps send it (setData: no precondition; the server's time as a transform). */
+async function phoneSet(uid, path, fields, stamp = 'createdAt') {
+  await approve(uid);
+  const name = `${DOCS}/${path}`;
+  const r = await fetch(`${FS}/v1/${DOCS}:commit`, {
+    method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken(uid)}` },
+    body: JSON.stringify({ writes: [{
+      update: { name, fields: Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, value(v)])) },
+      updateTransforms: [{ fieldPath: stamp, setToServerValue: 'REQUEST_TIME' }],
+    }] }),
+  });
+  await r.arrayBuffer();
+  return r.status;
+}
+/** ensureGroup's create (CloudRecords.groupDocument, both shells): this account the only member. */
+const ensureGroup = (uid, groupId) => phoneSet(uid, `groups/${groupId}`, { name: 'Goa trip', memberUids: [uid], createdBy: uid });
+async function phoneGet(uid, path) {
+  await approve(uid);
+  const r = await fetch(`${FS}/v1/${DOCS}/${path}`, { headers: { authorization: `Bearer ${idToken(uid)}` } });
+  await r.arrayBuffer();
+  return r.status;
+}
+
+test('D-256: who a tombstone names: every member, the removed and the deleter, once each; whose delete it was', () => {
+  assert.deepEqual(groups.tombstoneOf(['ow', 'ad', 'me'], { sam: { at: 1 } }, 'ow'), { byUid: 'ow', uids: ['ow', 'ad', 'me', 'sam'] });
+  assert.deepEqual(groups.tombstoneOf(['me', 'me'], {}, 'ow'), { byUid: 'ow', uids: ['me', 'ow'] }, 'an old group: the creator owns it, not listed');
+  assert.deepEqual(groups.tombstoneOf(['ow', '', 7, null], ['x'], 'ow'), { byUid: 'ow', uids: ['ow'] }, 'nothing that is not an account');
+  assert.deepEqual(groups.tombstoneOf(undefined, undefined, 'ow'), { byUid: 'ow', uids: ['ow'] });
+  assert.deepEqual(groups.tombstoneOf(['me'], null, ''), { byUid: null, uids: ['me'] });
+  // index.js: the tombstone is written, and awaited, BEFORE the group is deleted (a failed write fails the call first).
+  const source = readFileSync(new URL('../functions/index.js', import.meta.url), 'utf8');
+  const del = source.slice(source.indexOf('export const deleteGroup'), source.indexOf('export const adoptRemovals'));
+  const write = del.indexOf("await db.collection('deletedGroups').doc(groupId)\n    .set({ ...groups.tombstoneOf(members, group.former, uid), deletedAt: FieldValue.serverTimestamp() });");
+  assert.ok(write > 0, 'deleteGroup writes the tombstone');
+  assert.ok(write < del.indexOf('await db.recursiveDelete(ref);'), 'before the delete');
+  assert.equal((source.match(/collection\('deletedGroups'\)/g) ?? []).length, 1, 'deleteGroup alone writes one (the purge leaves them)');
+});
+
+test('D-256: deleteGroup leaves a tombstone: whose delete, every account that held the group, the time; no name', async () => {
+  await seed(`groups/${G}`, { name: 'Goa trip', memberUids: ['ow', 'ad', 'me', 'sam'], createdBy: 'ow', admins: ['ad'], createdAt: new Date(),
+    former: { eve: { at: new Date(), by: 'ow' } } });
+  assert.deepEqual(await call('deleteGroup', 'ad', { groupId: G, groupName: 'Goa trip' }), { error: 'PERMISSION_DENIED' });
+  assert.equal(await read(`deletedGroups/${G}`), null, 'a refused delete leaves none');
+  assert.deepEqual((await call('deleteGroup', 'ow', { groupId: G, groupName: 'Goa trip' })).result, { deleted: true });
+  const t = await read(`deletedGroups/${G}`);
+  assert.ok(t, 'the tombstone is there');
+  assert.deepEqual(Object.keys(t).sort(), ['byUid', 'deletedAt', 'uids'], 'nothing else: no name');
+  assert.equal(t.byUid.stringValue, 'ow');
+  assert.deepEqual(strings(t.uids), ['ow', 'ad', 'me', 'sam', 'eve'], 'the members and the removed');
+  assert.ok(Math.abs(Date.parse(t.deletedAt.timestampValue) - Date.now()) < 60_000, 'the server\'s time');
+  assert.equal(await read(`groups/${G}`), null);
+  // A second delete answers as before, and leaves the tombstone as it was.
+  assert.deepEqual(await call('deleteGroup', 'ow', { groupId: G, groupName: 'Goa trip' }), { error: 'NOT_FOUND' });
+  assert.deepEqual(await read(`deletedGroups/${G}`), t);
+});
+
+test('D-256: the deleting account\'s other phone cannot put the deleted group back (rootcause.md\'s RESURRECT, now refused)', async () => {
+  const fresh = 'e'.repeat(32);
+  assert.equal(await ensureGroup('ow', fresh), 200, 'control: the same create of a fresh id is a group');
+  assert.deepEqual((await call('deleteGroup', 'ow', { groupId: G, groupName: 'Goa trip' })).result, { deleted: true });
+  assert.equal(await ensureGroup('ow', G), 403, 'ow\'s second phone: ensureGroup\'s create');
+  assert.equal(await ensureGroup('me', G), 403, 'a former member squatting the id');
+  assert.equal(await ensureGroup('eve', G), 403, 'a stranger');
+  assert.equal(await read(`groups/${G}`), null, 'nothing came back');
+  // What the shells read next: the deleter's and a member's accounts read the tombstone; a stranger cannot.
+  assert.equal(await phoneGet('ow', `deletedGroups/${G}`), 200);
+  assert.equal(await phoneGet('me', `deletedGroups/${G}`), 200);
+  assert.equal(await phoneGet('eve', `deletedGroups/${G}`), 403);
+  assert.equal(await phoneGet('ow', `groups/${G}`), 403, 'the group read before it is refused (the rules read no document)');
+});
+
 test('deleteGroup without a picture, in an old group (its creator owns it)', async () => {
   await seed(`groups/${G}`, { name: 'Goa trip', memberUids: ['ow', 'me'], createdBy: 'me' });
   assert.deepEqual(await call('deleteGroup', 'ow', { groupId: G, groupName: 'Goa trip', byName: 'Ola' }), { error: 'PERMISSION_DENIED' });

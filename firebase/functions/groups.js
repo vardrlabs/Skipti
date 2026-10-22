@@ -440,6 +440,19 @@ export function deletionAudience(memberUids, caller) {
   return { told, quiet: typeof caller === 'string' && caller ? [caller] : [] };
 }
 
+/** D-256 (decision 276): what a deleted group leaves behind (deletedGroups/{g},
+ *  beside the server's own `deletedAt`): whose delete it was, and every account
+ *  that may read it: the members, the removed (`former`) and the deleter, once
+ *  each. The rules let only these accounts `get` it, and refuse a group create
+ *  with its id for good. No name: the notice carries that. */
+export function tombstoneOf(memberUids, former, caller) {
+  const members = Array.isArray(memberUids) ? memberUids : [];
+  const removed = former && typeof former === 'object' && !Array.isArray(former) ? Object.keys(former) : [];
+  const ok = (u) => typeof u === 'string' && u;
+  const uids = [...new Set([...members, ...removed, caller].filter(ok))];
+  return { byUid: ok(caller) ? caller : null, uids };
+}
+
 export function noticeBody(kind, n) {
   switch (kind) {
     case 'request': return n.toPerson ? `${n.byName} asked to remove you` : `${n.byName} asked to remove ${n.memberName}`;

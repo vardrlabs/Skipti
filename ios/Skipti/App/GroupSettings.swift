@@ -463,12 +463,15 @@ struct ReadOnlyBanner: View {
     /// account lost its place says why in this one line (no date: it was
     /// never marked, it is read from the records). D-252 (decision 218): a group that left the account's listing
     /// says it neutrally (a removal and a deletion read the same from outside), and a group this account deleted
-    /// reads "You deleted {group}." on every one of its phones (the deleting one and those its notice reached).
+    /// reads "You deleted {group}." on every one of its phones (the deleting one and those its notice reached). D-256:
+    /// another account's deletion known only from its tombstone reads "This group was deleted." (no name to give).
     static func title(mark: LedgerStore.ReadOnly, date: String, group: String) -> String {
         if mark.kind == LedgerStore.ReadOnly.placeLostKind { return RolesCopy.placeLostBanner }
         if mark.kind == LedgerStore.ReadOnly.vanishedKind { return GroupEndCopy.noLongerShared }
         if mark.kind == "removed" { return RolesCopy.removedBanner(by: mark.by, date: date) }
-        return mark.byYou == true ? GroupEndCopy.youDeleted(group) : RolesCopy.deletedBanner(by: mark.by, date: date)
+        if mark.byYou == true { return GroupEndCopy.youDeleted(group) }
+        // D-256 (decision 276): a deletion known from its tombstone names nobody.
+        return mark.by.isEmpty ? GroupEndCopy.wasDeleted : RolesCopy.deletedBanner(by: mark.by, date: date)
     }
 
     /// The banner's second line; none for a lost place (its one line says it all).
