@@ -55,6 +55,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import uniffi.skipti_core.BalanceLineOut
 import uniffi.skipti_core.CategoryTree
+import uniffi.skipti_core.CoreException
 import uniffi.skipti_core.GroupStatsOut
 import uniffi.skipti_core.NamedGroupWire
 import uniffi.skipti_core.OverviewGroupIn
@@ -95,13 +96,29 @@ object HomeOverview {
             redistributions,
         )
         // Settlement currency first (E4 Design 2), as the group page's Settled card orders them.
-        val progress = named.associate {
+        // D-259: a group core marked overflowed has no meter; one whose meter alone is out of range has none either.
+        val overflowed = overview.groups.filter { it.overflowed }.map { it.groupId }.toSet()
+        val progress = named.filter { it.group.id !in overflowed }.associate {
             it.group.id to SettledSummary.blocks(
-                ffiSettledProgress(expenses, settlements, redistributions, it.group.id), it.group.settlementCurrency,
+                settledOrNone { ffiSettledProgress(expenses, settlements, redistributions, it.group.id) },
+                it.group.settlementCurrency,
             )
         }
         return Home(named, overview, progress)
     }
+
+    /** D-259: one group's settled blocks, or none (no meter) when core says its sums are out of range (`Overflow`); any
+     *  other error is thrown, as before. iOS's twin is `HomeOverview.settledOrNone`. */
+    fun settledOrNone(read: () -> List<SettledProgressOut>): List<SettledProgressOut> =
+        try {
+            read()
+        } catch (_: CoreException.Overflow) {
+            emptyList()
+        }
+
+    /** D-259: whether core marked the group's amounts too large to add up. iOS's twin is `HomeOverview.tooLarge`. */
+    fun tooLarge(overview: OverviewOut?, groupId: String): Boolean =
+        overview?.groups?.firstOrNull { it.groupId == groupId }?.overflowed ?: false
 }
 
 /** D-180: the Balance tab's words, one place; iOS's twin is `OverviewCopy`. */
@@ -367,6 +384,7 @@ fun OverviewScreen(
                             named,
                             overview?.groups?.firstOrNull { it.groupId == named.group.id }?.nets.orEmpty(),
                             progress[named.group.id].orEmpty(),
+                            HomeOverview.tooLarge(overview, named.group.id),
                             dark,
                             onOpen = { onOpenGroup(named.group.id) },
                             modifier = modifier,

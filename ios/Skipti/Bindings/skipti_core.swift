@@ -2557,18 +2557,36 @@ public func FfiConverterTypeGroupKeyOut_lower(_ value: GroupKeyOut) -> RustBuffe
 public struct GroupNetOut: Equatable, Hashable {
     public var groupId: String
     /**
-     * Your net in this group, one per currency, largest first.
+     * Your net in this group, one per currency, largest first. Empty when
+     * `overflowed`.
      */
     public var nets: [CurrencyAmountOut]
+    /**
+     * D-259: this group's amounts are too large to add up: its own balance
+     * is past i64 (`balance_line`'s `Overflow`), or adding it to a total or
+     * a person's amount would be. It adds nothing to `totals` or `people`
+     * and its card says so; every other group is unchanged. One member can
+     * write records that reach the bound, so this is a state, not an error.
+     */
+    public var overflowed: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
     public init(groupId: String, 
         /**
-         * Your net in this group, one per currency, largest first.
-         */nets: [CurrencyAmountOut]) {
+         * Your net in this group, one per currency, largest first. Empty when
+         * `overflowed`.
+         */nets: [CurrencyAmountOut], 
+        /**
+         * D-259: this group's amounts are too large to add up: its own balance
+         * is past i64 (`balance_line`'s `Overflow`), or adding it to a total or
+         * a person's amount would be. It adds nothing to `totals` or `people`
+         * and its card says so; every other group is unchanged. One member can
+         * write records that reach the bound, so this is a state, not an error.
+         */overflowed: Bool) {
         self.groupId = groupId
         self.nets = nets
+        self.overflowed = overflowed
     }
 
     
@@ -2588,13 +2606,15 @@ public struct FfiConverterTypeGroupNetOut: FfiConverterRustBuffer {
         return
             try GroupNetOut(
                 groupId: FfiConverterString.read(from: &buf), 
-                nets: FfiConverterSequenceTypeCurrencyAmountOut.read(from: &buf)
+                nets: FfiConverterSequenceTypeCurrencyAmountOut.read(from: &buf), 
+                overflowed: FfiConverterBool.read(from: &buf)
         )
     }
 
     public static func write(_ value: GroupNetOut, into buf: inout [UInt8]) {
         FfiConverterString.write(value.groupId, into: &buf)
         FfiConverterSequenceTypeCurrencyAmountOut.write(value.nets, into: &buf)
+        FfiConverterBool.write(value.overflowed, into: &buf)
     }
 }
 

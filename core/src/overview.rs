@@ -5,8 +5,8 @@
 //! founder's decision, 2026-09-26).
 
 use crate::ffi::{
-    balance_line, parse_participant, CoreError, ExpenseInput, MemberWire, RedistributionInput,
-    SettlementInput,
+    balance_line, narrow_sum, parse_participant, CoreError, ExpenseInput, MemberWire,
+    RedistributionInput, SettlementInput,
 };
 
 /// One group as the Balance tab sees it: its id, your id in it, and the
@@ -34,8 +34,15 @@ pub struct CurrencyAmountOut {
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct GroupNetOut {
     pub group_id: String,
-    /// Your net in this group, one per currency, largest first.
+    /// Your net in this group, one per currency, largest first. Empty when
+    /// `overflowed`.
     pub nets: Vec<CurrencyAmountOut>,
+    /// D-259: this group's amounts are too large to add up: its own balance
+    /// is past i64 (`balance_line`'s `Overflow`), or adding it to a total or
+    /// a person's amount would be. It adds nothing to `totals` or `people`
+    /// and its card says so; every other group is unchanged. One member can
+    /// write records that reach the bound, so this is a state, not an error.
+    pub overflowed: bool,
 }
 
 /// One person across your groups, in one currency: positive = they owe you.
@@ -89,37 +96,134 @@ fn accumulate(v: &mut Vec<CurrencyAmountOut>, code: &str, amount: i64) -> Result
     Ok(())
 }
 
+/// One group's own part of the overview, before it is added up.
+struct GroupPart {
+    /// The viewer's nets, non-zero, largest first.
+    nets: Vec<CurrencyAmountOut>,
+    /// (folded name, name as this group lists it, currency, amount) per
+    /// other person with a non-zero entry, in `balance_line`'s order.
+    people: Vec<(String, String, String, i64)>,
+}
+
+/// A sum the overview hands a shell: a currency's total, or one person's
+/// amount in one currency (folded name, currency).
+#[derive(Clone)]
+enum Sum {
+    Total(String),
+    Person(String, String),
+}
+
+impl GroupPart {
+    /// What this group adds to `sum`.
+    fn adds_to(&self, sum: &Sum) -> i128 {
+        match sum {
+            Sum::Total(code) => self
+                .nets
+                .iter()
+                .filter(|n| &n.currency_code == code)
+                .map(|n| n.amount_minor as i128)
+                .sum(),
+            Sum::Person(folded, code) => self
+                .people
+                .iter()
+                .filter(|(f, _, c, _)| f == folded && c == code)
+                .map(|(_, _, _, v)| *v as i128)
+                .sum(),
+        }
+    }
+}
+
+/// A person across the groups being added up, in i128 until checked.
+struct PersonSum {
+    folded: String,
+    name: String,
+    currency_code: String,
+    net: i128,
+    group_ids: Vec<String>,
+}
+
+/// Adds up the groups not `out`, in input order, in i128 (it cannot
+/// overflow: at most one i64 per group and person). Totals and people in the
+/// order first seen.
+fn add_up(
+    groups: &[OverviewGroupIn],
+    parts: &[Option<GroupPart>],
+    out: &[bool],
+) -> (Vec<(String, i128)>, Vec<PersonSum>) {
+    let mut totals: Vec<(String, i128)> = Vec::new();
+    let mut people: Vec<PersonSum> = Vec::new();
+    for ((g, part), &dropped) in groups.iter().zip(parts).zip(out) {
+        let Some(part) = part.as_ref().filter(|_| !dropped) else {
+            continue;
+        };
+        for n in &part.nets {
+            match totals.iter_mut().find(|(c, _)| *c == n.currency_code) {
+                Some((_, v)) => *v += n.amount_minor as i128,
+                None => totals.push((n.currency_code.clone(), n.amount_minor as i128)),
+            }
+        }
+        for (folded, name, code, amount) in &part.people {
+            match people
+                .iter_mut()
+                .find(|p| p.folded == *folded && p.currency_code == *code)
+            {
+                Some(p) => {
+                    p.net += *amount as i128;
+                    if !p.group_ids.contains(&g.group_id) {
+                        p.group_ids.push(g.group_id.clone());
+                    }
+                }
+                None => people.push(PersonSum {
+                    folded: folded.clone(),
+                    name: name.clone(),
+                    currency_code: code.clone(),
+                    net: *amount as i128,
+                    group_ids: vec![g.group_id.clone()],
+                }),
+            }
+        }
+    }
+    (totals, people)
+}
+
 pub fn overview(
     groups: &[OverviewGroupIn],
     expenses: &[ExpenseInput],
     settlements: &[SettlementInput],
     redistributions: &[RedistributionInput],
 ) -> Result<OverviewOut, CoreError> {
-    let mut totals: Vec<CurrencyAmountOut> = Vec::new();
-    let mut per_group = Vec::with_capacity(groups.len());
-    // (folded name, currency) -> person
-    let mut people: Vec<(String, PersonNetOut)> = Vec::new();
-
+    // Each group's own lines. D-259: a group whose balance is past i64 is
+    // marked, not fatal: one member of ONE group can write records that
+    // reach the bound, and that must not blank Home's other groups. Any
+    // other error is a bug and still fails the call.
+    let mut parts: Vec<Option<GroupPart>> = Vec::with_capacity(groups.len());
     for g in groups {
         parse_participant(&g.group_id)?;
         parse_participant(&g.viewer)?;
         let removed: Vec<String> = g.removed.iter().map(|m| m.id.clone()).collect();
-        let lines = balance_line(
+        let lines = match balance_line(
             expenses,
             settlements,
             redistributions,
             &removed,
             &g.viewer,
             Some(&g.group_id),
-        )?;
+        ) {
+            Ok(lines) => lines,
+            Err(CoreError::Overflow) => {
+                parts.push(None);
+                continue;
+            }
+            Err(e) => return Err(e),
+        };
         let mut nets = Vec::new();
+        let mut people = Vec::new();
         for line in &lines {
             if line.viewer_net_minor != 0 {
                 nets.push(CurrencyAmountOut {
                     currency_code: line.currency_code.clone(),
                     amount_minor: line.viewer_net_minor,
                 });
-                accumulate(&mut totals, &line.currency_code, line.viewer_net_minor)?;
             }
             for entry in &line.entries {
                 if entry.id == g.viewer || entry.minor_units == 0 {
@@ -136,42 +240,81 @@ pub fn overview(
                     .ok_or_else(|| {
                         CoreError::InvalidInput(format!("no name for member {}", entry.id))
                     })?;
-                let key = (name.to_lowercase(), line.currency_code.clone());
-                match people
-                    .iter_mut()
-                    .find(|(k, p)| *k == key.0 && p.currency_code == key.1)
-                {
-                    Some((_, p)) => {
-                        p.net_minor = add(p.net_minor, entry.minor_units)?;
-                        if !p.group_ids.contains(&g.group_id) {
-                            p.group_ids.push(g.group_id.clone());
-                        }
-                    }
-                    None => people.push((
-                        key.0,
-                        PersonNetOut {
-                            name,
-                            currency_code: line.currency_code.clone(),
-                            net_minor: entry.minor_units,
-                            group_ids: vec![g.group_id.clone()],
-                        },
-                    )),
-                }
+                people.push((
+                    name.to_lowercase(),
+                    name,
+                    line.currency_code.clone(),
+                    entry.minor_units,
+                ));
             }
         }
         sort_amounts(&mut nets);
-        per_group.push(GroupNetOut {
-            group_id: g.group_id.clone(),
-            nets,
-        });
+        parts.push(Some(GroupPart { nets, people }));
     }
-    totals.retain(|t| t.amount_minor != 0);
+
+    // Add them up. D-259: a total or a person's amount a shell cannot hold
+    // (past i64, or i64::MIN: `narrow_sum`) drops the group adding the most
+    // to it in the direction it ran over (the earliest on a tie), and the
+    // rest is added up again, so honest groups beside one that reaches the
+    // bound keep their numbers. Each round drops one group, so it ends.
+    let mut out: Vec<bool> = parts.iter().map(Option::is_none).collect();
+    let (totals, people) = loop {
+        let (totals, people) = add_up(groups, &parts, &out);
+        let over = totals
+            .iter()
+            .find(|(_, v)| narrow_sum(*v).is_err())
+            .map(|(c, v)| (Sum::Total(c.clone()), *v))
+            .or_else(|| {
+                people.iter().find(|p| narrow_sum(p.net).is_err()).map(|p| {
+                    (
+                        Sum::Person(p.folded.clone(), p.currency_code.clone()),
+                        p.net,
+                    )
+                })
+            });
+        let Some((sum, value)) = over else {
+            break (totals, people);
+        };
+        let mut worst: Option<(usize, i128)> = None;
+        for (i, part) in parts.iter().enumerate() {
+            let Some(part) = part.as_ref().filter(|_| !out[i]) else {
+                continue;
+            };
+            // Signed toward the overrun, so a group pulling the other way
+            // is never the one dropped.
+            let adds = part.adds_to(&sum) * value.signum();
+            if adds > 0 && worst.is_none_or(|(_, w)| adds > w) {
+                worst = Some((i, adds));
+            }
+        }
+        // A sum past the bound has a group adding to it in that direction.
+        let (i, _) = worst.ok_or(CoreError::Overflow)?;
+        out[i] = true;
+    };
+
+    let mut totals: Vec<CurrencyAmountOut> = totals
+        .into_iter()
+        .filter(|(_, v)| *v != 0)
+        .map(|(code, v)| {
+            Ok(CurrencyAmountOut {
+                currency_code: code,
+                amount_minor: narrow_sum(v)?,
+            })
+        })
+        .collect::<Result<_, CoreError>>()?;
     sort_amounts(&mut totals);
     let mut people: Vec<PersonNetOut> = people
         .into_iter()
-        .map(|(_, p)| p)
-        .filter(|p| p.net_minor != 0)
-        .collect();
+        .filter(|p| p.net != 0)
+        .map(|p| {
+            Ok(PersonNetOut {
+                name: p.name,
+                currency_code: p.currency_code,
+                net_minor: narrow_sum(p.net)?,
+                group_ids: p.group_ids,
+            })
+        })
+        .collect::<Result<_, CoreError>>()?;
     people.sort_by(|a, b| {
         b.net_minor
             .unsigned_abs()
@@ -179,6 +322,19 @@ pub fn overview(
             .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
             .then_with(|| a.currency_code.cmp(&b.currency_code))
     });
+    let per_group = groups
+        .iter()
+        .zip(parts)
+        .zip(&out)
+        .map(|((g, part), &dropped)| GroupNetOut {
+            group_id: g.group_id.clone(),
+            nets: match part {
+                Some(part) if !dropped => part.nets,
+                _ => Vec::new(),
+            },
+            overflowed: dropped,
+        })
+        .collect();
     Ok(OverviewOut {
         totals,
         groups: per_group,
@@ -952,6 +1108,272 @@ mod tests {
             removed: vec![],
         }];
         assert!(overview(&bad, &e, &[], &[]).is_err());
+    }
+
+    // ---- D-259: one group's overflow never blanks Home ----
+    // Goldens: .drafts/d259/golden.py (Python's unbounded ints, not core).
+
+    fn usd(amount: i64) -> CurrencyAmountOut {
+        CurrencyAmountOut {
+            currency_code: "USD".into(),
+            amount_minor: amount,
+        }
+    }
+
+    /// `count` expenses of `each`, `payer` paid and all on `on`.
+    fn repeat(count: usize, each: i64, payer: &str, on: &str, group: &str) -> Vec<ExpenseInput> {
+        (0..count)
+            .map(|_| exp(payer, each, "USD", group, &[(on, each)]))
+            .collect()
+    }
+
+    /// Flat (you 11, Meera 13): Meera paid 90.00 split evenly, you owe 45.00.
+    /// Goa (you 21, Rahul 22): you paid 60.00 split evenly, Rahul owes 30.00.
+    fn honest() -> (Vec<OverviewGroupIn>, Vec<ExpenseInput>) {
+        let (flat, goa) = (pid(0xb0), pid(0xc0));
+        let groups = vec![
+            OverviewGroupIn {
+                group_id: flat.clone(),
+                viewer: pid(11),
+                members: vec![member(&pid(11), "Prithvi"), member(&pid(13), "Meera")],
+                removed: vec![],
+            },
+            OverviewGroupIn {
+                group_id: goa.clone(),
+                viewer: pid(21),
+                members: vec![member(&pid(21), "Prithvi"), member(&pid(22), "Rahul")],
+                removed: vec![],
+            },
+        ];
+        let expenses = vec![
+            exp(
+                &pid(13),
+                9_000,
+                "USD",
+                &flat,
+                &[(&pid(11), 4_500), (&pid(13), 4_500)],
+            ),
+            exp(
+                &pid(21),
+                6_000,
+                "USD",
+                &goa,
+                &[(&pid(21), 3_000), (&pid(22), 3_000)],
+            ),
+        ];
+        (groups, expenses)
+    }
+
+    /// Trip (you 1, Mallory 9): the group one member fills.
+    fn trip_group() -> OverviewGroupIn {
+        OverviewGroupIn {
+            group_id: pid(0xa0),
+            viewer: pid(1),
+            members: vec![member(&pid(1), "Prithvi"), member(&pid(9), "Mallory")],
+            removed: vec![],
+        }
+    }
+
+    /// The pass's reproduction (.drafts/fable/pass-051/d249): Mallory writes
+    /// 9,224 maximum-size expenses (each one passes `ffi_check_expense`), all
+    /// on you, in Trip. Your net there is -9.224e18, past i64, so Trip's own
+    /// line is `Overflow`; before D-259 the whole overview failed with it,
+    /// Flat and Goa too. Now Trip is marked, adds nothing, and the honest
+    /// groups, the totals and People are exactly what they are without Trip.
+    #[test]
+    fn an_overflowed_group_is_marked_and_the_others_are_unchanged() {
+        let max = crate::straumr::check::MAX_AMOUNT_MINOR;
+        let n = (i64::MAX / max + 1) as usize;
+        assert_eq!(n, 9_224);
+        let trip = trip_group();
+        let flood = repeat(n, max, &pid(9), &pid(1), &trip.group_id);
+        assert_eq!(crate::ffi::ffi_check_expense(flood[0].clone()), Ok(()));
+        assert_eq!(
+            balance_line(&flood, &[], &[], &[], &pid(1), Some(&trip.group_id)),
+            Err(CoreError::Overflow)
+        );
+        // Its settled meter's sums are past i64 too: Home reads it only for a
+        // group the overview did not mark, and catches its Overflow (shells).
+        assert_eq!(
+            crate::ffi::settled_progress(&flood, &[], &[], &trip.group_id),
+            Err(CoreError::Overflow)
+        );
+        // One record fewer still adds up: the bound is exactly 9,224.
+        assert!(balance_line(&flood[1..], &[], &[], &[], &pid(1), Some(&trip.group_id)).is_ok());
+
+        let (honest_groups, honest_expenses) = honest();
+        let alone = overview(&honest_groups, &honest_expenses, &[], &[]).unwrap();
+        // Trip in the middle, so a group on either side of it is checked.
+        let groups = vec![
+            honest_groups[0].clone(),
+            trip.clone(),
+            honest_groups[1].clone(),
+        ];
+        let mut expenses = honest_expenses.clone();
+        expenses.extend(flood);
+        let out = overview(&groups, &expenses, &[], &[]).unwrap();
+
+        assert_eq!(out.groups.len(), 3);
+        assert_eq!(out.groups[1].group_id, trip.group_id);
+        assert!(out.groups[1].overflowed);
+        assert!(out.groups[1].nets.is_empty());
+        assert!(!out.groups[0].overflowed && !out.groups[2].overflowed);
+        assert_eq!(out.groups[0].nets, vec![usd(-4_500)]);
+        assert_eq!(out.groups[2].nets, vec![usd(3_000)]);
+        assert_eq!(out.groups[0], alone.groups[0]);
+        assert_eq!(out.groups[2], alone.groups[1]);
+        // -4,500 + 3,000: Trip adds nothing.
+        assert_eq!(out.totals, vec![usd(-1_500)]);
+        assert_eq!(out.totals, alone.totals);
+        assert_eq!(out.people, alone.people);
+        let people: Vec<(&str, i64)> = out
+            .people
+            .iter()
+            .map(|p| (p.name.as_str(), p.net_minor))
+            .collect();
+        assert_eq!(people, vec![("Meera", -4_500), ("Rahul", 3_000)]);
+    }
+
+    /// Exactly i64::MIN: two members are each owed 2^62 by you (4,611 maximum
+    /// expenses and one of 686,018,427,387,904 each: 9,224 records). Your net
+    /// is -2^63, which fits i64 but has no i64 magnitude (Swift's `abs`
+    /// traps on it, and Home and the group page take magnitudes), so core
+    /// refuses it as `Overflow` (`narrow_sum`) and Home marks the group.
+    #[test]
+    fn a_net_of_exactly_i64_min_is_out_of_range() {
+        let max = crate::straumr::check::MAX_AMOUNT_MINOR;
+        let g = pid(0xa0);
+        let rest = 686_018_427_387_904;
+        let mut expenses = Vec::new();
+        for creditor in [pid(9), pid(8)] {
+            expenses.extend(repeat(4_611, max, &creditor, &pid(1), &g));
+            expenses.extend(repeat(1, rest, &creditor, &pid(1), &g));
+        }
+        assert_eq!(expenses.len(), 9_224);
+        assert!(expenses
+            .iter()
+            .all(|e| crate::ffi::ffi_check_expense(e.clone()).is_ok()));
+        assert_eq!(
+            balance_line(&expenses, &[], &[], &[], &pid(1), Some(&g)),
+            Err(CoreError::Overflow)
+        );
+        // Each creditor's own line (owed 2^62 each, plan 2^62 each) still fits.
+        let theirs = balance_line(&expenses, &[], &[], &[], &pid(9), Some(&g)).unwrap();
+        assert_eq!(theirs[0].viewer_net_minor, 1i64 << 62);
+        let mut trip = trip_group();
+        trip.members.push(member(&pid(8), "Mo"));
+        let out = overview(&[trip], &expenses, &[], &[]).unwrap();
+        assert!(out.groups[0].overflowed);
+        assert!(out.totals.is_empty() && out.people.is_empty());
+    }
+
+    /// No one group is past the bound, but Trip sits 808 above i64::MIN and
+    /// Flat's -4,500 would take the USD total past it. Trip comes FIRST, so
+    /// an overview that blamed whichever group tipped the sum would mark
+    /// honest Flat; the group adding the most in that direction (Trip) is
+    /// the one marked, and Flat and Goa keep their numbers.
+    #[test]
+    fn a_total_past_the_bound_drops_the_group_adding_the_most() {
+        let max = crate::straumr::check::MAX_AMOUNT_MINOR;
+        let trip = trip_group();
+        let mut expenses = repeat(9_223, max, &pid(9), &pid(1), &trip.group_id);
+        expenses.extend(repeat(
+            1,
+            372_036_854_775_000,
+            &pid(9),
+            &pid(1),
+            &trip.group_id,
+        ));
+        let alone = overview(std::slice::from_ref(&trip), &expenses, &[], &[]).unwrap();
+        assert!(!alone.groups[0].overflowed);
+        assert_eq!(
+            alone.totals,
+            vec![usd(-9_223_372_036_854_775_000)],
+            "808 above i64::MIN"
+        );
+
+        let (honest_groups, honest_expenses) = honest();
+        let honest_only = overview(&honest_groups, &honest_expenses, &[], &[]).unwrap();
+        let mut groups = vec![trip];
+        groups.extend(honest_groups);
+        expenses.extend(honest_expenses);
+        let out = overview(&groups, &expenses, &[], &[]).unwrap();
+        assert!(out.groups[0].overflowed && out.groups[0].nets.is_empty());
+        assert!(!out.groups[1].overflowed && !out.groups[2].overflowed);
+        assert_eq!(out.groups[1..], honest_only.groups[..]);
+        assert_eq!(out.totals, vec![usd(-1_500)]);
+        assert_eq!(out.people, honest_only.people);
+    }
+
+    /// People overflow with every total in range: in each of two groups you
+    /// owe "Mallory" 5e18 and "Yan" owes you 5e18 (net 0 in both). Across the
+    /// two, Mallory's amount (-1e19) and Yan's (+1e19) are past i64. The two
+    /// groups add the same, so the earlier one is marked; the later one's
+    /// people are then in range and shown. (Single large records keep the
+    /// test fast: 5,000 maximum-size ones per person do the same.)
+    #[test]
+    fn a_persons_amount_past_the_bound_drops_one_group() {
+        let m = 5_000_000_000_000_000_000i64;
+        let (one, two) = (pid(0xa0), pid(0xa1));
+        let group = |id: &str, you: u8, mallory: u8, yan: u8| OverviewGroupIn {
+            group_id: id.to_string(),
+            viewer: pid(you),
+            members: vec![
+                member(&pid(you), "Prithvi"),
+                member(&pid(mallory), "Mallory"),
+                member(&pid(yan), "Yan"),
+            ],
+            removed: vec![],
+        };
+        let groups = vec![group(&one, 1, 2, 3), group(&two, 11, 12, 13)];
+        let expenses = vec![
+            exp(&pid(2), m, "USD", &one, &[(&pid(1), m)]),
+            exp(&pid(1), m, "USD", &one, &[(&pid(3), m)]),
+            exp(&pid(12), m, "USD", &two, &[(&pid(11), m)]),
+            exp(&pid(11), m, "USD", &two, &[(&pid(13), m)]),
+        ];
+        let out = overview(&groups, &expenses, &[], &[]).unwrap();
+        assert!(out.groups[0].overflowed && !out.groups[1].overflowed);
+        assert!(out.totals.is_empty());
+        let people: Vec<(&str, i64, Vec<String>)> = out
+            .people
+            .iter()
+            .map(|p| (p.name.as_str(), p.net_minor, p.group_ids.clone()))
+            .collect();
+        assert_eq!(
+            people,
+            vec![
+                ("Mallory", -m, vec![two.clone()]),
+                ("Yan", m, vec![two.clone()])
+            ]
+        );
+    }
+
+    /// Only `Overflow` is isolated: any other error in any group is a bug and
+    /// still fails the whole call, overflowed group or not (here an unknown
+    /// currency in Goa, and a malformed viewer).
+    #[test]
+    fn an_error_other_than_overflow_still_fails_the_overview() {
+        let max = crate::straumr::check::MAX_AMOUNT_MINOR;
+        let trip = trip_group();
+        let (honest_groups, mut expenses) = honest();
+        expenses.extend(repeat(9_224, max, &pid(9), &pid(1), &trip.group_id));
+        let groups = vec![trip, honest_groups[0].clone(), honest_groups[1].clone()];
+        assert!(overview(&groups, &expenses, &[], &[]).is_ok());
+
+        let mut bad = expenses.clone();
+        bad.push(exp(&pid(21), 100, "XYZ", &pid(0xc0), &[(&pid(22), 100)]));
+        assert!(matches!(
+            overview(&groups, &bad, &[], &[]),
+            Err(CoreError::UnknownCurrency(_))
+        ));
+
+        let mut malformed = groups.clone();
+        malformed[2].viewer = "not hex".into();
+        assert!(matches!(
+            overview(&malformed, &expenses, &[], &[]),
+            Err(CoreError::InvalidInput(_))
+        ));
     }
 
     /// .drafts/d180/golden.py: in INR, food 300.00 + 900.00 (a €10.00
