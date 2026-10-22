@@ -88,7 +88,7 @@ object StoreShots {
 
     val EXPENSES = listOf(
         StoreShotsExpense("Hamptons weekend", "Sam", 40_000, "Beach house deposit", "Stay/Rentals", 8_784, listOf()),
-        StoreShotsExpense("Hamptons weekend", "Emma", 112_000, "Train tickets", "Travel/Flights", 236, listOf()),
+        StoreShotsExpense("Hamptons weekend", "Emma", 112_000, "Train tickets", "Travel/Trains", 236, listOf()),
         StoreShotsExpense("Hamptons weekend", "Sam", 96_000, "Beach house, three nights", "Stay/Rentals", 212, listOf()),
         StoreShotsExpense("Hamptons weekend", "Jake", 8_000, "Bike rentals", "Travel/Rentals", 190, listOf()),
         StoreShotsExpense("Hamptons weekend", "Olivia", 6_200, "Lobster rolls", "Food & Drink/Restaurants", 166, listOf()),
@@ -103,8 +103,8 @@ object StoreShots {
         StoreShotsExpense("Apartment 4B", "Sam", 14_200, "Electricity", "Bills & Utilities/Electricity", 100, listOf()),
         StoreShotsExpense("Apartment 4B", "Emma", 7_000, "Internet", "Bills & Utilities/Internet", 75, listOf()),
         StoreShotsExpense("Apartment 4B", "Sam", 18_600, "Groceries", "Food & Drink/Groceries", 44, listOf()),
-        StoreShotsExpense("Brooklyn dinners", "Ben", 6_400, "Pizza night", "Food & Drink/Restaurants", 72, listOf()),
-        StoreShotsExpense("Brooklyn dinners", "Sam", 14_800, "Dinner in Williamsburg", "Food & Drink/Restaurants", 50, listOf()),
+        StoreShotsExpense("Brooklyn dinners", "Sam", 6_400, "Pizza night", "Food & Drink/Restaurants", 72, listOf()),
+        StoreShotsExpense("Brooklyn dinners", "Ben", 14_800, "Dinner in Williamsburg", "Food & Drink/Restaurants", 50, listOf()),
         StoreShotsExpense("Brooklyn dinners", "Ben", 4_600, "Tacos", "Food & Drink/Restaurants", 28, listOf()),
         StoreShotsExpense("Just me", "Sam", 14_200, "Weekly groceries", "Food & Drink/Groceries", 5, listOf()),
         StoreShotsExpense("Just me", "Sam", 650, "Cold brew", "Food & Drink/Cafés", 26, listOf()),

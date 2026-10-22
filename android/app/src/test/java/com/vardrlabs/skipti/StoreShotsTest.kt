@@ -476,14 +476,14 @@ class StoreShotsTest {
         val home = HomeOverview.load(store)
         assertEquals(listOf("Hamptons weekend", "Apartment 4B", "Brooklyn dinners"), home.named.map { it.group.name })
         assertEquals(setOf("Sam", "Emma", "Jake", "Olivia", "Ben"), home.named.flatMap { g -> g.members.map { it.name } }.toSet())
-        assertEquals(listOf("USD 260075"), home.overview.totals.map { "${it.currencyCode} ${it.amountMinor}" }.sorted())
+        assertEquals(listOf("USD 251675"), home.overview.totals.map { "${it.currencyCode} ${it.amountMinor}" }.sorted())
         fun net(group: String): List<String> {
             val id = home.named.first { it.group.name == group }.group.id
             return home.overview.groups.first { it.groupId == id }.nets.map { "${it.currencyCode} ${it.amountMinor}" }
         }
         assertEquals(listOf("USD 55275"), net("Hamptons weekend"))
         assertEquals(listOf("USD 202900"), net("Apartment 4B"))
-        assertEquals(listOf("USD 1900"), net("Brooklyn dinners"))
+        assertEquals(listOf("USD -6500"), net("Brooklyn dinners"))
 
         // Your spending on Home (Just me, this month): five categories.
         val month = SpendingMonth.containing(late, ZoneOffset.UTC)

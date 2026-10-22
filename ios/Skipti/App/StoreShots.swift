@@ -70,7 +70,7 @@ enum StoreShots {
 
     static let expenses: [StoreShotsExpense] = [
         .init(ledger: "Hamptons weekend", payer: "Sam", minor: 40_000, note: "Beach house deposit", category: "Stay/Rentals", hoursAgo: 8_784, among: []),
-        .init(ledger: "Hamptons weekend", payer: "Emma", minor: 112_000, note: "Train tickets", category: "Travel/Flights", hoursAgo: 236, among: []),
+        .init(ledger: "Hamptons weekend", payer: "Emma", minor: 112_000, note: "Train tickets", category: "Travel/Trains", hoursAgo: 236, among: []),
         .init(ledger: "Hamptons weekend", payer: "Sam", minor: 96_000, note: "Beach house, three nights", category: "Stay/Rentals", hoursAgo: 212, among: []),
         .init(ledger: "Hamptons weekend", payer: "Jake", minor: 8_000, note: "Bike rentals", category: "Travel/Rentals", hoursAgo: 190, among: []),
         .init(ledger: "Hamptons weekend", payer: "Olivia", minor: 6_200, note: "Lobster rolls", category: "Food & Drink/Restaurants", hoursAgo: 166, among: []),
@@ -85,8 +85,8 @@ enum StoreShots {
         .init(ledger: "Apartment 4B", payer: "Sam", minor: 14_200, note: "Electricity", category: "Bills & Utilities/Electricity", hoursAgo: 100, among: []),
         .init(ledger: "Apartment 4B", payer: "Emma", minor: 7_000, note: "Internet", category: "Bills & Utilities/Internet", hoursAgo: 75, among: []),
         .init(ledger: "Apartment 4B", payer: "Sam", minor: 18_600, note: "Groceries", category: "Food & Drink/Groceries", hoursAgo: 44, among: []),
-        .init(ledger: "Brooklyn dinners", payer: "Ben", minor: 6_400, note: "Pizza night", category: "Food & Drink/Restaurants", hoursAgo: 72, among: []),
-        .init(ledger: "Brooklyn dinners", payer: "Sam", minor: 14_800, note: "Dinner in Williamsburg", category: "Food & Drink/Restaurants", hoursAgo: 50, among: []),
+        .init(ledger: "Brooklyn dinners", payer: "Sam", minor: 6_400, note: "Pizza night", category: "Food & Drink/Restaurants", hoursAgo: 72, among: []),
+        .init(ledger: "Brooklyn dinners", payer: "Ben", minor: 14_800, note: "Dinner in Williamsburg", category: "Food & Drink/Restaurants", hoursAgo: 50, among: []),
         .init(ledger: "Brooklyn dinners", payer: "Ben", minor: 4_600, note: "Tacos", category: "Food & Drink/Restaurants", hoursAgo: 28, among: []),
         .init(ledger: "Just me", payer: "Sam", minor: 14_200, note: "Weekly groceries", category: "Food & Drink/Groceries", hoursAgo: 5, among: []),
         .init(ledger: "Just me", payer: "Sam", minor: 650, note: "Cold brew", category: "Food & Drink/Cafés", hoursAgo: 26, among: []),

@@ -321,14 +321,14 @@ final class StoreShotsTests: XCTestCase {
         XCTAssertEqual(home.named.map(\.group.name), ["Hamptons weekend", "Apartment 4B", "Brooklyn dinners"])
         XCTAssertEqual(Set(home.named.flatMap { $0.members.map(\.name) }), ["Sam", "Emma", "Jake", "Olivia", "Ben"])
         XCTAssertEqual(home.overview.totals.map { "\($0.currencyCode) \($0.amountMinor)" }.sorted(),
-                       ["USD 260075"])
+                       ["USD 251675"])
         func net(_ group: String) -> [String] {
             let id = home.named.first { $0.group.name == group }?.group.id
             return home.overview.groups.first { $0.groupId == id }?.nets.map { "\($0.currencyCode) \($0.amountMinor)" } ?? []
         }
         XCTAssertEqual(net("Hamptons weekend"), ["USD 55275"])
         XCTAssertEqual(net("Apartment 4B"), ["USD 202900"])
-        XCTAssertEqual(net("Brooklyn dinners"), ["USD 1900"])
+        XCTAssertEqual(net("Brooklyn dinners"), ["USD -6500"])
 
         // Your spending on Home (Just me, this month): five categories.
         let month = SpendingMonth.containing(ms: late, timeZone: utc)
