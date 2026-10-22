@@ -10,7 +10,19 @@ Newest session log entries go at the bottom.
 
 ---
 
-## NOW: 2026-10-21 (session 11 CLOSING; next session = session 12, opener `.drafts/stop/opus-opener-8.md`)
+## NOW: 2026-10-21 (session 12, Opus as controller; opener opus-opener-8)
+
+- Session 12 order: (1) D-254 approval gate, (2) U33 film, (3) README photos (his pick), (4) merge release-051-prep with
+  a full gate, (5) STOP with the Fable opener (`.drafts/stop/fable-opener-4.md` updated).
+- D-254 IN PROGRESS on branch `d254-approval-gate`: spec committed 1891b36
+  (`docs/superpowers/specs/2026-10-21-approval-gate-design.md`); mock-up https://claude.ai/artifact/4ULGr42bEn7YUhSu7pQaTx;
+  stage 1 (rules + Functions + tests) and stage 2 (admin page + Hosting targets) dispatched in parallel (Opus);
+  pop-up to the founder pending (words, guarantee 5, privacy line, README pick
+  https://claude.ai/artifact/J3EFygb5CUdhrU4wBa6ArU). Next: shells (stages 3 iOS, 4 Android) after his words.
+- NEW (the founder, chat, decision 232): public sample data American + USD only. D-255 = seed change both shells +
+  store re-capture + clips re-record, after D-254, BEFORE the film and README photos (they use the new shots).
+
+## (previous) NOW: 2026-10-21 (session 11 CLOSING; next session = session 12, opener `.drafts/stop/opus-opener-8.md`)
 
 **RESUME (session 11 close; READ THIS FIRST):**
 - main is pushed with D-245 to D-253 merged (the welcome, rune glyph glow, Settle up's other amount and Undo, small

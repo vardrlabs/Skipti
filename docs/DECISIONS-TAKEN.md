@@ -1561,6 +1561,30 @@ https://claude.ai/artifact/FwwzuzRkyyxiuGvJKNMPCG (v1); briefs `.drafts/u9/brief
 - **231:** the public README gets curated photos of the app, which YOU pick from the store shots; the web version will
   be its own private repo, skipti-web, using this repo's core pinned to a tag.
 
+### Public sample data is American, 232: your instruction (chat, 2026-10-21; first given in session 11 and lost)
+
+- **232:** every public picture of the app (store shots, the film, README photos) shows American names and US dollars
+  only: no INR, no rupee sign, no Indian names or places (you live in New York; that audience should see itself). The
+  store-shots seed (D-251) changes on both phones and the shots and clips are captured again (D-255, after D-254 and
+  before the film). The instruction was given in session 11 and never written down, so the re-capture kept Goa trip,
+  Meera and the rupee; recorded here so it cannot be lost again. "Sam" (173) and "Luna" (227) stay.
+
+### The approval gate and the American re-shoot, 233 to 237: your answers (pop-ups, 2026-10-21, session 12)
+
+Mock-up https://claude.ai/artifact/4ULGr42bEn7YUhSu7pQaTx (v1); README pick https://claude.ai/artifact/J3EFygb5CUdhrU4wBa6ArU.
+
+- **233 (D-254):** build the gate as the mock-up shows: "Waiting for approval" / "Not approved" on the You page's
+  account row, the Sync card's early-testing words, one toast on approval, the admin page with Waiting / Approved /
+  Denied and the one-time "Approve the N" migration. Design: `docs/superpowers/specs/2026-10-21-approval-gate-design.md`.
+- **234 (GUARANTEES #5, ADR-0013's fork, taken by you):** the last sentence becomes "Sync requires an account, is on
+  once your account is approved, and can be turned off at any time in one tap."
+- **235 (privacy page Version 3, public on 0.5.1's deploy day):** a new item under "With an account": "Approval: while
+  SKIPTI is in early testing, a new account waits for our approval before anything else is kept in the cloud. To
+  decide, we see the name you show others, your sign-in email if Apple or Google gave one, and whether you use an
+  iPhone or an Android phone."
+- **236 (README, decision 231):** the README shows store shots 01, 04, 05, 07, 08 and 09, in their American re-shoot.
+- **237 (store caption 2):** "Trips, flats, dinners. One page each." becomes "Trips, roommates, dinners. One page each."
+
 ### Siri and Gemini, 210 to 213: your answers (pop-up, 2026-10-21)
 
 - **210 (U15, U16):** Siri and Gemini come in **0.5.2**, not 0.5.1.
