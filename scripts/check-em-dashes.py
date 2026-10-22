@@ -28,7 +28,7 @@ git does not ignore, so a new file is caught before `git add`):
       and scripts/licences.py (it writes the Licences page both apps show; the
       third-party licence texts in licences.json are not checked);
   whole files: Android resources and manifests, the iOS app's Info.plist and
-      strings files, the Hosting pages (firebase/public), README, CONTRIBUTING,
+      strings files, the Hosting pages (firebase/public, firebase/admin), README, CONTRIBUTING,
       GUARANTEES, SECURITY, THREAT_MODEL, NOTICE and docs/RELEASE*.md.
 Not in scope, by decision: data files the app reads but never shows as
 written, such as core/src/merki/merchants_starter.txt (merchant match keys).
@@ -120,7 +120,7 @@ def whole_file(path):
     """True when every line of path is public text."""
     if path in PUBLIC_DOCS or re.fullmatch(r"docs/RELEASE[^/]*\.md", path):
         return True
-    if path.startswith("firebase/public/"):
+    if path.startswith(("firebase/public/", "firebase/admin/")):
         name = path.rsplit("/", 1)[-1]
         return path.endswith(TEXT_SUFFIXES) or "." not in name
     if _android_app_set(path) and (path.endswith("/AndroidManifest.xml")

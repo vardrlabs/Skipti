@@ -21,6 +21,11 @@ Newest session log entries go at the bottom.
   https://claude.ai/artifact/J3EFygb5CUdhrU4wBa6ArU). Next: shells (stages 3 iOS, 4 Android) after his words.
 - NEW (the founder, chat, decision 232): public sample data American + USD only. D-255 = seed change both shells +
   store re-capture + clips re-record, after D-254, BEFORE the film and README photos (they use the new shots).
+- His pop-ups answered (decisions 233 to 237, all recommended): build as shown; G5 "is on once your account is
+  approved" (committed 69ddcb4 with an Amendments entry); privacy line Version 3 as drafted (edit after stage 2
+  commits: it owns hosting.test); README = shots 01 04 05 07 08 09 (re-shot); caption 2 "Trips, roommates, dinners."
+- Running: stage 1 server, stage 2 admin page, stage 3 iOS (Opus). Stage 4 Android after stage 1 frees the emulators
+  (memory). D-255 brief ready: `.drafts/d255/brief.md` (Miami trip / Apartment 4B / Ski weekend, USD).
 
 ## (previous) NOW: 2026-10-21 (session 11 CLOSING; next session = session 12, opener `.drafts/stop/opus-opener-8.md`)
 

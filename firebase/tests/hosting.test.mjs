@@ -108,7 +108,8 @@ test('the privacy policy is one plain page: no script, nothing from elsewhere, v
   assert.doesNotMatch(privacy, /\{\{|\}\}/, 'no placeholder left');
   // D-244 (ADR-0043): the settings line the founder chose, and the version it brought (his pop-up, 2026-10-20).
   assert.ok(privacy.includes('<li>Your app settings: theme, light or dark, text size, Less motion, haptics, app icon and default currency, so your other phones match.</li>'), 'the settings line');
-  assert.ok(privacy.includes('Version 2, 20 October 2026.'), 'version 2 with the settings line');
+  assert.ok(privacy.includes('Version 3, 21 October 2026.'), 'version 3 with the approval line (D-254, decision 235)');
+  assert.ok(privacy.includes('<li>Approval: while SKIPTI is in early testing, a new account waits for our approval before anything else is kept in the cloud. To decide, we see the name you show others, your sign-in email if Apple or Google gave one, and whether you use an iPhone or an Android phone.</li>'), 'the approval line');
   // The strict catch-all CSP (no script) is the one it is served with.
   assert.ok(!config.headers.some((h) => h.source.startsWith('/privacy')), 'no looser policy for the page');
   assert.match(privacy, /not end to end/, 'states its own limit (SPEC §14.6)');
