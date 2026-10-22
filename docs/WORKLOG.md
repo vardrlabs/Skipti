@@ -47,7 +47,10 @@ Newest session log entries go at the bottom.
   254-256, 258: two 25 s cuts, Runestone glow, Norse colours, score, "Even up. Cheers all round.").
   Capture DONE (`.drafts/d255/capture-report.md`); wrap fix 253321e3 (his 261); README section + 6 native images;
   FULL GATE 23/23 (454c3977, 5m34s); recorded (JVM carried forward: Gradle cache from 05:38Z fresh run). Merging.
-  FILM agent RUNNING (brief `.drafts/u33/film-brief.md`). Then: full gate, records (decisions 239-251 drafted), record_unit.py, merge. Decisions drafted
+  D-255 MERGED 31fa4e74, pushed. release-051-prep MERGED (gate 23/23 on 6a5dc500, 5m32s; version pair in
+  RELEASE-INTERNAL-TESTING), pushed, no Actions run. Notes updated (`.drafts/release-051/notes.md`, Play 423 chars).
+  Fable opener updated (`.drafts/stop/fable-opener-4.md`). FILM agent RUNNING (brief `.drafts/u33/film-brief.md`).
+  REMIND: Developer Tools exemption OFF before any signed/store build (CLAUDE.md 13). Then: full gate, records (decisions 239-251 drafted), record_unit.py, merge. Decisions drafted
   `.drafts/d254/decisions-draft.md` (239-251). Next: whole-branch review after shells, fix wave, formal sabotage, look
   (throwaway sim + AVD, emulators, admin page served locally), full gate, records, merge.
 - D-255 brief ready: `.drafts/d255/brief.md` (Miami trip / Apartment 4B / Ski weekend, USD; full detail section 5).
