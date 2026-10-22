@@ -338,7 +338,7 @@ nothing else about the tester groups changes.
 
 Claude sets the version numbers in the tree before you build (0.2.0 was
 iOS Build 2 and Android versionCode 2000, 0.2.1 was Build 3 and 2001; 0.3.0 was Build 4 and 3000; 0.3.1 was Build 5
-and 3001; 0.4.0 was Build 6 and 4000; **now 0.5.0: iOS Version 0.5.0, Build 7; Android versionName 0.5.0, versionCode 5000**). Since D-176 the iOS Info.plist reads them from Xcode's build settings,
+and 3001; 0.4.0 was Build 6 and 4000; 0.5.0 was Build 7 and 5000; **now 0.5.1: iOS Version 0.5.1, Build 8; Android versionName 0.5.1, versionCode 5001**). Since D-176 the iOS Info.plist reads them from Xcode's build settings,
 so what Xcode's General tab shows is what ships.
 
 **The rule (founder, 2026-09-30; CLAUDE.md §10.3):** Android's versionCode is DERIVED from the version

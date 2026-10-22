@@ -34,8 +34,8 @@ android {
         // component, and 1.0.0 clears every 0.x code with room to spare.
         // Both flavours share the code: they are different DISTRIBUTION
         // channels of the same version, never both on one store track.
-        versionCode = 0 * 1_000_000 + 5 * 1_000 + 0
-        versionName = "0.5.0"
+        versionCode = 0 * 1_000_000 + 5 * 1_000 + 1
+        versionName = "0.5.1"
 
         // Matches scripts/build-android-core.sh's ABI set EXACTLY: a slice
         // built but not filtered is an untested slice; a filter the script
