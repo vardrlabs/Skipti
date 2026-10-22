@@ -10,7 +10,10 @@ import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
-const config = JSON.parse(read('../firebase.json')).hosting;
+// D-254: hosting is two targets, `main` (the invite domain, as before) and `admin` (the approval page's own site).
+const hosting = JSON.parse(read('../firebase.json')).hosting;
+const config = hosting.find((t) => t.target === 'main');
+const admin = hosting.find((t) => t.target === 'admin');
 const page = read('../public/join/index.html');
 const missing = read('../public/404.html');
 const privacy = read('../public/privacy/index.html');
@@ -109,4 +112,114 @@ test('the privacy policy is one plain page: no script, nothing from elsewhere, v
   // The strict catch-all CSP (no script) is the one it is served with.
   assert.ok(!config.headers.some((h) => h.source.startsWith('/privacy')), 'no looser policy for the page');
   assert.match(privacy, /not end to end/, 'states its own limit (SPEC §14.6)');
+});
+
+// ---- D-254: the admin page's own Hosting site (decisions 228, 229; design section 6). ----
+
+const adminPage = read('../admin/index.html');
+const adminMissing = read('../admin/404.html');
+const adminScripts = [...adminPage.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)];
+const adminScript = adminScripts.length === 1 ? adminScripts[0][2] : '';
+const shellKotlin = read('../../android/app/src/main/java/com/vardrlabs/skipti/FirebaseConfig.kt');
+const shellSwift = read('../../ios/Skipti/App/FirebaseConfig.swift');
+const constant = (name) => {
+  const found = [...adminScript.matchAll(new RegExp(`const ${name} = "([^"]*)";`, 'g'))];
+  assert.equal(found.length, 1, `one ${name} in the admin page`);
+  return found[0][1];
+};
+
+test('hosting is exactly two targets, main and admin, mapped to their sites in .firebaserc', () => {
+  assert.ok(Array.isArray(hosting));
+  assert.deepEqual(hosting.map((t) => t.target), ['main', 'admin']);
+  assert.equal(admin.public, 'admin');
+  const rc = JSON.parse(read('../.firebaserc'));
+  assert.equal(rc.projects.default, 'skipti-26');
+  assert.deepEqual(rc.targets, { 'skipti-26': { hosting: { main: ['skipti-26'], admin: ['skipti-26-admin'] } } });
+  // The admin site serves only its own folder: none of the invite domain's files, rewrites or app links.
+  assert.equal(admin.rewrites, undefined);
+  assert.equal(admin.redirects, undefined);
+});
+
+test('the admin site sends one strict policy on every path, its script pinned by hash', () => {
+  assert.deepEqual(admin.headers.map((h) => h.source), ['**'], 'one rule, every path, nothing loosens it');
+  const h = Object.fromEntries(admin.headers[0].headers.map((x) => [x.key, x.value]));
+  assert.deepEqual(Object.keys(h).sort(), ['Cache-Control', 'Content-Security-Policy', 'Referrer-Policy',
+    'X-Content-Type-Options', 'X-Robots-Tag']);
+  assert.equal(adminScripts.length, 1, 'exactly one script');
+  assert.equal(adminScripts[0][1].trim(), '', 'inline, no src');
+  const hash = createHash('sha256').update(adminScript, 'utf8').digest('base64');
+  assert.equal(h['Content-Security-Policy'],
+    `default-src 'none'; script-src 'sha256-${hash}'; style-src 'unsafe-inline'; ` +
+    'connect-src https://identitytoolkit.googleapis.com https://us-central1-skipti-26.cloudfunctions.net; ' +
+    "img-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
+  assert.equal(h['Referrer-Policy'], 'no-referrer');
+  assert.equal(h['X-Content-Type-Options'], 'nosniff');
+  assert.equal(h['X-Robots-Tag'], 'noindex, nofollow');
+  assert.equal(h['Cache-Control'], 'no-store');
+});
+
+test('the admin pages load nothing, and the script reaches only Google sign-in, Auth and the callable', () => {
+  const markup = adminPage.replace(adminScripts[0][0], '');
+  for (const html of [markup, adminMissing]) {
+    assert.doesNotMatch(html, /\s(src|href|action)\s*=|<link|<img|<iframe|<form|@import|url\(/i, 'no external resource');
+    assert.doesNotMatch(html, /\son[a-z]+\s*=/i, 'no inline handler');
+  }
+  assert.doesNotMatch(adminMissing, /<script/i, 'the 404 page has no script');
+  const origins = new Set([...adminPage.matchAll(/https?:\/\/[^\s"'`<>)\\]+/g)].map((m) => new URL(m[0]).origin));
+  assert.deepEqual([...origins].sort(), [
+    'http://127.0.0.1:5001', 'https://accounts.google.com',
+    'https://identitytoolkit.googleapis.com', 'https://securetoken.google.com',
+    'https://us-central1-skipti-26.cloudfunctions.net',
+  ]);
+  // securetoken.google.com is never fetched: it is the emulator token's `iss` claim, its only occurrence.
+  assert.deepEqual([...adminPage.matchAll(/.{6}https:\/\/securetoken\.google\.com/g)].map((m) => m[0]),
+    ['iss: "https://securetoken.google.com']);
+  // User data never reaches HTML parsing (names and emails come from other people) or lasting storage.
+  assert.doesNotMatch(adminScript, /innerHTML|outerHTML|insertAdjacentHTML|document\.write|eval\(|new Function/);
+  assert.doesNotMatch(adminScript, /localStorage|indexedDB|document\.cookie/);
+  assert.match(adminScript, /history\.replaceState\(null, "", location\.pathname\)/, 'the fragment is cleared');
+  assert.match(adminScript, /sessionStorage\.removeItem\(ROUND_TRIP\)/, 'the round trip is removed on return');
+});
+
+test('emulator mode exists only behind the localhost check', () => {
+  const guard = 'const LOCAL = location.hostname === "localhost" || location.hostname === "127.0.0.1";';
+  assert.equal(adminScript.split(guard).length, 2, 'the guard, once');
+  assert.equal([...adminScript.matchAll(/\bLOCAL\s*=/g)].length, 1, 'nothing else sets it');
+  // The Functions emulator's URL is the true arm of the LOCAL conditional, production's its other arm. Sign-in has
+  // no emulator arm: emulator mode builds an unsigned token itself, and only behind the check.
+  assert.match(adminScript, /const SIGN_IN = "https:\/\/identitytoolkit\.googleapis\.com\/v1\/accounts:signInWithIdp\?key=" \+ API_KEY;/);
+  assert.match(adminScript, /const CALLABLE = LOCAL\s*\? "http:\/\/127\.0\.0\.1:5001\/skipti-26\/us-central1\/adminApprovals"\s*: "https:\/\/us-central1-skipti-26\.cloudfunctions\.net\/adminApprovals";/);
+  assert.equal([...adminScript.matchAll(/127\.0\.0\.1:\d+/g)].length, 1, 'no other emulator address');
+  assert.match(adminScript, /function startEmulator\(\) \{\s*if \(!LOCAL\) return;/, 'the unsigned token is built only on localhost');
+  assert.equal([...adminScript.matchAll(/alg: "none"/g)].length, 1, 'one unsigned token, in startEmulator');
+  assert.ok(adminScript.indexOf('alg: "none"') > adminScript.indexOf('function startEmulator()'));
+  // Its claims are the Functions emulator tests' own (functions.test.mjs idToken): the typed id is sub and user_id.
+  assert.match(adminScript, /iss: "https:\/\/securetoken\.google\.com\/" \+ PROJECT, aud: PROJECT, iat: now, exp: now \+ 3600, auth_time: now,\s*sub: uid, user_id: uid, firebase: \{ sign_in_provider: "google\.com", identities: \{\} \},/);
+  assert.match(adminPage, /<input id="test-uid" type="text" value="emulator-admin"/, 'prefilled with the emulator admin id');
+  // The test-uid form is shown only in emulator mode, and the Google token is only accepted off it.
+  assert.match(adminScript, /if \(LOCAL\) \{\s*\$\("local"\)\.hidden = false;\s*\$\("google-sign-in"\)\.hidden = true;\s*\$\("emulator-sign-in"\)\.hidden = false;\s*\}/);
+  assert.match(adminPage, /<div class="field" id="emulator-sign-in" hidden>/, 'hidden until the check shows it');
+  assert.match(adminScript, /if \(!LOCAL && fragment && /);
+});
+
+test("the admin page signs in with the apps' own public values, and checks the round trip", () => {
+  assert.equal(constant('API_KEY'), shellKotlin.match(/const val API_KEY = "([^"]+)"/)[1]);
+  assert.match(constant('API_KEY'), /^AIza/);
+  assert.equal(constant('WEB_CLIENT_ID'), shellKotlin.match(/const val WEB_CLIENT_ID = "([^"]+)"/)[1]);
+  const project = shellKotlin.match(/const val PROJECT_ID = "([^"]+)"/)[1];
+  assert.equal(project, shellSwift.match(/static let projectID = "([^"]+)"/)[1]);
+  assert.equal(constant('PROJECT'), project);
+  assert.ok(adminScript.includes(`https://us-central1-${project}.cloudfunctions.net/adminApprovals`));
+  assert.ok(adminScript.includes(`http://127.0.0.1:5001/${project}/us-central1/adminApprovals`));
+  assert.equal(constant('GOOGLE_AUTH'), 'https://accounts.google.com/o/oauth2/v2/auth');
+  assert.match(adminScript, /response_type: "id_token",/);
+  assert.match(adminScript, /scope: "openid email",/);
+  assert.match(adminScript, /redirect_uri: location\.origin \+ "\/",/);
+  assert.match(adminScript, /params\.get\("state"\) !== saved\.state/, 'state checked');
+  assert.match(adminScript, /claims\.nonce !== saved\.nonce/, 'nonce checked');
+  assert.match(adminScript, /crypto\.getRandomValues/, 'state and nonce are random');
+});
+
+test('the admin pages are public text: no em or en dash', () => {
+  for (const html of [adminPage, adminMissing]) assert.doesNotMatch(html, /[\u2013\u2014]|\\u201[34]/);
 });

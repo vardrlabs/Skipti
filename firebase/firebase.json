@@ -6,103 +6,142 @@
   "storage": {
     "rules": "storage.rules"
   },
-  "hosting": {
-    "public": "public",
-    "ignore": [
-      "**/.DS_Store"
-    ],
-    "cleanUrls": false,
-    "trailingSlash": false,
-    "rewrites": [
-      {
-        "source": "/join",
-        "destination": "/join/index.html"
-      },
-      {
-        "source": "/privacy",
-        "destination": "/privacy/index.html"
-      }
-    ],
-    "headers": [
-      {
-        "source": "**",
-        "headers": [
-          {
-            "key": "Content-Security-Policy",
-            "value": "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
-          },
-          {
-            "key": "Referrer-Policy",
-            "value": "no-referrer"
-          },
-          {
-            "key": "X-Content-Type-Options",
-            "value": "nosniff"
-          }
-        ]
-      },
-      {
-        "source": "/join",
-        "headers": [
-          {
-            "key": "Content-Security-Policy",
-            "value": "default-src 'none'; style-src 'unsafe-inline'; script-src 'sha256-EFFNKyFe2EdoRLOiKfYH+4N8e7wmD/iLcH9toZ+3NK0='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
-          },
-          {
-            "key": "Referrer-Policy",
-            "value": "no-referrer"
-          },
-          {
-            "key": "X-Content-Type-Options",
-            "value": "nosniff"
-          }
-        ]
-      },
-      {
-        "source": "/join/**",
-        "headers": [
-          {
-            "key": "Content-Security-Policy",
-            "value": "default-src 'none'; style-src 'unsafe-inline'; script-src 'sha256-EFFNKyFe2EdoRLOiKfYH+4N8e7wmD/iLcH9toZ+3NK0='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
-          },
-          {
-            "key": "Referrer-Policy",
-            "value": "no-referrer"
-          },
-          {
-            "key": "X-Content-Type-Options",
-            "value": "nosniff"
-          }
-        ]
-      },
-      {
-        "source": "/.well-known/apple-app-site-association",
-        "headers": [
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          },
-          {
-            "key": "X-Content-Type-Options",
-            "value": "nosniff"
-          }
-        ]
-      },
-      {
-        "source": "/.well-known/assetlinks.json",
-        "headers": [
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          },
-          {
-            "key": "X-Content-Type-Options",
-            "value": "nosniff"
-          }
-        ]
-      }
-    ]
-  },
+  "hosting": [
+    {
+      "target": "main",
+      "public": "public",
+      "ignore": [
+        "**/.DS_Store"
+      ],
+      "cleanUrls": false,
+      "trailingSlash": false,
+      "rewrites": [
+        {
+          "source": "/join",
+          "destination": "/join/index.html"
+        },
+        {
+          "source": "/privacy",
+          "destination": "/privacy/index.html"
+        }
+      ],
+      "headers": [
+        {
+          "source": "**",
+          "headers": [
+            {
+              "key": "Content-Security-Policy",
+              "value": "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+            },
+            {
+              "key": "Referrer-Policy",
+              "value": "no-referrer"
+            },
+            {
+              "key": "X-Content-Type-Options",
+              "value": "nosniff"
+            }
+          ]
+        },
+        {
+          "source": "/join",
+          "headers": [
+            {
+              "key": "Content-Security-Policy",
+              "value": "default-src 'none'; style-src 'unsafe-inline'; script-src 'sha256-EFFNKyFe2EdoRLOiKfYH+4N8e7wmD/iLcH9toZ+3NK0='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+            },
+            {
+              "key": "Referrer-Policy",
+              "value": "no-referrer"
+            },
+            {
+              "key": "X-Content-Type-Options",
+              "value": "nosniff"
+            }
+          ]
+        },
+        {
+          "source": "/join/**",
+          "headers": [
+            {
+              "key": "Content-Security-Policy",
+              "value": "default-src 'none'; style-src 'unsafe-inline'; script-src 'sha256-EFFNKyFe2EdoRLOiKfYH+4N8e7wmD/iLcH9toZ+3NK0='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+            },
+            {
+              "key": "Referrer-Policy",
+              "value": "no-referrer"
+            },
+            {
+              "key": "X-Content-Type-Options",
+              "value": "nosniff"
+            }
+          ]
+        },
+        {
+          "source": "/.well-known/apple-app-site-association",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "key": "X-Content-Type-Options",
+              "value": "nosniff"
+            }
+          ]
+        },
+        {
+          "source": "/.well-known/assetlinks.json",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "key": "X-Content-Type-Options",
+              "value": "nosniff"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "target": "admin",
+      "public": "admin",
+      "ignore": [
+        "**/.DS_Store"
+      ],
+      "cleanUrls": false,
+      "trailingSlash": false,
+      "headers": [
+        {
+          "source": "**",
+          "headers": [
+            {
+              "key": "Content-Security-Policy",
+              "value": "default-src 'none'; script-src 'sha256-7A4F1X0ybcjSMkC+k3OZ1Tge5SwBiEGx1wt6FFN6tFY='; style-src 'unsafe-inline'; connect-src https://identitytoolkit.googleapis.com https://us-central1-skipti-26.cloudfunctions.net; img-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+            },
+            {
+              "key": "Referrer-Policy",
+              "value": "no-referrer"
+            },
+            {
+              "key": "X-Content-Type-Options",
+              "value": "nosniff"
+            },
+            {
+              "key": "X-Robots-Tag",
+              "value": "noindex, nofollow"
+            },
+            {
+              "key": "Cache-Control",
+              "value": "no-store"
+            }
+          ]
+        }
+      ]
+    }
+  ],
   "emulators": {
     "auth": {
       "port": 9099
