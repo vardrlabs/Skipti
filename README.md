@@ -19,6 +19,21 @@ deliberate-failure checks and supply-chain audits) before it lands.
 gates; nothing here should be trusted with real money until the gates in
 SPEC §15 are signed off.
 
+## What it looks like
+
+<table>
+<tr>
+<td width="33%"><a href="docs/images/readme-01-home.png"><img src="docs/images/readme-01-home.png" alt="Who owes what, across every group." width="260"></a></td>
+<td width="33%"><a href="docs/images/readme-04-split.png"><img src="docs/images/readme-04-split.png" alt="Split it equally, exactly, by share or by item." width="260"></a></td>
+<td width="33%"><a href="docs/images/readme-05-settle-up.png"><img src="docs/images/readme-05-settle-up.png" alt="The fewest payments that clear everything." width="260"></a></td>
+</tr>
+<tr>
+<td width="33%"><a href="docs/images/readme-07-themes.png"><img src="docs/images/readme-07-themes.png" alt="Three themes. Norse is the loud one." width="260"></a></td>
+<td width="33%"><a href="docs/images/readme-08-your-spending.png"><img src="docs/images/readme-08-your-spending.png" alt="Your own spending, next to your groups." width="260"></a></td>
+<td width="33%"><a href="docs/images/readme-09-offline.png"><img src="docs/images/readme-09-offline.png" alt="No account needed. Works offline." width="260"></a></td>
+</tr>
+</table>
+
 ## Guarantees
 
 See [GUARANTEES.md](GUARANTEES.md): no subscription, no ads, no telemetry;

@@ -1634,6 +1634,15 @@ Mock-up https://claude.ai/artifact/4ULGr42bEn7YUhSu7pQaTx (v1); README pick http
 - **256 (U33, mine within your direction):** the end card reads SKIPTI, then "Even up. Cheers all round.", then
   "Vardr Labs" small. You liked "Even up. Cheer up." and asked for more cheerful and cool; the toast keeps your "Even
   up" and lands warmly for a group settling up. Overturn: one line.
+- **258 (U33, the Motion form):** style "Runestone glow" (the real app screens float in the dark as carved runes ignite
+  around them), colours SKIPTI Norse (near-black #07080E, gold #DFB043, parchment ink #F3EAD3, sea-green #7FD4C1).
+- **259 (D-255, mine):** "Train tickets" is filed under Travel/Trains; in Brooklyn dinners Sam pays "Pizza night" and
+  Ben "Dinner in Williamsburg" and "Tacos", so one group reads "You owe" (the shots show both directions, as v2's Paris
+  did).
+- **260 (D-255, mine):** the currency picker's promoted list (INR first, shipped behaviour) is not changed in this
+  unit; no store shot or clip shows the picker. Recorded for a later look at the promoted order.
+- **261 (yours, chat with a screenshot, 2026-10-22):** Home's "Your ledgers" cards wrap a long group name to two lines
+  instead of cutting it ("Hamptons wee..."), both phones; built in D-255 before the store shots are finished.
 - **257 (README):** a section "What it looks like" right after the intro, a 3 x 2 grid of shots 01, 04, 05, 07, 08, 09
   at full detail, each linked to its full-size file, no extra captions.
 

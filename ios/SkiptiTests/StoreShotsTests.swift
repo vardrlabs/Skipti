@@ -4,7 +4,7 @@ import XCTest
 /// D-251 (U32): the store-shots seed. Debug only (every reference inside `#if DEBUG`, with a negative), no account and
 /// no cloud (no entry point in the seed, a proof launch, and a seeded vault an ordinary launch would not configure
 /// Firebase for), the lock never written, the times inside this month, and Home's numbers from core. Goldens:
-/// `.drafts/d251/expected.py` and `times.py` (re-derived apart from both shells). Android's twin is StoreShotsTest,
+/// `.drafts/d255/derive.py` (D-255's New York seed) and `.drafts/d251/times.py` (re-derived apart from both shells). Android's twin is StoreShotsTest,
 /// which also compares the seed table with this file's.
 final class StoreShotsTests: XCTestCase {
     private func source(_ file: String) throws -> String {
@@ -179,8 +179,8 @@ final class StoreShotsTests: XCTestCase {
 
     func testTheSplitIsEqualWithTheRemainderFirst() {
         XCTAssertEqual(StoreShots.split(10, among: ["a", "b", "c"]).map(\.minor), [4, 3, 3])
-        XCTAssertEqual(StoreShots.split(360_000, among: ["Sam", "Kiran", "Rahul"]).map(\.minor), [120_000, 120_000, 120_000])
-        XCTAssertEqual(StoreShots.split(99_800, among: ["Sam", "Meera"]).map(\.name), ["Sam", "Meera"])
+        XCTAssertEqual(StoreShots.split(18_000, among: ["Sam", "Jake", "Olivia"]).map(\.minor), [6_000, 6_000, 6_000])
+        XCTAssertEqual(StoreShots.split(7_000, among: ["Sam", "Emma"]).map(\.name), ["Sam", "Emma"])
     }
 
     // MARK: - Set aside, never deleted (review fix wave: only a vault carrying the seed's flag is ever deleted)
@@ -290,11 +290,11 @@ final class StoreShotsTests: XCTestCase {
         }
     }
 
-    // MARK: - Home from the seed (core's numbers, pinned once against .drafts/d251/expected.py)
+    // MARK: - Home from the seed (core's numbers, pinned once against .drafts/d255/derive.py)
 
     /// D-253: the seeded groups keep the seed's fixed ids (Android's StoreShotsTest compares them with its own), so
-    /// their tiles take the same tones on both phones on every capture: Goa trip teal, Flat 4B pink, Paris blue. The
-    /// negative: a group built by core alone gets a random id, never the seed's.
+    /// their tiles take the same tones on both phones on every capture: Hamptons weekend teal, Apartment 4B pink,
+    /// Brooklyn dinners blue. The negative: a group built by core alone gets a random id, never the seed's.
     func testTheSeededGroupsKeepTheirFixedIdsAndTones() throws {
         let store = LedgerStore(path: tempDir().appendingPathComponent("v.db").path)
         try StoreShots.seed(store, nowMs: late, timeZone: utc)
@@ -307,8 +307,8 @@ final class StoreShotsTests: XCTestCase {
             XCTAssertNotNil(g.group.id.range(of: "^[0-9a-f]{32}$", options: .regularExpression), g.group.id)
         }
         let me = try store.ensureSelf()
-        let random = try ffiCreateNamedGroup(name: "Goa trip", settlementCurrency: "INR",
-                                             selfMember: MemberWire(id: me.id, name: "Sam"), otherNames: ["Meera"])
+        let random = try ffiCreateNamedGroup(name: "Hamptons weekend", settlementCurrency: "USD",
+                                             selfMember: MemberWire(id: me.id, name: "Sam"), otherNames: ["Emma"])
         XCTAssertFalse(StoreShots.groups.map(\.id).contains(random.group.id), "core's id is random")
     }
 
@@ -318,40 +318,40 @@ final class StoreShotsTests: XCTestCase {
         XCTAssertEqual(try store.loadExpenses().count, 25)
         XCTAssertEqual(try store.loadSettlements().count, 1)
         let home = try HomeOverview.load(store)
-        XCTAssertEqual(home.named.map(\.group.name), ["Goa trip", "Flat 4B", "Paris"])
-        XCTAssertEqual(Set(home.named.flatMap { $0.members.map(\.name) }), ["Sam", "Meera", "Kiran", "Rahul", "Ana"])
+        XCTAssertEqual(home.named.map(\.group.name), ["Hamptons weekend", "Apartment 4B", "Brooklyn dinners"])
+        XCTAssertEqual(Set(home.named.flatMap { $0.members.map(\.name) }), ["Sam", "Emma", "Jake", "Olivia", "Ben"])
         XCTAssertEqual(home.overview.totals.map { "\($0.currencyCode) \($0.amountMinor)" }.sorted(),
-                       ["EUR -3300", "INR 3671100"])
+                       ["USD 251675"])
         func net(_ group: String) -> [String] {
             let id = home.named.first { $0.group.name == group }?.group.id
             return home.overview.groups.first { $0.groupId == id }?.nets.map { "\($0.currencyCode) \($0.amountMinor)" } ?? []
         }
-        XCTAssertEqual(net("Goa trip"), ["INR 1411000"])
-        XCTAssertEqual(net("Flat 4B"), ["INR 2260100"])
-        XCTAssertEqual(net("Paris"), ["EUR -3300"])
+        XCTAssertEqual(net("Hamptons weekend"), ["USD 55275"])
+        XCTAssertEqual(net("Apartment 4B"), ["USD 202900"])
+        XCTAssertEqual(net("Brooklyn dinners"), ["USD -6500"])
 
         // Your spending on Home (Just me, this month): five categories.
         let month = SpendingMonth.containing(ms: late, timeZone: utc)
         let spent = try SpendingLoad.load(store, month: month, view: .justMe, timeZone: utc).out
-        XCTAssertEqual(spent.currencies.map { "\($0.currencyCode) \($0.totalMinor)" }, ["INR 1268900"])
+        XCTAssertEqual(spent.currencies.map { "\($0.currencyCode) \($0.totalMinor)" }, ["USD 52550"])
         XCTAssertEqual(spent.currencies.first?.categories.count, 5)
         XCTAssertEqual(spent.rows.count, 6)
 
-        // Goa trip's milestone is due (a year since its first expense); the others have none.
+        // Hamptons weekend's milestone is due (a year since its first expense); the others have none.
         let live = try store.projectedExpenses().expenses
         func milestone(_ group: String) -> Milestone? {
             let id = home.named.first { $0.group.name == group }?.group.id
             return Milestones.current(live.filter { $0.expense.group == id && !$0.deleted }
                 .map { MilestoneExpense(addedAtMs: $0.addedAtMs, dateMs: $0.timestampMs ?? $0.addedAtMs) }, now: late)?.milestone
         }
-        XCTAssertEqual(milestone("Goa trip"), .year)
-        XCTAssertNil(milestone("Flat 4B"))
+        XCTAssertEqual(milestone("Hamptons weekend"), .year)
+        XCTAssertNil(milestone("Apartment 4B"))
 
         // Lately: the newest of others' additions, each at its row's time (not "now").
         let lately = Lately.pick(try ActivityFeed.load(store, group: nil).entries).compactMap { entry -> ActivityFeed.Item? in
             if case .expense(let item) = entry { return item } else { return nil }
         }
-        XCTAssertEqual(lately.map(\.title), ["Cab to the airport", "Metro tickets", "Seafood dinner"])
+        XCTAssertEqual(lately.map(\.title), ["Ride to the station", "Tacos", "Seafood dinner"])
         XCTAssertEqual(lately.map { (late - $0.atMs) / 3_600_000 }, [6, 28, 30])
     }
 }

@@ -731,7 +731,8 @@ class TypeThemeTest {
             listOf(
                 // D-223: the By group card's went with it; the ledger card's name is one line with an ellipsis.
                 Triple("OverviewTab.kt", "Type.name(dark, 15), maxLines = 1, overflow = TextOverflow.Ellipsis", 1),
-                Triple("HomeParts.kt", "Type.name(dark, TypeScale.ledgerName.toInt()),\n                maxLines = 1, overflow = TextOverflow.Ellipsis", 1),
+                // Decision 261 (D-255): the ledger card's name takes two lines before its ellipsis.
+                Triple("HomeParts.kt", "Type.name(dark, TypeScale.ledgerName.toInt()),\n                maxLines = 2, overflow = TextOverflow.Ellipsis", 1),
                 Triple("ExpenseListScreen.kt", "Type.name(dark, 15), maxLines = 2, overflow = TextOverflow.Ellipsis", 1),
             ),
             "a row title",

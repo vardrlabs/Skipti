@@ -379,7 +379,7 @@ class HomePartsTest {
             "ThemeArt.m(\"ledgerTileGap\")", "ThemeArt.m(\"ledgerCardGap\")",
             "Type.name(dark, TypeScale.ledgerName.toInt())", "basisPoints?.let { SettledMeter(meter, big = false, dark) }",
             ".glassCard(dark)", ".clip(ThemeArt.cardShape(Appearance.theme))", "onClickLabel = GroupsCopy.OPEN_HINT",
-            "maxLines = 1, overflow = TextOverflow.Ellipsis", "maxLines = 2", "LedgerCards.spoken(name, line, basisPoints)",
+            "maxLines = 2, overflow = TextOverflow.Ellipsis", "maxLines = 2", "LedgerCards.spoken(name, line, basisPoints)",
             ".clearAndSetSemantics { contentDescription = spoken }",
         )) assertTrue("LedgerCard: $s", s in card)
         val line = fn("HomeParts.kt", "private fun ledgerLineText(")
@@ -402,6 +402,26 @@ class HomePartsTest {
         for (banned in listOf("String.format(", ".format(\"%", "NumberFormat", "DecimalFormat", "\"%.")) {
             assertFalse("HomeParts.kt formats money itself: $banned", banned in src)
         }
+    }
+
+    /** Decision 261 (D-255): a long ledger name wraps to two lines, never cut at one ("Hamptons wee..."), cut at the
+     *  tail past two, the tile centred on it; iOS's twin (`.lineLimit(2)`, `.truncationMode(.tail)`, the default
+     *  centred HStack) is read from HomeParts.swift so the two phones cannot drift. */
+    @Test
+    fun a_ledger_cards_name_takes_two_lines() {
+        val card = fn("HomeParts.kt", "fun LedgerCard(")
+        val name = card.substringAfter("name.withRunes()").substringBefore("MoneyText(")
+        assertTrue("two lines, cut at the tail: $name", "maxLines = 2, overflow = TextOverflow.Ellipsis" in name)
+        assertFalse("never one", "maxLines = 1" in name)
+        val row = card.substringBefore("name.withRunes()").substringAfterLast("Row(")
+        assertTrue("the tile centred on the name", row.startsWith("verticalAlignment = Alignment.CenterVertically)"))
+        val swift = swift("HomeParts.swift").substringAfter("struct LedgerCard<").substringBefore("struct LatelyCard:")
+        val iosName = swift.substringAfter("Text(verbatim: name)").substringBefore("}")
+        for (s in listOf(".lineLimit(2)", ".truncationMode(.tail)", ".fixedSize(horizontal: false, vertical: true)")) {
+            assertTrue("iOS's name: $s", s in iosName)
+        }
+        assertFalse("iOS's name: never one line", ".lineLimit(1)" in iosName)
+        assertTrue("iOS's tile centred too", "HStack(spacing: ThemeArt.m(\"ledgerTileGap\")) {" in swift)
     }
 
     /** Design 3: the cards in a row share its height (the row's intrinsic minimum, each card filling it). */

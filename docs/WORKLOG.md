@@ -38,7 +38,16 @@ Newest session log entries go at the bottom.
   514f8152 (1251 JVM; L1-L7), iOS 14623891 (1049; LF1-LF7), incl. decision 252 layout. RE-LOOK PASSED (both phones, `.drafts/d254/relook/`).
   FULL GATE 23/23 0 skipped (5m37s, a73877ca); recorded (record_unit.py exit 0); decisions 239-251 + his 253-257
   (film: two 25 s cuts, App Store 9:16 iPhone + Play 16:9 Android, score, end card "Even up. Cheers all round.";
-  README 3x2; New York data). Merging. Then: full gate, records (decisions 239-251 drafted), record_unit.py, merge. Decisions drafted
+  README 3x2; New York data). MERGED b4a61da3, pushed, no Actions run.
+- D-255 STARTED on branch `d255-american-shots` (brief `.drafts/d255/brief.md`: seed both shells, then re-capture at
+  full detail, then clips). Then U33 film (decisions 254-256), README (236, 257), release-051-prep merge, Fable opener.
+  Seed DONE 847af05a + 896b0bae (New York, USD; Sam owes Ben $65 in Brooklyn dinners; Trains; both shells green,
+  6 sabotage rows exact). RE-CAPTURE RUNNING (brief `.drafts/d255/capture-brief.md`; report will be
+  `.drafts/d255/capture-report.md`). README insert script ready: `.drafts/readme/apply.py`. Film settled (decisions
+  254-256, 258: two 25 s cuts, Runestone glow, Norse colours, score, "Even up. Cheers all round.").
+  Capture DONE (`.drafts/d255/capture-report.md`); wrap fix 253321e3 (his 261); README section + 6 native images;
+  FULL GATE 23/23 (454c3977, 5m34s); recorded (JVM carried forward: Gradle cache from 05:38Z fresh run). Merging.
+  FILM agent RUNNING (brief `.drafts/u33/film-brief.md`). Then: full gate, records (decisions 239-251 drafted), record_unit.py, merge. Decisions drafted
   `.drafts/d254/decisions-draft.md` (239-251). Next: whole-branch review after shells, fix wave, formal sabotage, look
   (throwaway sim + AVD, emulators, admin page served locally), full gate, records, merge.
 - D-255 brief ready: `.drafts/d255/brief.md` (Miami trip / Apartment 4B / Ski weekend, USD; full detail section 5).
