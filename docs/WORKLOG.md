@@ -25,6 +25,8 @@ Newest session log entries go at the bottom.
   from: a folk-pop 2WKHKqqoZATSNEL9rWxsgU, b Nordic SAd7gc4nS5TsfrT8ZfXaWB, c synth JzEQPYTYbHZ6c9eeykG6Hx, d lo-fi
   Fc1bbR8GH4s2ptwLpKo4E3 (claude.ai/artifact/...); Play promo Bp78HQrtXhEr1bY3R1FCVC on (a) until he picks, then both
   films take his pick. None seen or heard by us (no signed-in browser).
+  He picked lo-fi (265): reworked grown-up with hits on measured taps (13 in the App Store film, 9 in Play); both films
+  now on it: App Store Fc1bbR8GH4s2ptwLpKo4E3, Play Bp78HQrtXhEr1bY3R1FCVC. Variants a to c left as they are.
 - Next: Fable's pass (opener `.drafts/stop/fable-opener-4.md`), then the 0.5.1 deploy day with him, then going public
   (U35). The Developer Tools exemption goes OFF before any signed or store build (his action).
 
