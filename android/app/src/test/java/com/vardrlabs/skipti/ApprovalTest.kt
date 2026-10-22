@@ -644,7 +644,8 @@ class ApprovalTest {
         fun shown(section: SettingsSection, approval: ApprovalState, signedIn: Boolean = true) =
             SettingsMap.shown(section, accountHubModel(signedIn = signedIn, syncOn = true, approval = approval))
         val waiting = listOf(SettingItem.SIGNED_IN_AS, SettingItem.SIGN_OUT, SettingItem.SYNC)
-        val full = waiting + listOf(SettingItem.NOTIFICATIONS, SettingItem.FIND_ME)
+        // D-254 look fix 6 (decision 252): Find me moved up under Sign out (it was last, after Notifications).
+        val full = listOf(SettingItem.SIGNED_IN_AS, SettingItem.SIGN_OUT, SettingItem.FIND_ME, SettingItem.SYNC, SettingItem.NOTIFICATIONS)
         assertEquals(setOf(SettingItem.NOTIFICATIONS, SettingItem.FIND_ME), SettingsMap.WAITS_FOR_APPROVAL)
         assertEquals(waiting, shown(SettingsSection.PROFILE_ACCOUNT, ApprovalState.PENDING))
         assertEquals(waiting, shown(SettingsSection.PROFILE_ACCOUNT, ApprovalState.DENIED))
@@ -655,7 +656,149 @@ class ApprovalTest {
             val security = shown(SettingsSection.SECURITY, state)
             assertTrue("$state", SettingItem.PHONES in security && SettingItem.DELETE_ACCOUNT in security)
         }
-        assertTrue("SettingsMap.shown(section, model).forEachIndexed { index, item ->" in main("AccountHubScreen.kt"))
+        // Look fix 6: the page draws the shown items through SettingsMap.cards (it iterated shown(...) directly before).
+        assertTrue("SettingsMap.cards(SettingsMap.shown(section, model)).forEachIndexed { index, card ->" in main("AccountHubScreen.kt"))
+    }
+
+    /** D-254 look fix 6 (decision 252; iOS's inputs): Profile and account is card 1 = the signed-in row, the sign-out
+     *  line and Sign out; card 2 = Find me; then Sync, Notifications. While waiting or not approved Find me (and
+     *  Notifications) stay hidden (M3). */
+    @Test
+    fun profile_and_account_puts_sign_out_and_find_me_first() {
+        fun shown(approval: ApprovalState, signedIn: Boolean = true) =
+            SettingsMap.shown(SettingsSection.PROFILE_ACCOUNT, accountHubModel(signedIn = signedIn, syncOn = true, approval = approval))
+        assertEquals(listOf(SettingItem.SIGNED_IN_AS, SettingItem.SIGN_OUT, SettingItem.FIND_ME, SettingItem.SYNC, SettingItem.NOTIFICATIONS), shown(ApprovalState.APPROVED))
+        assertEquals(shown(ApprovalState.APPROVED), shown(ApprovalState.UNKNOWN))
+        assertEquals(
+            listOf(listOf(SettingItem.SIGNED_IN_AS, SettingItem.SIGN_OUT), listOf(SettingItem.FIND_ME), listOf(SettingItem.SYNC), listOf(SettingItem.NOTIFICATIONS)),
+            SettingsMap.cards(shown(ApprovalState.APPROVED)),
+        )
+        for (state in listOf(ApprovalState.PENDING, ApprovalState.DENIED)) {
+            assertEquals("$state", listOf(SettingItem.SIGNED_IN_AS, SettingItem.SIGN_OUT, SettingItem.SYNC), shown(state))
+            assertEquals("$state", listOf(listOf(SettingItem.SIGNED_IN_AS, SettingItem.SIGN_OUT), listOf(SettingItem.SYNC)), SettingsMap.cards(shown(state)))
+        }
+        assertEquals(listOf(listOf(SettingItem.SIGN_IN)), SettingsMap.cards(shown(ApprovalState.APPROVED, signedIn = false)))
+        // Negative: Sign out alone (no signed-in row before it) is its own card; the pair only joins in that order.
+        assertEquals(listOf(listOf(SettingItem.SIGN_OUT), listOf(SettingItem.SIGNED_IN_AS)), SettingsMap.cards(listOf(SettingItem.SIGN_OUT, SettingItem.SIGNED_IN_AS)))
+        assertEquals(listOf(listOf(SettingItem.SIGNED_IN_AS), listOf(SettingItem.SYNC)), SettingsMap.cards(listOf(SettingItem.SIGNED_IN_AS, SettingItem.SYNC)))
+        // The card draws the method row, 10 below it the sign-out line and Sign out (iOS's card VStack, spacing 10).
+        val page = main("AccountHubScreen.kt")
+        val card = slice(page, "                SettingItem.SIGNED_IN_AS -> Card(dark) {", "\n                }\n")
+        inOrder(card, "SignInMethodRow(it, dark)", "if (SettingItem.SIGN_OUT in card) {", "Spacer(Modifier.height(10.dp))", "signOutBlock()")
+        inOrder(slice(page, "        val signOutBlock: @Composable () -> Unit = {", "\n        }\n"), "AccountSignOut.NOTE", "Spacer(Modifier.height(10.dp))", "SecondaryAction(\"Sign out\", dark)")
+    }
+
+    /** D-254 look fix 1 (iOS's inputs): the "Pick your username" card shows on Balance and You only for an account
+     *  known to have no username AND approved (until then the check and the save are refused for approval). */
+    @Test
+    fun the_username_card_waits_for_approval() {
+        assertTrue(UsernameState.cardShows(UsernameState.None, ApprovalState.APPROVED))
+        for (state in listOf(ApprovalState.PENDING, ApprovalState.DENIED, ApprovalState.UNKNOWN)) {
+            assertFalse("$state", UsernameState.cardShows(UsernameState.None, state))
+        }
+        assertFalse(UsernameState.cardShows(UsernameState.CanChange("ada"), ApprovalState.APPROVED))
+        assertFalse(UsernameState.cardShows(UsernameState.Final("ada"), ApprovalState.APPROVED))
+        assertFalse("not read yet", UsernameState.cardShows(null, ApprovalState.APPROVED))
+        assertTrue("Balance", "if (UsernameState.cardShows(username, Approval.state)) UsernameCard(dark, onPickUsername)" in main("OverviewTab.kt"))
+        val you = main("AccountHubScreen.kt")
+        assertTrue("You", "val usernameCard = UsernameState.cardShows(usernameState, Approval.state)\n            if (usernameCard) {" in you)
+        // Every place that draws the card decides through cardShows (the two above, nowhere else).
+        val draws = mainSources().sumOf { (_, t) -> t.split("UsernameCard(dark, onPickUsername)").size - 1 }
+        assertEquals("Balance and You only", 2, draws)
+    }
+
+    /** D-254 look fix 2 (iOS's `frontRecheck` inputs): a front event while not approved reads `approvals/{uid}` from
+     *  the server once, bounded, and hears the answer; approved reads nothing; no answer hears nothing. A read only. */
+    @Test
+    fun a_front_event_while_not_approved_reads_the_server() = runBlocking {
+        var reads = 0
+        suspend fun check(state: ApprovalState, read: ApprovalState, ms: Long = 5_000): ApprovalState? =
+            Approval.frontRecheck(state, ms) { reads++; read }
+        assertNull("approved: nothing read", check(ApprovalState.APPROVED, ApprovalState.DENIED))
+        assertEquals(0, reads)
+        assertEquals(ApprovalState.APPROVED, check(ApprovalState.PENDING, ApprovalState.APPROVED))
+        assertEquals(1, reads)
+        assertEquals(ApprovalState.PENDING, check(ApprovalState.PENDING, ApprovalState.PENDING))
+        assertEquals(ApprovalState.APPROVED, check(ApprovalState.DENIED, ApprovalState.APPROVED))
+        assertEquals(ApprovalState.APPROVED, check(ApprovalState.UNKNOWN, ApprovalState.APPROVED))
+        assertNull("no answer: nothing heard", check(ApprovalState.PENDING, ApprovalState.UNKNOWN))
+        val started = System.nanoTime()
+        val never = Approval.frontRecheck(ApprovalState.PENDING, 200) { CompletableDeferred<ApprovalState>().await() }
+        assertNull("a read that never answers is given up at its bound", never)
+        assertTrue("bounded", System.nanoTime() - started < 3_000_000_000L)
+        // The answer reaches heard: a missed approval starts the cloud (in front), as the listener's event would have.
+        val signedInAs = Approval.signedInAs
+        val startCloud = Approval.startCloud
+        val inFront = Approval.inFront
+        var starts = 0
+        Approval.signedInAs = { uid }
+        Approval.startCloud = { starts++ }
+        val store = tempStore(owner = uid)
+        try {
+            // Nothing heard yet (unknown: no toast to post, which a JVM test cannot), the listener's event missed.
+            Approval.inFront = true
+            assertEquals(ApprovalState.UNKNOWN, Approval.cached(store, uid))
+            Approval.frontRecheck(Approval.cached(store, uid)) { ApprovalState.APPROVED }?.let { Approval.heard(it, uid, store) }
+            assertEquals(ApprovalState.APPROVED, Approval.cached(store, uid))
+            assertEquals("the cloud starts", 1, starts)
+        } finally {
+            Approval.signedOut(store)
+            Approval.signedInAs = signedInAs
+            Approval.startCloud = startCloud
+            Approval.inFront = inFront
+        }
+        val front = slice(main("Approval.kt"), "    fun front(uid: String?, store: LedgerStore) {", "\n    }\n")
+        inOrder(
+            front, "listen(owned, store)", "if (!allowsCloud(now)) scope.launch {",
+            "frontRecheck(now) { serverRead(owned) }?.let { withContext(Dispatchers.Main) { heard(it, owned, store) } }",
+            "if (!frontAsks(answered, owned, state)) return", "asking(owned, store)",
+        )
+        val read = slice(main("CloudSync.kt"), "    suspend fun serverApproval(uid: String): ApprovalState = try {", "\n    }\n")
+        assertTrue("from the server", "get(Source.SERVER)" in read)
+        assertFalse("never a write", listOf(".set(", ".update(", ".delete(", "callJson").any { it in read })
+    }
+
+    /** D-254 look fix 3 (iOS's inputs): saving the person's own name while not approved asks again (requestApproval with
+     *  the new name), so the admin page shows it. Once per save; never on a refused name or an unchanged Done. */
+    @Test
+    fun saving_your_name_while_not_approved_asks_again() {
+        for (state in listOf(ApprovalState.PENDING, ApprovalState.DENIED, ApprovalState.UNKNOWN)) assertTrue("$state", Approval.nameAsks(uid, uid, state))
+        assertFalse(Approval.nameAsks(uid, uid, ApprovalState.APPROVED))
+        assertFalse("signed out", Approval.nameAsks(null, uid, ApprovalState.PENDING))
+        assertFalse("not the vault's owner", Approval.nameAsks(uid, "uid-other", ApprovalState.PENDING))
+        val keystore = object : SkiptiKeystore {
+            var key: ByteArray? = null
+            override fun provision(key: ByteArray) { this.key = key }
+            override fun load(): ByteArray? = key
+            override fun destroy() { key = null }
+        }
+        val path = dir.resolve("name-${System.nanoTime()}.db").toString()
+        val s = LedgerStore(path) { SkiptiVault.open(path, keystore) }
+        var asks = 0
+        val spy = ProfileSave.Effects(changed = {}, share = {}, ask = { asks++ })
+        assertEquals(ProfileSave.NameOutcome.Saved("Ada"), ProfileSave.name("Ada", s, spy))
+        assertEquals("a saved name asks once", 1, asks)
+        assertTrue(ProfileSave.name("   ", s, spy) is ProfileSave.NameOutcome.Refused)
+        assertEquals("a refused name asks nothing", 1, asks)
+        assertNull("Done on the saved name writes nothing", ProfileSave.returned("Ada", "Ada", s, spy))
+        assertEquals("and asks nothing", 1, asks)
+        ProfileSave.answer(PictureAnswer.USE, PictureStage().choose(Avatar.Emoji("\uD83E\uDD8A")), { s }, spy)
+        assertEquals("a picture asks nothing", 1, asks)
+        val confirm = main("ProfileConfirm.kt")
+        assertTrue("live", "ask = { Approval.nameSaved(LedgerStore(vaultPath)) }," in confirm)
+        // Every path that saves your own name asks (the proofs, approved emulator accounts, excepted).
+        val saves = mainSources().filter { (_, t) -> Regex("""\.setYourName\(""").containsMatchIn(t) }.map { it.first }.toSet()
+        assertEquals(
+            setOf("Account.kt", "AppRoot.kt", "GroupScreens.kt", "GroupsTab.kt", "ImportFlow.kt", "ProfileConfirm.kt", "UsernameStep.kt"),
+            saves,
+        )
+        assertEquals("Your name and a new group's name", 2, main("GroupScreens.kt").split("Approval.nameSaved(store)").size - 1)
+        assertTrue("Approval.nameSaved(store)" in main("UsernameStep.kt"))
+        assertTrue("Approval.nameSaved(store)" in main("ImportFlow.kt"))
+        // A fresh ask (never the one in flight, which may carry the old name), only for the owner, only while not approved.
+        val saved = slice(main("Approval.kt"), "    fun nameSaved(store: LedgerStore) {", "\n    }\n")
+        inOrder(saved, "if (!nameAsks(uid, runCatching { Account.storedOwner(store) }.getOrNull(), cached(store, uid))) return", "before?.join()", "ask(uid, store)")
+        assertFalse("never joins", "asking(" in saved)
     }
 
     /** Fix wave M4 (the twin of iOS's): approval heard while SKIPTI is not in front is kept, and starts nothing; heard

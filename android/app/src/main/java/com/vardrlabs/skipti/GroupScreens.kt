@@ -111,7 +111,13 @@ fun YourNameScreen(vaultPath: String, onSaved: () -> Unit, onBack: () -> Unit) {
         busy = true
         error = null
         scope.launch {
-            val result = offMain { LedgerStore(vaultPath).setYourName(name) }
+            val result = offMain {
+                val store = LedgerStore(vaultPath)
+                store.setYourName(name).also {
+                    // D-254 look fix 3: an account not approved asks again with the name.
+                    Approval.nameSaved(store)
+                }
+            }
             busy = false
             // D-211 fix 5: the saved name is a record; the sync hears of it at once.
             if (result.isSuccess) CloudSync.ledgerChanged(vaultPath)
@@ -201,6 +207,8 @@ fun CreateGroupScreen(vaultPath: String, onCreated: (String) -> Unit, onBack: ()
                         store, if (askName) yourName else null, groupName, currency, people.names,
                         pictureEmoji, picturePhoto,
                     ) { CloudSync.ledgerChanged(vaultPath) }
+                    // D-254 look fix 3: your name saved with the group: an account not approved asks again with it.
+                    if (askName) Approval.nameSaved(store)
                     GroupPictures.load(store)
                     // D-224 follow-up (A-R3): Home's new page, when the create returns to it, so the first group's
                     // moment never plays over the empty Home and its reload (iOS's Home is loaded under the sheet).

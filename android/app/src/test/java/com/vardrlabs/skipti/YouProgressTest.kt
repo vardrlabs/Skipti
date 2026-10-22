@@ -345,7 +345,10 @@ class YouProgressTest {
         for (place in StepPlace.entries) assertEquals("$place has one destination", 1, block.split("StepPlace.${place.name} ->").size - 1)
         assertFalse("no else", "else ->" in block)
         val h = hero()
-        assertTrue("the card skips the username while its card shows", "SetupSteps.next(it, skipping = if (usernameState == UsernameState.None) setOf(SetupStep.USERNAME) else emptySet())" in h)
+        // D-254 look fix 1: the username card shows through UsernameState.cardShows (approved only), and the skip reads the
+        // same decision (it read `usernameState == UsernameState.None` before).
+        assertTrue("the card skips the username while its card shows", "SetupSteps.next(it, skipping = if (usernameCard) setOf(SetupStep.USERNAME) else emptySet())" in h)
+        assertTrue("one decision for both", "val usernameCard = UsernameState.cardShows(usernameState, Approval.state)" in h)
         val card1 = h.indexOf("UsernameCard(dark, onPickUsername)")
         val next = h.indexOf("NextStepCard(")
         val deletion = h.indexOf("DeletionPendingCard(dark,")

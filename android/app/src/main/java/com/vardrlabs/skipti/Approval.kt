@@ -10,6 +10,7 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
@@ -163,6 +164,9 @@ object Approval {
     @Volatile var stopCloud: () -> Unit = { CloudSync.approvalWithdrawn() }
     /** Tests only; production never reassigns. The network part of an ask: `requestApproval`'s reply. */
     @Volatile var request: suspend (JsonObject) -> JsonObject = { CloudFunctions.callJson("requestApproval", it) }
+    /** Tests only; production never reassigns. Look fix 2: `approvals/{uid}` read from the server (a READ, never a
+     *  write; unknown with no answer). iOS's `serverRead`. */
+    @Volatile var serverRead: suspend (String) -> ApprovalState = { CloudSync.serverApproval(it) }
 
     // ---- The pure parts ----
 
@@ -209,6 +213,20 @@ object Approval {
      *  account in this state this process. A sign-in and a refusal carrying `details.approval` ask regardless. */
     fun frontAsks(answered: Pair<String, ApprovalState>?, uid: String, state: ApprovalState): Boolean =
         !allowsCloud(state) && answered != (uid to state)
+
+    /** D-254 look fix 2 (iOS's `frontRecheck`): a front event while the account is not approved reads its approval
+     *  from the server once, bounded by [ms] (a missed listener event, as after the Firestore emulator's GOAWAY, is
+     *  recovered). Approved: null, nothing read. No answer (unknown, or slower than [ms]): null, nothing heard. Else the
+     *  state, which [front] passes to [heard]. A read only: never a write (M5's ask is separate). */
+    suspend fun frontRecheck(state: ApprovalState, ms: Long = RESOLVE_TIMEOUT_MS, read: suspend () -> ApprovalState): ApprovalState? {
+        if (allowsCloud(state)) return null
+        return withTimeoutOrNull(ms) { read() }?.takeIf { it != ApprovalState.UNKNOWN }
+    }
+
+    /** D-254 look fix 3 (iOS's `nameAsks`): saving the person's own name asks again (with the new name, so the admin
+     *  page shows it) when the vault's owner is signed in and not approved. */
+    fun nameAsks(uid: String?, owner: String?, state: ApprovalState): Boolean =
+        CloudGate.owned(uid, owner) != null && !allowsCloud(state)
 
     /** Fix wave M4 (iOS's `startsCloudNow`): the cloud starts on approval only while SKIPTI is in front. */
     fun startsCloudNow(step: ApprovalStep, inFront: Boolean): Boolean = step is ApprovalStep.Approve && inFront
@@ -290,6 +308,12 @@ object Approval {
         val owned = CloudGate.owned(uid, Account.storedOwner(store)) ?: return
         if (loadedFor != owned) load(owned, store)
         listen(owned, store)
+        // Look fix 2: not approved, the server's word is read again (bounded, a read only): a listener event missed
+        // while SKIPTI was away is heard now. The ask below stays once per process (M5).
+        val now = state
+        if (!allowsCloud(now)) scope.launch {
+            frontRecheck(now) { serverRead(owned) }?.let { withContext(Dispatchers.Main) { heard(it, owned, store) } }
+        }
         // Fix wave M5: once per process while the state is unchanged (a write on the server each time, and two phones
         // of one account flipped its platform back and forth); an ask in flight is joined, not repeated.
         if (!frontAsks(answered, owned, state)) return
@@ -301,6 +325,22 @@ object Approval {
     fun asking(uid: String, store: LedgerStore): Deferred<ApprovalState?> = synchronized(askLock) {
         inFlight?.let { (who, job) -> if (who == uid && job.isActive) return job }
         scope.async { ask(uid, store) }.also { inFlight = uid to it }
+    }
+
+    /** Look fix 3 (iOS's `nameSaved(store:)`): the person's own name was saved on this phone (Profile, the welcome,
+     *  Add your name, the username step, a new group's name, an import). Signed in to the vault's owner and not approved
+     *  ([nameAsks]): a FRESH ask with the new name, after any ask in flight (never joined: that one may carry the old
+     *  name), whatever M5 last heard. Call it off the main thread (it reads the vault). */
+    fun nameSaved(store: LedgerStore) {
+        val uid = runCatching { Account.uid() }.getOrNull() ?: return
+        if (!nameAsks(uid, runCatching { Account.storedOwner(store) }.getOrNull(), cached(store, uid))) return
+        synchronized(askLock) {
+            val before = inFlight?.takeIf { (who, job) -> who == uid && job.isActive }?.second
+            inFlight = uid to scope.async {
+                before?.join()
+                ask(uid, store)
+            }
+        }
     }
 
     /** Fix wave M2: the server's answer within [ms], or null (offline, or slower than that); the ask goes on. */

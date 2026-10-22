@@ -108,5 +108,11 @@ sealed class UsernameState {
         /** The step after sign-in is only for an account known to have no
          *  username; unread (offline, slow) goes on, and the card asks later. */
         fun needsStep(state: UsernameState?): Boolean = state == None
+
+        /** D-254 look fix 1: the "Pick your username" card (Balance and You) only for an account known to have no
+         *  username AND approved: until then the check and the save are refused for approval (the twin of iOS's
+         *  `UsernameState.cardShows(_:approval:)`). */
+        fun cardShows(state: UsernameState?, approval: ApprovalState): Boolean =
+            state == None && Approval.allowsCloud(approval)
     }
 }

@@ -287,7 +287,9 @@ object SettingsMap {
 
     fun items(section: SettingsSection, signedIn: Boolean): List<SettingItem> = when (section) {
         SettingsSection.PROFILE_ACCOUNT ->
-            if (signedIn) listOf(SettingItem.SIGNED_IN_AS, SettingItem.SIGN_OUT, SettingItem.SYNC, SettingItem.NOTIFICATIONS, SettingItem.FIND_ME)
+            // D-254 look fix 6 (decision 252): the sign-in row and Sign out first (one card, [cards]), Find me right
+            // below, then Sync and Notifications (Find me was last).
+            if (signedIn) listOf(SettingItem.SIGNED_IN_AS, SettingItem.SIGN_OUT, SettingItem.FIND_ME, SettingItem.SYNC, SettingItem.NOTIFICATIONS)
             else listOf(SettingItem.SIGN_IN)
         SettingsSection.APPEARANCE -> listOf(SettingItem.THEME, SettingItem.APPEARANCE_MODE, SettingItem.TEXT_SIZE)
         SettingsSection.SECURITY ->
@@ -308,6 +310,20 @@ object SettingsMap {
         val items = items(section, model.showsAccountControls)
         val waits = model.state == AccountState.WAITING || model.state == AccountState.NOT_APPROVED
         return if (waits) items - WAITS_FOR_APPROVAL else items
+    }
+
+    /** D-254 look fix 6 (decision 252; iOS's `cards(_:)`): the page's items as its cards: the signed-in row and Sign out
+     *  share ONE card when both are there; every other item is its own card. */
+    fun cards(items: List<SettingItem>): List<List<SettingItem>> {
+        val out = mutableListOf<List<SettingItem>>()
+        for (item in items) {
+            if (item == SettingItem.SIGN_OUT && out.lastOrNull() == listOf(SettingItem.SIGNED_IN_AS)) {
+                out[out.size - 1] = listOf(SettingItem.SIGNED_IN_AS, SettingItem.SIGN_OUT)
+            } else {
+                out += listOf(item)
+            }
+        }
+        return out
     }
 
     /** Above the sections: the deletion notice, when there is an account. */
@@ -580,14 +596,15 @@ fun AccountHubScreen(
                 }
             }
             if (viewing && viewable) PictureViewer(avatar) { viewing = false }
-            // C2: an account signed in before usernames were asked.
+            // C2: an account signed in before usernames were asked. D-254 look fix 1: only once it is approved.
             // D-221 fix wave (S11): iOS's 16 between the hero and each card under it.
-            if (usernameState == UsernameState.None) {
+            val usernameCard = UsernameState.cardShows(usernameState, Approval.state)
+            if (usernameCard) {
                 Spacer(Modifier.height(16.dp))
                 UsernameCard(dark, onPickUsername)
             }
             // D-221 (Design 9, L41): the first undone step; the username step waits while its own card asks.
-            facts?.let { SetupSteps.next(it, skipping = if (usernameState == UsernameState.None) setOf(SetupStep.USERNAME) else emptySet()) }?.let { step ->
+            facts?.let { SetupSteps.next(it, skipping = if (usernameCard) setOf(SetupStep.USERNAME) else emptySet()) }?.let { step ->
                 Spacer(Modifier.height(16.dp))
                 NextStepCard(step, dark) { openStep(step) }
             }
@@ -637,9 +654,35 @@ fun AccountHubScreen(
         }
         // D-217 look fix 1: iOS's VStack spaces the items 16 apart, and nothing above the first (the page's top is the
         // bar's, [BarDecisions.scrollTop]); the spacer used to come BEFORE every item, the first included.
-        SettingsMap.shown(section, model).forEachIndexed { index, item ->
+        // D-254 look fix 6 (decision 252): the shown items as cards, the signed-in row and Sign out in one.
+        val signOutBlock: @Composable () -> Unit = {
+            // D-155: a plain sign-out.
+            Text(AccountSignOut.NOTE, style = Type.bodyDim(dark).copy(fontSize = TypeScale.detail.sp))
+            Spacer(Modifier.height(10.dp))
+            SecondaryAction("Sign out", dark) {
+                if (busy) return@SecondaryAction
+                // D-235: busy from the tap itself, not from when the coroutine first runs.
+                busy = true
+                scope.launch {
+                    // D-235 (Android audit M2): every cloud call inside is bounded, and leaving the page no
+                    // longer cancels it half way: this phone is always signed out.
+                    withContext(NonCancellable + Dispatchers.IO) {
+                        // D-196: the push address leaves the cloud while
+                        // the account may still write it.
+                        Push.stop(LedgerStore(vaultPath), inCloud = true)
+                        Account.signOut()
+                    }
+                    onSignedOut()
+                    // D-224 (Design 7): signed out, said once.
+                    DoneCenter.post(DoneMoments.line(DoneCopy.SIGNED_OUT))
+                    reload()
+                    busy = false
+                }
+            }
+        }
+        SettingsMap.cards(SettingsMap.shown(section, model)).forEachIndexed { index, card ->
             if (index > 0) Spacer(Modifier.height(16.dp))
-            when (item) {
+            when (val item = card.first()) {
                 SettingItem.SIGN_IN -> Card(dark) {
                     Text("No account", style = Type.body(dark))
                     Spacer(Modifier.height(8.dp))
@@ -653,34 +696,16 @@ fun AccountHubScreen(
                     // Secondary, never primary (D-128, GUARANTEES #5).
                     SecondaryAction("Sign in", dark, onOpenSignIn)
                 }
+                // Look fix 6: one card, the method row, 10 below it the sign-out line, 10 below that Sign out (iOS's card
+                // VStack spaces its rows 10).
                 SettingItem.SIGNED_IN_AS -> Card(dark) {
                     method?.let { SignInMethodRow(it, dark) } ?: Text("Signed in", style = Type.body(dark))
-                }
-                SettingItem.SIGN_OUT -> Card(dark) {
-                    // D-155: a plain sign-out.
-                    Text(AccountSignOut.NOTE, style = Type.bodyDim(dark).copy(fontSize = TypeScale.detail.sp))
-                    Spacer(Modifier.height(10.dp))
-                    SecondaryAction("Sign out", dark) {
-                        if (busy) return@SecondaryAction
-                        // D-235: busy from the tap itself, not from when the coroutine first runs.
-                        busy = true
-                        scope.launch {
-                            // D-235 (Android audit M2): every cloud call inside is bounded, and leaving the page no
-                            // longer cancels it half way: this phone is always signed out.
-                            withContext(NonCancellable + Dispatchers.IO) {
-                                // D-196: the push address leaves the cloud while
-                                // the account may still write it.
-                                Push.stop(LedgerStore(vaultPath), inCloud = true)
-                                Account.signOut()
-                            }
-                            onSignedOut()
-                            // D-224 (Design 7): signed out, said once.
-                            DoneCenter.post(DoneMoments.line(DoneCopy.SIGNED_OUT))
-                            reload()
-                            busy = false
-                        }
+                    if (SettingItem.SIGN_OUT in card) {
+                        Spacer(Modifier.height(10.dp))
+                        signOutBlock()
                     }
                 }
+                SettingItem.SIGN_OUT -> Card(dark) { signOutBlock() }
                 // D-254: while the account waits for approval, or was not approved, the card says so and has no switch.
                 SettingItem.SYNC -> if (model.state == AccountState.WAITING) {
                     ApprovalSyncCard(dark, ApprovalCopy.SYNC_WAITING_VALUE, ApprovalCopy.SYNC_WAITING_BODY, Tok.accent(dark))

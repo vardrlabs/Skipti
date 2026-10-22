@@ -358,7 +358,11 @@ fun UsernameStep(
             try {
                 val store = LedgerStore(vaultPath)
                 if (needsName) {
-                    withContext(Dispatchers.IO) { store.setYourName(name) }
+                    withContext(Dispatchers.IO) {
+                        store.setYourName(name)
+                        // D-254 look fix 3: an account not approved asks again with the name.
+                        Approval.nameSaved(store)
+                    }
                     CloudSync.ledgerChanged(vaultPath)
                 }
                 // A None read earlier may be stale (a username picked on
