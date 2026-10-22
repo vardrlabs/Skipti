@@ -33,8 +33,10 @@ Newest session log entries go at the bottom.
   listener (cache cleared at next front, invisible), Join block 12 dp vs iOS 16 (judge in the look)). Shell review
   DONE (0 Critical, I1 username ring, I2 unknown says waiting; triage `.drafts/d254/triage-shells.md`). Fix waves
   DONE: server 846b0c7 (314 tests; 29-row matrix, 0 survived), Android 1ddc9806 (1247 JVM; 11 rows), iOS 5909f2dd
-  (1044 tests; FW1-FW9). LOOK RUNNING (throwaway d254-look sim + AVD, emulators, admin page local) -> findings in
-  `.drafts/d254/look/`. Then: full gate, records (decisions 239-251 drafted), record_unit.py, merge. Decisions drafted
+  (1044 tests; FW1-FW9). LOOK DONE (gate works; twins match; 2 Important + 3 Minor, triage
+  `.drafts/d254/triage-look.md`; devices deleted). LOOK FIXES DONE: server/admin 77a2b25d (317 tests; L4a-L5b), Android
+  514f8152 (1251 JVM; L1-L7), iOS 14623891 (1049; LF1-LF7), incl. decision 252 layout. RE-LOOK RUNNING (d254-relook
+  devices) -> `.drafts/d254/relook/`. Then full gate, records, record_unit.py, merge. Then: full gate, records (decisions 239-251 drafted), record_unit.py, merge. Decisions drafted
   `.drafts/d254/decisions-draft.md` (239-251). Next: whole-branch review after shells, fix wave, formal sabotage, look
   (throwaway sim + AVD, emulators, admin page served locally), full gate, records, merge.
 - D-255 brief ready: `.drafts/d255/brief.md` (Miami trip / Apartment 4B / Ski weekend, USD; full detail section 5).
