@@ -12,15 +12,15 @@ class YouProgressTest {
     /** Every fact true: every step done (the phone has a lock, a stored currency core knows, notifications allowed). */
     private val all = SetupFacts(
         signedIn = true, hasName = true, hasPicture = true, storedCurrency = "INR", lockTimeout = LockTimeout.STANDARD,
-        lockAvailable = true, hasGroup = true, hasUsername = true, notificationsEnabled = true, canPost = true,
+        lockAvailable = true, hasGroup = true, hasUsername = true, notificationsEnabled = true, canPost = true, approved = true,
     )
-    private val none = SetupFacts(signedIn = true, lockTimeout = LockTimeout.OFF)
+    private val none = SetupFacts(signedIn = true, lockTimeout = LockTimeout.OFF, approved = true)
 
     private val noAccount = listOf(SetupStep.NAME, SetupStep.PICTURE, SetupStep.CURRENCY, SetupStep.APP_LOCK, SetupStep.FIRST_GROUP)
 
     @Test
     fun the_steps_without_an_account_are_the_five_and_never_mention_one() {
-        assertEquals(noAccount, SetupSteps.steps(signedIn = false, lockAvailable = true))
+        assertEquals(noAccount, SetupSteps.steps(signedIn = false, lockAvailable = true, approved = false))
         // GUARANTEES #5: an account is never implied or nudged for; no step's words name signing in or an account.
         for (step in SetupStep.entries) {
             for (words in listOf(StepCopy.title(step), StepCopy.why(step))) {
@@ -37,7 +37,28 @@ class YouProgressTest {
 
     @Test
     fun the_steps_signed_in_are_the_seven() {
-        assertEquals(noAccount + listOf(SetupStep.USERNAME, SetupStep.NOTIFICATIONS), SetupSteps.steps(signedIn = true, lockAvailable = true))
+        assertEquals(noAccount + listOf(SetupStep.USERNAME, SetupStep.NOTIFICATIONS), SetupSteps.steps(signedIn = true, lockAvailable = true, approved = true))
+    }
+
+    /** D-254 fix wave I1 (the twin of iOS's): the account's two steps come with approval. Waiting, not approved, or not
+     *  heard yet: the five local steps (no "Pick your username" the account cannot do, no notifications that cannot
+     *  come); approved: the seven. Without an account approval changes nothing. */
+    @Test
+    fun the_account_steps_come_with_approval() {
+        assertEquals(noAccount, SetupSteps.steps(signedIn = true, lockAvailable = true, approved = false))
+        assertEquals(noAccount + listOf(SetupStep.USERNAME, SetupStep.NOTIFICATIONS), SetupSteps.steps(signedIn = true, lockAvailable = true, approved = true))
+        assertEquals(noAccount, SetupSteps.steps(signedIn = false, lockAvailable = true, approved = true))
+        assertEquals(noAccount - SetupStep.APP_LOCK, SetupSteps.steps(signedIn = true, lockAvailable = false, approved = false))
+        val waiting = all.copy(approved = false, hasUsername = false)
+        assertEquals("the ring completes without the account steps", 5 to 5, SetupSteps.progress(waiting))
+        assertNull("never Pick your username while waiting", SetupSteps.next(waiting))
+        assertEquals(SetupStep.USERNAME, SetupSteps.next(waiting.copy(approved = true)))
+        // The facts read the vault's copy of the approval, and the ring's first frame the screen's.
+        val you = java.io.File("src/main/java/com/vardrlabs/skipti/YouProgress.kt").readText()
+        assertTrue("approved = Approval.allowsCloud(Approval.state)," in you)
+        val hub = java.io.File("src/main/java/com/vardrlabs/skipti/AccountHubScreen.kt").readText()
+        assertTrue("SetupSteps.steps(signedIn, lockAvailable, Approval.allowsCloud(Approval.state))" in hub)
+        assertTrue("DefaultCurrency.stored, AppLock.timeout, hasUsername, signedIn, Approval.state," in hub)
     }
 
     /** D-247 (decision 169, D-221 h): a phone that cannot lock (no screen lock: `AppLock.available` false) has no app lock
@@ -45,10 +66,10 @@ class YouProgressTest {
      *  function's input; nothing else about the steps changes. The twin of iOS's testThePhoneWithoutALockDropsTheAppLockStep. */
     @Test
     fun the_phone_without_a_lock_drops_the_app_lock_step() {
-        assertEquals(noAccount - SetupStep.APP_LOCK, SetupSteps.steps(signedIn = false, lockAvailable = false))
+        assertEquals(noAccount - SetupStep.APP_LOCK, SetupSteps.steps(signedIn = false, lockAvailable = false, approved = false))
         assertEquals(
             noAccount - SetupStep.APP_LOCK + listOf(SetupStep.USERNAME, SetupStep.NOTIFICATIONS),
-            SetupSteps.steps(signedIn = true, lockAvailable = false),
+            SetupSteps.steps(signedIn = true, lockAvailable = false, approved = true),
         )
         var facts = all.copy(signedIn = false, lockAvailable = false)
         assertEquals("every step done: the ring completes", 4 to 4, SetupSteps.progress(facts))
@@ -73,7 +94,7 @@ class YouProgressTest {
         val hub = java.io.File("src/main/java/com/vardrlabs/skipti/AccountHubScreen.kt").readText()
         assertTrue("LifecycleResumeEffect(Unit) {\n        resumes++" in hub)
         assertTrue("facts = withContext(Dispatchers.IO) { SetupFacts.read(context, LedgerStore(vaultPath), hasUsername) }" in hub)
-        assertTrue("SetupSteps.steps(signedIn, lockAvailable)" in hub)
+        assertTrue("SetupSteps.steps(signedIn, lockAvailable, Approval.allowsCloud(Approval.state))" in hub)
         val you = java.io.File("src/main/java/com/vardrlabs/skipti/YouProgress.kt").readText()
         assertTrue("lockAvailable = AppLock.available(context) && !SettleLook.noLock()," in you)
     }

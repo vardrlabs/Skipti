@@ -95,20 +95,17 @@ object PhonesSummary {
 }
 
 object Phones {
-    /** When a pending deletion happens (ms), or null. The marker is on `users/{uid}.deleteAt`; D-254: an account with no
-     *  profile, or not approved (waiting or denied: the rules refuse it a profile), carries it on its own
-     *  `approvals/{uid}` (the Functions' requestDeletion puts it there), so Keep my account is offered on the next
-     *  sign-in within the 7 days instead of the purge deleting the account unwarned. [profile] is null when there is no
-     *  profile document. */
-    suspend fun pendingDeletion(
-        approval: ApprovalState,
+    /** When a pending deletion happens (ms), or null. D-254: where the marker is: the profile's `deleteAt` when there is
+     *  a profile ([profile] non-null), else the approval document's (`requestDeletion` puts it there for an account with
+     *  no profile: waiting, or not approved), so Keep my account is offered on the next sign-in within the 7 days
+     *  instead of the purge deleting the account unwarned. The approval document is read only with no profile. Fix wave
+     *  M8: iOS's `Phones.deletionDate(profile:approval:)`, the same rule and the same test inputs. */
+    suspend fun deletionDate(
         profile: suspend () -> Map<String, Any?>?,
-        approvalDoc: suspend () -> Map<String, Any?>?,
+        approval: suspend () -> Map<String, Any?>?,
     ): Long? {
-        val own = profile()
-        (own?.get("deleteAt") as? com.google.firebase.Timestamp)?.let { return CloudRecords.millis(it) }
-        if (own != null && Approval.allowsCloud(approval)) return null
-        return (approvalDoc()?.get("deleteAt") as? com.google.firebase.Timestamp)?.let(CloudRecords::millis)
+        profile()?.let { own -> return (own["deleteAt"] as? com.google.firebase.Timestamp)?.let(CloudRecords::millis) }
+        return (approval()?.get("deleteAt") as? com.google.firebase.Timestamp)?.let(CloudRecords::millis)
     }
 
     data class Row(
@@ -433,13 +430,10 @@ fun DeletionPendingCard(dark: Boolean, modifier: Modifier = Modifier) {
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
         val uid = Account.uid() ?: return@LaunchedEffect
-        val store = LedgerStore(CloudSync.vaultPathOf(VaultGate.appContextRef))
-        val approval = withContext(Dispatchers.IO) { Approval.cached(store, uid) }
         dateMs = runCatching {
-            Phones.pendingDeletion(
-                approval,
+            Phones.deletionDate(
                 profile = { Cloud.db().collection("users").document(uid).get(Source.SERVER).awaitTask().let { if (it.exists()) it.data.orEmpty() else null } },
-                approvalDoc = { Cloud.db().collection("approvals").document(uid).get(Source.SERVER).awaitTask().data },
+                approval = { Cloud.db().collection("approvals").document(uid).get(Source.SERVER).awaitTask().data },
             )
         }.getOrNull()
     }

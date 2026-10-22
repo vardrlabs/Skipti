@@ -191,11 +191,17 @@ object CloudFunctions {
     /** A string field of a reply, or null. */
     fun JsonObject.text(key: String): String? = (this[key] as? JsonPrimitive)?.takeIf { it !is JsonNull }?.contentOrNull
 
-    /** D-254: [callJson]'s gate for [uid]: the vault's copy of the account's approval (unknown, so refused, when the
-     *  vault cannot be read). */
-    fun gate(name: String, uid: String, store: LedgerStore? = runCatching { VaultGate.appContextRef }.getOrNull()?.let {
-        LedgerStore(CloudSync.vaultPathOf(it))
-    }): Failure? = Approval.localRefusal(name, store?.let { Approval.cached(it, uid) } ?: ApprovalState.UNKNOWN)
+    /** D-254: [callJson]'s gate for [uid] (and the invite paths' before they put a group in the cloud): the vault's
+     *  copy of the account's approval. Fix wave I2: nothing heard yet (unknown) asks the server once, bounded
+     *  ([Approval.RESOLVE_TIMEOUT_MS]), before refusing: approved goes, pending and denied have their words, and no
+     *  answer is offline. A vault that cannot be read asks nothing and is offline (closed). An exempt call asks nothing.
+     *  [ask] is the server's answer (a fake in tests). */
+    suspend fun gate(
+        name: String,
+        uid: String,
+        store: LedgerStore? = runCatching { VaultGate.appContextRef }.getOrNull()?.let { LedgerStore(CloudSync.vaultPathOf(it)) },
+        ask: suspend () -> ApprovalState? = { store?.let { Approval.asking(uid, it).await() } },
+    ): Failure? = Approval.callRefusal(name, store?.let { Approval.cached(it, uid) } ?: ApprovalState.UNKNOWN, Approval.RESOLVE_TIMEOUT_MS, ask)
 
     /** Blocking: call off the main thread. */
     suspend fun call(name: String, data: Map<String, String>): JsonObject =
@@ -256,8 +262,9 @@ object Invites {
      *  cloud first if this phone has not yet (one made before signing in). */
     suspend fun create(store: LedgerStore, group: NamedGroupWire, member: MemberWire): String {
         val uid = Account.uid() ?: throw CloudFunctions.Failure.SignedOut()
-        // D-254: before the group is put in the cloud (a write the rules refuse an account not approved).
-        Approval.localRefusal("createInvite", Approval.cached(store, uid))?.let { throw it }
+        // D-254: before the group is put in the cloud (a write the rules refuse an account not approved); fix wave I2:
+        // through the call's own gate, so nothing heard yet asks the server first.
+        CloudFunctions.gate("createInvite", uid, store)?.let { throw it }
         when (CloudSync.ensureGroup(group.group.id, group.group.name, uid)) {
             CloudSync.GroupState.MEMBER -> Unit
             CloudSync.GroupState.NOT_MEMBER -> throw CloudFunctions.Failure.Refused("PERMISSION_DENIED")

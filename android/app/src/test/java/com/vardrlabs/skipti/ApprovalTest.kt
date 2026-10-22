@@ -2,11 +2,17 @@ package com.vardrlabs.skipti
 
 import java.io.File
 import java.nio.file.Files
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
@@ -183,8 +189,7 @@ class ApprovalTest {
             val model = accountHubModel(signedIn = true, syncOn = false, approval = approval)
             assertTrue("$approval", model.showsAccountControls)
             assertFalse(model.syncOn)
-            val items = SettingsMap.items(SettingsSection.PROFILE_ACCOUNT, model.showsAccountControls) +
-                SettingsMap.items(SettingsSection.SECURITY, model.showsAccountControls)
+            val items = SettingsMap.shown(SettingsSection.PROFILE_ACCOUNT, model) + SettingsMap.shown(SettingsSection.SECURITY, model)
             assertTrue("leaving never waits ($approval)", SettingItem.SIGN_OUT in items && SettingItem.DELETE_ACCOUNT in items)
         }
         // The page draws from the model's controls, never from ACTIVE alone (a waiting account keeps Sign out).
@@ -312,7 +317,7 @@ class ApprovalTest {
      *  waiting words (pending, or not heard yet) or the not approved ones (denied); the exempt ones always go. Through the
      *  vault's copy, as the call reads it. */
     @Test
-    fun the_call_gate_refuses_locally_and_lets_leaving_through() {
+    fun the_call_gate_refuses_locally_and_lets_leaving_through() = runBlocking {
         val exempt = listOf("signOutDevice", "signOutEverywhere", "requestDeletion", "cancelDeletion", "requestApproval", "adminApprovals")
         assertEquals("the server's approvals.EXEMPT", exempt.toSet(), Approval.EXEMPT)
         for (state in ApprovalState.entries) for (name in exempt) assertNull("$name $state", Approval.localRefusal(name, state))
@@ -322,19 +327,57 @@ class ApprovalTest {
         )
         for (name in gated) {
             assertTrue(name, Approval.localRefusal(name, ApprovalState.PENDING) is CloudFunctions.Failure.AwaitingApproval)
-            assertTrue(name, Approval.localRefusal(name, ApprovalState.UNKNOWN) is CloudFunctions.Failure.AwaitingApproval)
+            // Fix wave I2: still unknown after asking (no answer) is offline, never the waiting words.
+            assertTrue(name, Approval.localRefusal(name, ApprovalState.UNKNOWN) is CloudFunctions.Failure.Offline)
             assertTrue(name, Approval.localRefusal(name, ApprovalState.DENIED) is CloudFunctions.Failure.NotApproved)
             assertNull(name, Approval.localRefusal(name, ApprovalState.APPROVED))
         }
         val store = tempStore(owner = uid)
-        assertTrue("nothing heard: refused", CloudFunctions.gate("acceptInvite", uid, store) is CloudFunctions.Failure.AwaitingApproval)
-        assertNull("leaving goes", CloudFunctions.gate("requestDeletion", uid, store))
-        assertTrue("no vault: closed", CloudFunctions.gate("acceptInvite", uid, null) is CloudFunctions.Failure.AwaitingApproval)
+        val noAnswer: suspend () -> ApprovalState? = { null }
+        assertTrue("nothing heard, no answer: offline", CloudFunctions.gate("acceptInvite", uid, store, noAnswer) is CloudFunctions.Failure.Offline)
+        assertNull("leaving goes", CloudFunctions.gate("requestDeletion", uid, store, noAnswer))
+        assertTrue("no vault: closed", CloudFunctions.gate("acceptInvite", uid, null, noAnswer) is CloudFunctions.Failure.Offline)
         Approval.setCached(store, uid, ApprovalState.DENIED)
-        assertTrue(CloudFunctions.gate("acceptInvite", uid, store) is CloudFunctions.Failure.NotApproved)
+        assertTrue(CloudFunctions.gate("acceptInvite", uid, store, noAnswer) is CloudFunctions.Failure.NotApproved)
+        Approval.setCached(store, uid, ApprovalState.PENDING)
+        assertTrue(CloudFunctions.gate("acceptInvite", uid, store, noAnswer) is CloudFunctions.Failure.AwaitingApproval)
         Approval.setCached(store, uid, ApprovalState.APPROVED)
-        assertNull("approved: the call goes", CloudFunctions.gate("acceptInvite", uid, store))
-        assertTrue("another account's approval is not this one's", CloudFunctions.gate("acceptInvite", "uid-other", store) is CloudFunctions.Failure.AwaitingApproval)
+        assertNull("approved: the call goes", CloudFunctions.gate("acceptInvite", uid, store, noAnswer))
+        assertTrue("another account's approval is not this one's", CloudFunctions.gate("acceptInvite", "uid-other", store, noAnswer) is CloudFunctions.Failure.Offline)
+    }
+
+    /** Fix wave I2 (the twin of iOS's `callRefusal`, the same inputs): a call gated while nothing was heard yet asks the
+     *  server once, bounded, before refusing. Unknown and the server says approved: the call goes; pending or denied:
+     *  their words; no answer, or none in time: offline, never the waiting words. A known state and an exempt call ask
+     *  nothing. `CloudFunctions.gate` (the call's own gate, and the invite paths' before they put a group in the cloud)
+     *  is this, with the vault's copy and the live ask, 5 s. */
+    @Test
+    fun an_unknown_state_asks_the_server_before_refusing() = runBlocking {
+        var asks = 0
+        fun answer(state: ApprovalState?): suspend () -> ApprovalState? = { asks++; state }
+        suspend fun refusal(cached: ApprovalState, ask: suspend () -> ApprovalState?, name: String = "createInvite") =
+            Approval.callRefusal(name, cached, 200, ask)
+        assertNull("unknown, the server says approved: the call goes", refusal(ApprovalState.UNKNOWN, answer(ApprovalState.APPROVED)))
+        assertTrue("no answer: offline", refusal(ApprovalState.UNKNOWN, answer(ApprovalState.UNKNOWN)) is CloudFunctions.Failure.Offline)
+        assertTrue(refusal(ApprovalState.UNKNOWN, answer(null)) is CloudFunctions.Failure.Offline)
+        assertTrue(refusal(ApprovalState.UNKNOWN, answer(ApprovalState.PENDING)) is CloudFunctions.Failure.AwaitingApproval)
+        assertTrue(refusal(ApprovalState.UNKNOWN, answer(ApprovalState.DENIED)) is CloudFunctions.Failure.NotApproved)
+        assertEquals(5, asks)
+        val started = System.nanoTime()
+        assertTrue("an ask that never answers: offline in time", refusal(ApprovalState.UNKNOWN, { kotlinx.coroutines.awaitCancellation() }) is CloudFunctions.Failure.Offline)
+        assertTrue((System.nanoTime() - started) / 1_000_000 < 2_000)
+        assertTrue(refusal(ApprovalState.PENDING, answer(ApprovalState.APPROVED)) is CloudFunctions.Failure.AwaitingApproval)
+        assertNull(refusal(ApprovalState.APPROVED, answer(ApprovalState.PENDING)))
+        assertNull("exempt: goes", refusal(ApprovalState.UNKNOWN, answer(null), name = "requestDeletion"))
+        assertEquals("a known state and an exempt call ask nothing", 5, asks)
+        // The live gate: the vault's copy, then the same rule.
+        val store = tempStore(owner = uid)
+        assertNull(CloudFunctions.gate("acceptInvite", uid, store, answer(ApprovalState.APPROVED)))
+        assertTrue(CloudFunctions.gate("acceptInvite", uid, store, answer(ApprovalState.PENDING)) is CloudFunctions.Failure.AwaitingApproval)
+        assertEquals(5_000L, Approval.RESOLVE_TIMEOUT_MS)
+        val gate = slice(main("Invites.kt"), "    suspend fun gate(", "\n    ): Failure? = ")
+        assertTrue(gate, "ask: suspend () -> ApprovalState? = { store?.let { Approval.asking(uid, it).await() } }," in gate)
+        assertTrue("Approval.callRefusal(name, store?.let { Approval.cached(it, uid) } ?: ApprovalState.UNKNOWN, Approval.RESOLVE_TIMEOUT_MS, ask)" in main("Invites.kt"))
     }
 
     /** The gate is the call's first act once signed in: before the ID token and before any request leaves the phone.
@@ -350,15 +393,15 @@ class ApprovalTest {
             "decode(reply)", "if (ApprovalCopy.failure(e) != null && name !in Approval.EXEMPT) Approval.askSoon(user.uid)", "throw e",
         )
         val create = slice(invites, "    suspend fun create(store: LedgerStore, group: NamedGroupWire, member: MemberWire): String {", "\n    }\n")
-        inOrder(create, "Approval.localRefusal(\"createInvite\", Approval.cached(store, uid))?.let { throw it }", "CloudSync.ensureGroup(")
+        inOrder(create, "CloudFunctions.gate(\"createInvite\", uid, store)?.let { throw it }", "CloudSync.ensureGroup(")
         val people = main("People.kt")
         inOrder(
             slice(people, "    suspend fun invite(store: LedgerStore, group: NamedGroupWire, member: MemberWire, person: FoundPerson) {", "\n    }\n"),
-            "Approval.localRefusal(\"inviteUser\", Approval.cached(store, uid))?.let { throw it }", "CloudSync.ensureGroup(",
+            "CloudFunctions.gate(\"inviteUser\", uid, store)?.let { throw it }", "CloudSync.ensureGroup(",
         )
         inOrder(
             slice(people, "    suspend fun inviteKnown(", "\n    }\n"),
-            "Approval.localRefusal(\"inviteKnown\", Approval.cached(store, uid))?.let { throw it }", "CloudSync.ensureGroup(",
+            "CloudFunctions.gate(\"inviteKnown\", uid, store)?.let { throw it }", "CloudSync.ensureGroup(",
         )
     }
 
@@ -469,48 +512,46 @@ class ApprovalTest {
         inOrder(signIn, "keep(incoming, method, store) { signOut() }", "Approval.signedIn(incoming, store)", "CloudSync.appIsActive(true)")
         val approval = main("Approval.kt")
         inOrder(
-            slice(approval, "    suspend fun ask(uid: String, store: LedgerStore) {", "\n    }\n"),
-            "\"platform\" to JsonPrimitive(\"android\")", "CloudProfile.cloudName(", "CloudFunctions.callJson(\"requestApproval\", JsonObject(data))",
-            "heard(ApprovalState.server(word), uid, store)",
+            slice(approval, "    private suspend fun ask(uid: String, store: LedgerStore): ApprovalState? {", "\n    }\n"),
+            "\"platform\" to JsonPrimitive(\"android\")", "CloudProfile.cloudName(", "request(JsonObject(data))",
+            "heard(answer, uid, store)", "return answer",
         )
+        assertTrue("@Volatile var request: suspend (JsonObject) -> JsonObject = { CloudFunctions.callJson(\"requestApproval\", it) }" in approval)
         val listen = slice(approval, "    fun listen(uid: String, store: LedgerStore) = synchronized(listenLock) {", "\n    }\n")
         assertTrue("if (error != null || snapshot == null || snapshot.metadata.isFromCache) return@addSnapshotListener" in listen)
         assertTrue("Cloud.db().collection(\"approvals\").document(uid)" in listen)
         inOrder(
             slice(approval, "    fun heard(server: ApprovalState, uid: String, store: LedgerStore) {", "\n    }\n"),
             "is ApprovalStep.Approve -> {", "setCached(store, uid, ApprovalState.APPROVED)",
-            "if (step.toast) DoneCenter.post(DoneMoments.line(ApprovalCopy.APPROVED_TOAST))", "CloudSync.appIsActive(true)",
-            "is ApprovalStep.Withdraw -> {", "setCached(store, uid, step.state)", "CloudSync.approvalWithdrawn()",
+            "if (step.toast) DoneCenter.post(DoneMoments.line(ApprovalCopy.APPROVED_TOAST))", "if (startsCloudNow(step, inFront)) startCloud()",
+            "is ApprovalStep.Withdraw -> {", "setCached(store, uid, step.state)", "stopCloud()",
         )
-        inOrder(slice(main("CloudSync.kt"), "    fun approvalWithdrawn() {", "\n    }\n"), "registered = null", "stopListening()", "Push.stop(", "inCloud = false")
+        assertTrue("@Volatile var startCloud: () -> Unit = { CloudSync.appIsActive(true) }" in approval)
+        assertTrue("@Volatile var stopCloud: () -> Unit = { CloudSync.approvalWithdrawn() }" in approval)
+        inOrder(slice(main("CloudSync.kt"), "    fun approvalWithdrawn() {", "\n    }\n"), "registered = null", "stopListening()", "withdrawnPushStop(LedgerStore(vaultPathOf(context)))")
     }
 
     // ---- A pending deletion of an account with no profile ----
 
-    /** The deletion marker is on the profile; an account with no profile (waiting or not approved) has it on its own
-     *  approval document, so Keep my account is offered at its next sign-in within the 7 days. */
+    /** Fix wave M8 (iOS's `deletionDate(profile:approval:)`, the same inputs as its ApprovalTests): the profile's marker
+     *  when there is a profile; with no profile (waiting or not approved), the approval document's, so Keep my account is
+     *  offered at the next sign-in within the 7 days. The approval document is read only with no profile. */
     @Test
     fun a_pending_deletion_is_read_from_the_approval_when_there_is_no_profile() = runBlocking {
-        val at = com.google.firebase.Timestamp(1_800_000_000, 0)
-        val later = com.google.firebase.Timestamp(1_800_000_100, 0)
+        val t1 = com.google.firebase.Timestamp(1_800_000_000, 0)
+        val t2 = com.google.firebase.Timestamp(1_800_086_400, 0)
         var approvalReads = 0
-        suspend fun read(state: ApprovalState, profile: Map<String, Any?>?, approval: Map<String, Any?>?) =
-            Phones.pendingDeletion(state, { profile }, { approvalReads++; approval })
-        // No profile (waiting): the approval's marker.
-        assertEquals(1_800_000_000_000L, read(ApprovalState.PENDING, null, mapOf("state" to "pending", "deleteAt" to at)))
-        assertEquals(1_800_000_000_000L, read(ApprovalState.DENIED, null, mapOf("state" to "denied", "deleteAt" to at)))
-        assertEquals("not heard yet, no profile", 1_800_000_000_000L, read(ApprovalState.UNKNOWN, null, mapOf("deleteAt" to at)))
-        assertNull("no marker anywhere", read(ApprovalState.PENDING, null, mapOf("state" to "pending")))
-        assertNull("no documents", read(ApprovalState.PENDING, null, null))
-        // A profile's own marker first; an approved account with a profile reads nothing else.
-        assertEquals(1_800_000_100_000L, read(ApprovalState.APPROVED, mapOf("deleteAt" to later), mapOf("deleteAt" to at)))
-        approvalReads = 0
-        assertNull(read(ApprovalState.APPROVED, mapOf("participantId" to "x"), mapOf("deleteAt" to at)))
-        assertEquals("an approved account's profile is the only place", 0, approvalReads)
-        // Not approved with a profile (from before the gate, approval taken away later): the approval document too.
-        assertEquals(1_800_000_000_000L, read(ApprovalState.DENIED, mapOf("participantId" to "x"), mapOf("deleteAt" to at)))
+        suspend fun date(profile: Map<String, Any?>?, approval: Map<String, Any?>?) =
+            Phones.deletionDate({ profile }, { approvalReads++; approval })
+        assertEquals("a profile's own marker", 1_800_000_000_000L, date(mapOf("deleteAt" to t1), mapOf("deleteAt" to t2)))
+        assertNull("a profile decides for itself", date(mapOf("participantId" to "x"), mapOf("deleteAt" to t2)))
+        assertEquals("a profile's account reads nothing else", 0, approvalReads)
+        assertEquals("no profile: the approval document's marker", 1_800_086_400_000L, date(null, mapOf("state" to "pending", "deleteAt" to t2)))
+        assertNull("none asked", date(null, mapOf("state" to "pending")))
+        assertNull("no approval document either", date(null, null))
         val card = slice(main("Phones.kt"), "fun DeletionPendingCard(", "\n}\n")
-        inOrder(card, "Approval.cached(store, uid)", "Phones.pendingDeletion(", "collection(\"users\")", "collection(\"approvals\")")
+        inOrder(card, "Phones.deletionDate(", "collection(\"users\")", "collection(\"approvals\")")
+        assertFalse("one rule: no approval state decides it", "Approval.cached" in card)
     }
 
     // ---- The emulator helper ----
@@ -545,5 +586,157 @@ class ApprovalTest {
         val calls = mainSources().flatMap { (name, text) -> text.lines().filter { "EmulatorApproval.approve(" in it }.map { name } }
         assertEquals(listOf("Account.kt", "Account.kt", "Account.kt", "Account.kt", "AppRoot.kt"), calls)
         assertTrue("object GroupEndProof" in main("AppRoot.kt"))
+    }
+
+    // ---- The shells fix wave (review-shells.md, triage-shells.md) ----
+
+    /** Fix wave I1 (the twin of iOS's): a username check refused for approval says the approval words, never "Could not
+     *  reach SKIPTI's cloud", and Save stays off (it would be refused the same way); offline is still offline. */
+    @Test
+    fun a_username_check_refused_for_approval_says_so() {
+        assertEquals(UsernameStatus.Approval(ApprovalCopy.CALL_WAITING), UsernameStatus.failedCheck(CloudFunctions.Failure.AwaitingApproval()))
+        assertEquals(UsernameStatus.Approval(ApprovalCopy.CALL_DENIED), UsernameStatus.failedCheck(CloudFunctions.Failure.NotApproved()))
+        assertEquals(UsernameStatus.Offline, UsernameStatus.failedCheck(CloudFunctions.Failure.Offline()))
+        assertEquals("goodname", UsernameStatus.canSave(UsernameStatus.Offline, "goodname", null))
+        assertNull("save stays off while waiting", UsernameStatus.canSave(UsernameStatus.Approval(ApprovalCopy.CALL_WAITING), "goodname", null))
+        assertTrue("is UsernameStatus.Approval -> Text(status.words," in main("UsernameStep.kt"))
+    }
+
+    /** Fix wave M2 (iOS cancels at 10 s): the sign-in waits for the ask's answer at most its bound, even when the call
+     *  under it cannot be interrupted (the blocking HTTP). The ask runs in Approval's own scope; a second asker joins the
+     *  one in flight. */
+    @Test
+    fun the_sign_in_ask_stops_waiting_at_its_bound() {
+        val store = tempStore(owner = uid)
+        val who = "uid-never-answers-${System.nanoTime()}"
+        val release = CompletableDeferred<Unit>()
+        val calls = java.util.concurrent.atomic.AtomicInteger()
+        val was = Approval.request
+        Approval.request = {
+            calls.incrementAndGet()
+            withContext(NonCancellable) { release.await() }
+            JsonObject(mapOf("state" to JsonPrimitive("pending")))
+        }
+        try {
+            var answer: ApprovalState? = ApprovalState.APPROVED
+            val waiter = Thread { answer = runBlocking { Approval.answerWithin(200, who, store) } }
+            waiter.start()
+            waiter.join(3_000)
+            assertFalse("the wait ends at its bound while the call has not answered", waiter.isAlive)
+            assertNull("no answer in time", answer)
+            assertSame("a second asker joins the ask in flight", Approval.asking(who, store), Approval.asking(who, store))
+            assertEquals("one call", 1, calls.get())
+        } finally {
+            release.complete(Unit)
+            Approval.request = was
+        }
+        val signedIn = slice(main("Approval.kt"), "    suspend fun signedIn(uid: String, store: LedgerStore) {", "\n    }\n")
+        inOrder(signedIn, "load(uid, store)", "answerWithin(ASK_TIMEOUT_MS, uid, store)", "listen(uid, store)")
+        assertFalse("never a timeout around the call itself", "Bounded.run(" in signedIn)
+        assertEquals(10_000L, Approval.ASK_TIMEOUT_MS)
+    }
+
+    /** Fix wave M3 (the twin of iOS's `shown`, the same inputs): while the account waits or was not approved,
+     *  Notifications and Find me are not on Profile and account (they do nothing until it is approved); Sign out, the
+     *  Sync card, Phones and Delete account stay. Not heard yet and approved: as before. */
+    @Test
+    fun notifications_and_find_me_wait_for_approval() {
+        fun shown(section: SettingsSection, approval: ApprovalState, signedIn: Boolean = true) =
+            SettingsMap.shown(section, accountHubModel(signedIn = signedIn, syncOn = true, approval = approval))
+        val waiting = listOf(SettingItem.SIGNED_IN_AS, SettingItem.SIGN_OUT, SettingItem.SYNC)
+        val full = waiting + listOf(SettingItem.NOTIFICATIONS, SettingItem.FIND_ME)
+        assertEquals(setOf(SettingItem.NOTIFICATIONS, SettingItem.FIND_ME), SettingsMap.WAITS_FOR_APPROVAL)
+        assertEquals(waiting, shown(SettingsSection.PROFILE_ACCOUNT, ApprovalState.PENDING))
+        assertEquals(waiting, shown(SettingsSection.PROFILE_ACCOUNT, ApprovalState.DENIED))
+        assertEquals(full, shown(SettingsSection.PROFILE_ACCOUNT, ApprovalState.APPROVED))
+        assertEquals("not heard yet: as before", full, shown(SettingsSection.PROFILE_ACCOUNT, ApprovalState.UNKNOWN))
+        assertEquals(listOf(SettingItem.SIGN_IN), shown(SettingsSection.PROFILE_ACCOUNT, ApprovalState.PENDING, signedIn = false))
+        for (state in ApprovalState.entries) {
+            val security = shown(SettingsSection.SECURITY, state)
+            assertTrue("$state", SettingItem.PHONES in security && SettingItem.DELETE_ACCOUNT in security)
+        }
+        assertTrue("SettingsMap.shown(section, model).forEachIndexed { index, item ->" in main("AccountHubScreen.kt"))
+    }
+
+    /** Fix wave M4 (the twin of iOS's): approval heard while SKIPTI is not in front is kept, and starts nothing; heard
+     *  in front, it starts the cloud. The front event sets the flag before anything else. Approval taken away stops the
+     *  cloud wherever it is heard. */
+    @Test
+    fun approval_heard_out_of_front_starts_nothing_until_the_front() {
+        val signedInAs = Approval.signedInAs
+        val startCloud = Approval.startCloud
+        val stopCloud = Approval.stopCloud
+        val inFront = Approval.inFront
+        var starts = 0
+        var stops = 0
+        Approval.signedInAs = { uid }
+        Approval.startCloud = { starts++ }
+        Approval.stopCloud = { stops++ }
+        val store = tempStore(owner = uid)
+        try {
+            Approval.inFront = false
+            Approval.heard(ApprovalState.APPROVED, uid, store)
+            assertEquals("kept", ApprovalState.APPROVED, Approval.cached(store, uid))
+            assertEquals("out of front: nothing starts", 0, starts)
+            val other = tempStore(owner = uid)
+            Approval.inFront = true
+            Approval.heard(ApprovalState.APPROVED, uid, other)
+            assertEquals("in front: the cloud starts", 1, starts)
+            Approval.inFront = false
+            Approval.heard(ApprovalState.DENIED, uid, other)
+            assertEquals("taken away: stopped, in front or not", 1, stops)
+        } finally {
+            Approval.signedOut(store)
+            Approval.signedInAs = signedInAs
+            Approval.startCloud = startCloud
+            Approval.stopCloud = stopCloud
+            Approval.inFront = inFront
+        }
+        assertTrue(Approval.startsCloudNow(ApprovalStep.Approve(toast = false), inFront = true))
+        assertTrue(Approval.startsCloudNow(ApprovalStep.Approve(toast = true), inFront = true))
+        assertFalse(Approval.startsCloudNow(ApprovalStep.Approve(toast = true), inFront = false))
+        assertFalse(Approval.startsCloudNow(ApprovalStep.Approve(toast = false), inFront = false))
+        for (step in listOf(ApprovalStep.Keep(ApprovalState.PENDING), ApprovalStep.Withdraw(ApprovalState.DENIED), ApprovalStep.Nothing)) {
+            assertFalse("$step", Approval.startsCloudNow(step, inFront = true))
+        }
+        inOrder(slice(main("CloudSync.kt"), "    fun appIsActive(active: Boolean) {", "\n    }\n"), "Approval.inFront = active", "if (active) {")
+    }
+
+    /** Fix wave M5 (the twin of iOS's): a front event asks at most once per process while the state is unchanged; a
+     *  new state, another account or no answer yet asks again; an approved account never asks. The sign-in and a
+     *  refusal carrying `details.approval` ask regardless. */
+    @Test
+    fun a_front_event_asks_once_while_the_state_is_unchanged() {
+        val u = uid
+        val v = "uid-other"
+        assertTrue(Approval.frontAsks(null, u, ApprovalState.PENDING))
+        assertFalse("answered in this state already", Approval.frontAsks(u to ApprovalState.PENDING, u, ApprovalState.PENDING))
+        assertTrue("the state changed", Approval.frontAsks(u to ApprovalState.PENDING, u, ApprovalState.DENIED))
+        assertTrue("another account", Approval.frontAsks(u to ApprovalState.PENDING, v, ApprovalState.PENDING))
+        assertFalse("approved never asks", Approval.frontAsks(null, u, ApprovalState.APPROVED))
+        assertTrue(Approval.frontAsks(null, u, ApprovalState.UNKNOWN))
+        val approval = main("Approval.kt")
+        inOrder(slice(approval, "    fun front(uid: String?, store: LedgerStore) {", "\n    }\n"), "listen(owned, store)", "if (!frontAsks(answered, owned, state)) return", "asking(owned, store)")
+        inOrder(slice(approval, "    private suspend fun ask(uid: String, store: LedgerStore): ApprovalState? {", "\n    }\n"), "answered = uid to answer", "heard(answer, uid, store)")
+        assertTrue("asking(uid, store)" in slice(approval, "    fun askSoon(uid: String) {", "\n    }\n"))
+        assertTrue("answered = null" in slice(approval, "    fun signedOut(", "\n    }\n"))
+    }
+
+    /** Fix wave (nit, the twin of iOS's): approval taken away clears this phone's push address in the cloud with the
+     *  token-only update the rules allow an account not approved (fcmToken removed, lastSeen set, nothing else), and
+     *  FCM's token is deleted as before. */
+    @Test
+    fun approval_taken_away_clears_the_token_with_the_token_only_update() = runBlocking {
+        val store = tempStore(owner = uid)
+        val stops = java.util.Collections.synchronizedList(mutableListOf<Boolean>())
+        CloudSync.withdrawnPushStop(store) { s, inCloud -> assertSame(store, s); stops += inCloud }.join()
+        assertEquals("in the cloud too", listOf(true), stops.toList())
+        val update = CloudProfile.tokenUpdate(null)
+        assertEquals("the token-only update", setOf("fcmToken", "lastSeen"), update.keys)
+        assertEquals(com.google.firebase.firestore.FieldValue.delete(), update["fcmToken"])
+        assertEquals(
+            PushCleanup.Plan(clearCloud = true, deleteAtFcm = true),
+            PushCleanup.plan(inCloud = true, uid = uid, inMemory = false, registeredFor = uid, wasRunning = true, deleteOwed = false),
+        )
     }
 }

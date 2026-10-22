@@ -74,6 +74,10 @@ sealed class UsernameStatus {
     data object NotAvailable : UsernameStatus()
     data object Offline : UsernameStatus()
     data object Limit : UsernameStatus()
+    /** D-254 fix wave I1: the check was refused for approval: the account is waiting, or was not approved ([words]:
+     *  the call's approval words). Never the offline line, and Save stays off (it would be refused the same way). iOS's
+     *  `.approval(String)`. */
+    data class Approval(val words: String) : UsernameStatus()
 
     companion object {
         /** What the phone can say at once, before any cloud check. `list`:
@@ -105,10 +109,12 @@ sealed class UsernameStatus {
             }
         }
 
-        /** A live check that failed: the day's limit says so; anything else
-         *  is the offline line. */
-        fun failedCheck(error: Throwable): UsernameStatus =
-            if ((error as? CloudFunctions.Failure.Refused)?.status == "RESOURCE_EXHAUSTED") Limit else Offline
+        /** A live check that failed: the day's limit says so; D-254 fix wave I1: a refusal for approval says that;
+         *  anything else is the offline line. */
+        fun failedCheck(error: Throwable): UsernameStatus {
+            ApprovalCopy.failure(error)?.let { return Approval(it) }
+            return if ((error as? CloudFunctions.Failure.Refused)?.status == "RESOURCE_EXHAUSTED") Limit else Offline
+        }
     }
 }
 
@@ -225,6 +231,7 @@ fun UsernameField(
             UsernameStatus.NotAvailable -> Text(UsernameCopy.NOT_AVAILABLE, style = line.copy(color = Tok.owed(dark)))
             UsernameStatus.Offline -> Text(UsernameCopy.OFFLINE, style = line.copy(color = Tok.owed(dark)))
             UsernameStatus.Limit -> Text(PeopleCopy.LIMIT, style = line.copy(color = Tok.owed(dark)))
+            is UsernameStatus.Approval -> Text(status.words, style = line.copy(color = Tok.owed(dark)))
         }
         if (suggestions.isNotEmpty()) {
             SectionLabel(UsernameCopy.SUGGESTED, dark)

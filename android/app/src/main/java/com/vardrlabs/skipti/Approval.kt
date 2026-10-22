@@ -6,10 +6,12 @@ import androidx.compose.runtime.setValue
 import com.google.firebase.firestore.ListenerRegistration
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
@@ -142,9 +144,25 @@ object Approval {
     private var listener: ListenerRegistration? = null
     private var listeningAs: String? = null
     private val listenLock = Any()
-    private val asking = java.util.concurrent.atomic.AtomicBoolean(false)
-    @Volatile private var askedAt: Pair<String, Long>? = null
+    /** Fix wave M2: the one ask in flight (and its account); a second asker joins it. */
+    private val askLock = Any()
+    private var inFlight: Pair<String, Deferred<ApprovalState?>>? = null
+    /** Fix wave M5: the account and the state of the last ask the server answered, this process. */
+    @Volatile private var answered: Pair<String, ApprovalState>? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /** Fix wave M4: SKIPTI is in front ([CloudSync.appIsActive] sets it first). Approval heard while it is not is kept,
+     *  and the next front event starts the cloud from the vault's copy. */
+    @Volatile var inFront = false
+
+    /** Tests only; production never reassigns. The account signed in now ([heard] acts only for it). */
+    @Volatile var signedInAs: () -> String? = { runCatching { Account.uid() }.getOrNull() }
+    /** Tests only; production never reassigns. Approval arrived in front: the cloud starts. */
+    @Volatile var startCloud: () -> Unit = { CloudSync.appIsActive(true) }
+    /** Tests only; production never reassigns. Approval taken away: the cloud stops. */
+    @Volatile var stopCloud: () -> Unit = { CloudSync.approvalWithdrawn() }
+    /** Tests only; production never reassigns. The network part of an ask: `requestApproval`'s reply. */
+    @Volatile var request: suspend (JsonObject) -> JsonObject = { CloudFunctions.callJson("requestApproval", it) }
 
     // ---- The pure parts ----
 
@@ -162,11 +180,38 @@ object Approval {
     fun gate(uid: String?, owner: String?, approval: ApprovalState): String? =
         if (allowsCloud(approval)) CloudGate.owned(uid, owner) else null
 
-    /** [CloudFunctions.callJson]'s gate: a call the server would refuse for approval is refused here, with no network. */
+    /** [CloudFunctions.callJson]'s gate: a call the server would refuse for approval is refused here, with no network.
+     *  [approval] is the state after [callRefusal]'s ask: pending or denied have their words; fix wave I2: still unknown (no
+     *  answer from the server) is the offline failure, never the waiting words (an approved tester whose first answer
+     *  has not come yet is not waiting). */
     fun localRefusal(name: String, approval: ApprovalState): CloudFunctions.Failure? {
         if (name in EXEMPT || allowsCloud(approval)) return null
-        return if (approval == ApprovalState.DENIED) CloudFunctions.Failure.NotApproved() else CloudFunctions.Failure.AwaitingApproval()
+        return when (approval) {
+            ApprovalState.DENIED -> CloudFunctions.Failure.NotApproved()
+            ApprovalState.PENDING -> CloudFunctions.Failure.AwaitingApproval()
+            ApprovalState.UNKNOWN, ApprovalState.APPROVED -> CloudFunctions.Failure.Offline()
+        }
     }
+
+    /** Fix wave I2 (iOS's `callRefusal`): a gated call's refusal, or null to go on. Exempt or approved: go, asking
+     *  nothing; pending or denied: refused, asking nothing. Unknown (nothing heard yet for this account: a first launch
+     *  after the update, a sign-in whose ask ran out of time) asks the server once, waiting at most [ms]: approved goes,
+     *  pending and denied have their words, and no answer is offline ([localRefusal]). */
+    suspend fun callRefusal(name: String, cached: ApprovalState, ms: Long, ask: suspend () -> ApprovalState?): CloudFunctions.Failure? {
+        if (name in EXEMPT || cached != ApprovalState.UNKNOWN) return localRefusal(name, cached)
+        return localRefusal(name, withTimeoutOrNull(ms) { ask() } ?: ApprovalState.UNKNOWN)
+    }
+
+    /** Fix wave I2: how long a gated call waits for the server's answer when nothing was heard yet. */
+    const val RESOLVE_TIMEOUT_MS = 5_000L
+
+    /** Fix wave M5 (iOS's `frontAsks`): whether a front event asks: not approved, and not already [answered] for this
+     *  account in this state this process. A sign-in and a refusal carrying `details.approval` ask regardless. */
+    fun frontAsks(answered: Pair<String, ApprovalState>?, uid: String, state: ApprovalState): Boolean =
+        !allowsCloud(state) && answered != (uid to state)
+
+    /** Fix wave M4 (iOS's `startsCloudNow`): the cloud starts on approval only while SKIPTI is in front. */
+    fun startsCloudNow(step: ApprovalStep, inFront: Boolean): Boolean = step is ApprovalStep.Approve && inFront
 
     /** What hearing [server] does, given what the phone last knew ([cached]). The toast only follows a state the phone
      *  showed (waiting or denied): an account heard as approved for the first time (an install from before the gate, or
@@ -225,7 +270,9 @@ object Approval {
      *  sign-in never waits long on it) and listen for the decision. */
     suspend fun signedIn(uid: String, store: LedgerStore) {
         load(uid, store)
-        Bounded.run(ASK_TIMEOUT_MS) { ask(uid, store) }
+        // Fix wave M2: the ask runs in this object's scope and the sign-in waits for its answer at most this long (a
+        // blocking HTTP call cannot be interrupted, so a timeout around the call itself waited for it).
+        answerWithin(ASK_TIMEOUT_MS, uid, store)
         listen(uid, store)
     }
 
@@ -243,43 +290,47 @@ object Approval {
         val owned = CloudGate.owned(uid, Account.storedOwner(store)) ?: return
         if (loadedFor != owned) load(owned, store)
         listen(owned, store)
-        if (allowsCloud(state) || askedRecently(owned)) return
-        scope.launch { ask(owned, store) }
+        // Fix wave M5: once per process while the state is unchanged (a write on the server each time, and two phones
+        // of one account flipped its platform back and forth); an ask in flight is joined, not repeated.
+        if (!frontAsks(answered, owned, state)) return
+        asking(owned, store)
     }
 
-    /** The sign-in's ask and the front's are one: a front event right after a sign-in asks nothing again. */
-    private fun askedRecently(uid: String): Boolean {
-        val (who, at) = askedAt ?: return false
-        return who == uid && System.currentTimeMillis() - at < ASK_TIMEOUT_MS
+    /** Fix wave M2: the ask, started in this object's own scope (or the one in flight for [uid], joined): its answer is
+     *  heard when it comes, whoever stopped waiting for it. */
+    fun asking(uid: String, store: LedgerStore): Deferred<ApprovalState?> = synchronized(askLock) {
+        inFlight?.let { (who, job) -> if (who == uid && job.isActive) return job }
+        scope.async { ask(uid, store) }.also { inFlight = uid to it }
     }
+
+    /** Fix wave M2: the server's answer within [ms], or null (offline, or slower than that); the ask goes on. */
+    suspend fun answerWithin(ms: Long, uid: String, store: LedgerStore): ApprovalState? =
+        withTimeoutOrNull(ms) { asking(uid, store).await() }
 
     /** `requestApproval({ name?, platform })`: the name people see (the person's own name on this phone, if set) and
-     *  this platform. Its answer is heard like the listener's. A failure (offline) changes nothing. */
-    suspend fun ask(uid: String, store: LedgerStore) {
-        if (!asking.compareAndSet(false, true)) return
-        try {
-            askedAt = uid to System.currentTimeMillis()
-            val data = mutableMapOf<String, kotlinx.serialization.json.JsonElement>("platform" to JsonPrimitive("android"))
-            withContext(Dispatchers.IO) { CloudProfile.cloudName(runCatching { store.loadSelf()?.name }.getOrNull()) }
-                ?.let { data["name"] = JsonPrimitive(it) }
-            val result = try {
-                CloudFunctions.callJson("requestApproval", JsonObject(data))
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                return
-            }
-            val word = with(CloudFunctions) { result.text("state") }
-            withContext(Dispatchers.Main) { heard(ApprovalState.server(word), uid, store) }
-        } finally {
-            asking.set(false)
+     *  this platform. Its answer is heard like the listener's, and returned; a failure (offline) changes nothing and
+     *  is null. Through [asking], never alone. */
+    private suspend fun ask(uid: String, store: LedgerStore): ApprovalState? {
+        val data = mutableMapOf<String, kotlinx.serialization.json.JsonElement>("platform" to JsonPrimitive("android"))
+        withContext(Dispatchers.IO) { CloudProfile.cloudName(runCatching { store.loadSelf()?.name }.getOrNull()) }
+            ?.let { data["name"] = JsonPrimitive(it) }
+        val result = try {
+            request(JsonObject(data))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            return null
         }
+        val answer = ApprovalState.server(with(CloudFunctions) { result.text("state") })
+        answered = uid to answer
+        withContext(Dispatchers.Main) { heard(answer, uid, store) }
+        return answer
     }
 
-    /** [ask] off the caller's path, for the vault's account (a call the server refused for approval). */
+    /** [asking] off the caller's path, for the vault's account (a call the server refused for approval). */
     fun askSoon(uid: String) {
         val store = defaultStore() ?: return
-        scope.launch { ask(uid, store) }
+        asking(uid, store)
     }
 
     /** One listener on `approvals/{uid}` while signed in and in front. A snapshot from the cache says nothing (the cache
@@ -305,7 +356,7 @@ object Approval {
     /** What the server said, acted on ([decide]) for the account still signed in as [uid]. On the main thread: the
      *  toast posts from here. */
     fun heard(server: ApprovalState, uid: String, store: LedgerStore) {
-        if (runCatching { Account.uid() }.getOrNull() != uid) return
+        if (signedInAs() != uid) return
         when (val step = decide(cached(store, uid), server)) {
             ApprovalStep.Nothing -> {
                 if (loadedFor == uid && state != server && server != ApprovalState.UNKNOWN) state = server
@@ -321,13 +372,14 @@ object Approval {
                 loadedFor = uid
                 state = ApprovalState.APPROVED
                 if (step.toast) DoneCenter.post(DoneMoments.line(ApprovalCopy.APPROVED_TOAST))
-                CloudSync.appIsActive(true)
+                // Fix wave M4: only in front (an answer that came after SKIPTI left it waits for the next front event).
+                if (startsCloudNow(step, inFront)) startCloud()
             }
             is ApprovalStep.Withdraw -> {
                 setCached(store, uid, step.state)
                 loadedFor = uid
                 state = step.state
-                CloudSync.approvalWithdrawn()
+                stopCloud()
             }
         }
         SyncStatus.changed()
@@ -336,7 +388,7 @@ object Approval {
     /** Every sign-out ([Account.signOut]): the listener stops and the vault forgets. */
     fun signedOut(store: LedgerStore? = defaultStore()) {
         stopListening()
-        askedAt = null
+        answered = null
         loadedFor = null
         state = ApprovalState.UNKNOWN
         store?.let(::clearCached)

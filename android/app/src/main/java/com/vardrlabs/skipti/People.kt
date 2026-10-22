@@ -378,8 +378,9 @@ object People {
 
     suspend fun invite(store: LedgerStore, group: NamedGroupWire, member: MemberWire, person: FoundPerson) {
         val uid = Account.uid() ?: throw CloudFunctions.Failure.SignedOut()
-        // D-254: before the group is put in the cloud (a write the rules refuse an account not approved).
-        Approval.localRefusal("inviteUser", Approval.cached(store, uid))?.let { throw it }
+        // D-254: before the group is put in the cloud (a write the rules refuse an account not approved); fix wave I2:
+        // through the call's own gate, so nothing heard yet asks the server first.
+        CloudFunctions.gate("inviteUser", uid, store)?.let { throw it }
         when (CloudSync.ensureGroup(group.group.id, group.group.name, uid)) {
             CloudSync.GroupState.MEMBER -> Unit
             CloudSync.GroupState.NOT_MEMBER -> throw CloudFunctions.Failure.Refused("PERMISSION_DENIED")
@@ -399,8 +400,9 @@ object People {
         val uid = Account.uid() ?: throw CloudFunctions.Failure.SignedOut()
         val participantId = recent.participantId ?: return
         val via = recent.viaGroupId ?: return
-        // D-254: before the group is put in the cloud (a write the rules refuse an account not approved).
-        Approval.localRefusal("inviteKnown", Approval.cached(store, uid))?.let { throw it }
+        // D-254: before the group is put in the cloud (a write the rules refuse an account not approved); fix wave I2:
+        // through the call's own gate, so nothing heard yet asks the server first.
+        CloudFunctions.gate("inviteKnown", uid, store)?.let { throw it }
         when (CloudSync.ensureGroup(group.group.id, group.group.name, uid)) {
             CloudSync.GroupState.MEMBER -> Unit
             CloudSync.GroupState.NOT_MEMBER -> throw CloudFunctions.Failure.Refused("PERMISSION_DENIED")

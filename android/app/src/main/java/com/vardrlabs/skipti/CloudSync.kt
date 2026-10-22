@@ -44,6 +44,8 @@ object CloudSync {
 
     /** SKIPTI came to the front (listeners on) or left it (listeners off). */
     fun appIsActive(active: Boolean) {
+        // D-254 fix wave M4: approval heard while SKIPTI is not in front starts nothing until it is.
+        Approval.inFront = active
         if (active) {
             val context = VaultGate.appContextRef ?: return
             // D-235 (M1): a token delete that could not finish is tried again, unless push is about to want the token.
@@ -61,14 +63,34 @@ object CloudSync {
     }
 
     /** D-254: approval taken away (approved to denied): the cloud stops as sync off stops it (the listeners down,
-     *  nothing pushed, push off at FCM; the device document is not written, the rules refuse it now). Local data is
-     *  untouched; approval given back starts it all again ([Approval.heard]). */
+     *  nothing pushed, push off at FCM). Fix wave (nit): this phone's token is cleared from its device document too,
+     *  with the token-only update ([CloudProfile.tokenUpdate] of null: `fcmToken` removed, `lastSeen` set, nothing
+     *  else), the one write the rules let an account not approved make there. Local data is untouched; approval given
+     *  back starts it all again ([Approval.heard]). */
     fun approvalWithdrawn() {
         registered = null
         stopListening()
         val context = VaultGate.appContextRef ?: return
-        scope.launch { Push.stop(LedgerStore(vaultPathOf(context)), inCloud = false) }
+        withdrawnPushStop(LedgerStore(vaultPathOf(context)))
     }
+
+    /** D-254 fix wave M1 (iOS's `serverApproval(uid:)`): `approvals/{uid}` from the server (an account may always read
+     *  its own; no document is pending), or unknown with no answer. */
+    suspend fun serverApproval(uid: String): ApprovalState = try {
+        val snapshot = Cloud.db().collection("approvals").document(uid).get(Source.SERVER).awaitTask()
+        ApprovalState.server(if (snapshot.exists()) snapshot.getString("state") else null)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        ApprovalState.UNKNOWN
+    }
+
+    /** D-254 fix wave (nit): push stops for approval taken away, in the cloud too (`inCloud`: the token-only update).
+     *  [stop] is Push.stop (a fake in tests). */
+    fun withdrawnPushStop(
+        store: LedgerStore,
+        stop: suspend (LedgerStore, Boolean) -> Unit = { s, inCloud -> Push.stop(s, inCloud = inCloud) },
+    ): kotlinx.coroutines.Job = scope.launch { stop(store, true) }
 
     /** The sync switch changed (Settings). D-196: pushes come with sync. */
     fun syncSwitched() {
@@ -330,6 +352,8 @@ object CloudSync {
                     write = { record -> doc(record).set(CloudRecords.document(record, uid, notices[CloudRecords.documentId(record)])).awaitTask() },
                     // Look fix F4: a read the rules refuse too (a group this account was removed from) is DENIED.
                     exists = { record -> CloudRecords.held(Account.uid() == uid) { doc(record).get(Source.SERVER).awaitTask().exists() } },
+                    // D-254 fix wave M1: before parking a permission refusal, whether the account is still approved.
+                    approval = { serverApproval(uid) },
                 )
                 for (record in result.uploaded) {
                     uploaded += CloudRecords.documentId(record)
@@ -341,6 +365,9 @@ object CloudSync {
                     newlyRefused[id] = CloudRecords.afterRefusal(retries[id], id in parked, nowMs)
                 }
                 offline = result.stopped
+                // D-254 fix wave M1: approval taken away while this phone still held it: nothing parked, the push stops,
+                // and the phone hears it (the cloud stops as for any withdrawal).
+                result.heard?.takeIf { it != ApprovalState.UNKNOWN }?.let { withContext(Dispatchers.Main) { Approval.heard(it, uid, store) } }
             }
             if (offline) break
         }
@@ -1525,7 +1552,12 @@ object CloudRecords {
 
     /** [uploaded]: written now or already there; [written]: how many of them this push wrote; [refused]: refused for
      *  good; [stopped]: a failure that ends this push (the records after it wait for the next). */
-    data class OneByOne(val uploaded: List<RecordWire>, val written: Int, val refused: List<RecordWire>, val stopped: Boolean)
+    data class OneByOne(
+        val uploaded: List<RecordWire>, val written: Int, val refused: List<RecordWire>, val stopped: Boolean,
+        /** D-254 fix wave M1: the account's state read from the server when the push stopped because it is not
+         *  approved (unknown: no answer); null otherwise. iOS's `heard`. */
+        val heard: ApprovalState? = null,
+    )
 
     /** A batch the server refused, sent again one record at a time, so one record the rules refuse holds back
      *  nothing after it. */
@@ -1535,10 +1567,13 @@ object CloudRecords {
         exists: suspend (RecordWire) -> Held,
         refusedByRules: (Exception) -> Boolean = ::isRuleRefusal,
         deniedByRules: (Exception) -> Boolean = ::isPermissionDenied,
+        approval: suspend () -> ApprovalState,
     ): OneByOne {
         val uploaded = mutableListOf<RecordWire>()
         val refused = mutableListOf<RecordWire>()
         var written = 0
+        // D-254 fix wave M1: read once, at the first permission refusal that would park.
+        var approved = false
         for (record in chunk) {
             try {
                 write(record)
@@ -1547,9 +1582,20 @@ object CloudRecords {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                when (uploadFailure(refusedByRules(e), deniedByRules(e), record.groupId != null, exists(record))) {
+                val denied = deniedByRules(e)
+                when (uploadFailure(refusedByRules(e), denied, record.groupId != null, exists(record))) {
                     UploadFailure.UPLOADED -> uploaded += record
-                    UploadFailure.REFUSED -> refused += record
+                    UploadFailure.REFUSED -> {
+                        // D-254 fix wave M1: a permission refusal parks only while the account is still approved (a
+                        // stale approved copy here: approval taken away while the phone was closed). Not approved: stop,
+                        // park nothing, and say so; no answer (unknown): stop too (never park on a guess).
+                        if (denied && !approved) {
+                            val now = approval()
+                            if (now != ApprovalState.APPROVED) return OneByOne(uploaded, written, refused, stopped = true, heard = now)
+                            approved = true
+                        }
+                        refused += record
+                    }
                     UploadFailure.STOP -> return OneByOne(uploaded, written, refused, stopped = true)
                 }
             }

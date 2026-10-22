@@ -297,6 +297,19 @@ object SettingsMap {
         SettingsSection.ABOUT -> listOf(SettingItem.ABOUT_PAGE)
     }
 
+    /** D-254 fix wave M3 (iOS's `waitsForApproval`): account controls that do nothing until the account is approved (no
+     *  push can come, and nobody can find it). */
+    val WAITS_FOR_APPROVAL = setOf(SettingItem.NOTIFICATIONS, SettingItem.FIND_ME)
+
+    /** D-254 fix wave M3 (iOS's `shown(_:model:)`): a section's items as the page shows them: while the account waits
+     *  for approval or was not approved, without [WAITS_FOR_APPROVAL] (Sign out, the Sync card, Phones and Delete
+     *  account stay); not heard yet and approved, as before. */
+    fun shown(section: SettingsSection, model: AccountHubModel): List<SettingItem> {
+        val items = items(section, model.showsAccountControls)
+        val waits = model.state == AccountState.WAITING || model.state == AccountState.NOT_APPROVED
+        return if (waits) items - WAITS_FOR_APPROVAL else items
+    }
+
     /** Above the sections: the deletion notice, when there is an account. */
     fun hubItems(signedIn: Boolean): List<SettingItem> = if (signedIn) listOf(SettingItem.DELETION_PENDING) else emptyList()
 
@@ -469,7 +482,7 @@ fun AccountHubScreen(
     val hasUsername = username != null || usernameState is UsernameState.CanChange || usernameState is UsernameState.Final
     LaunchedEffect(
         RemoteSignOut.signOuts, ProfileState.revision, SyncStatus.revision, section, resumes,
-        DefaultCurrency.stored, AppLock.timeout, hasUsername, signedIn,
+        DefaultCurrency.stored, AppLock.timeout, hasUsername, signedIn, Approval.state,
     ) {
         if (section == null) facts = withContext(Dispatchers.IO) { SetupFacts.read(context, LedgerStore(vaultPath), hasUsername) }
     }
@@ -511,7 +524,7 @@ fun AccountHubScreen(
             // D-206 (the founder's items 4 and 5): you first, then five groups
             // instead of one long page.
             // D-221: the ring counts the setup steps; zero of them until the facts are read.
-            val (done, total) = facts?.let { SetupSteps.progress(it) } ?: (0 to SetupSteps.steps(signedIn, lockAvailable).size)
+            val (done, total) = facts?.let { SetupSteps.progress(it) } ?: (0 to SetupSteps.steps(signedIn, lockAvailable, Approval.allowsCloud(Approval.state)).size)
             Column(
                 Modifier
                     .fillMaxWidth()
@@ -624,7 +637,7 @@ fun AccountHubScreen(
         }
         // D-217 look fix 1: iOS's VStack spaces the items 16 apart, and nothing above the first (the page's top is the
         // bar's, [BarDecisions.scrollTop]); the spacer used to come BEFORE every item, the first included.
-        SettingsMap.items(section, signedIn).forEachIndexed { index, item ->
+        SettingsMap.shown(section, model).forEachIndexed { index, item ->
             if (index > 0) Spacer(Modifier.height(16.dp))
             when (item) {
                 SettingItem.SIGN_IN -> Card(dark) {

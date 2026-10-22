@@ -72,7 +72,9 @@ object EmulatorApproval {
             return false
         }
         val store = runCatching { VaultGate.appContextRef }.getOrNull()?.let { LedgerStore(CloudSync.vaultPathOf(it)) } ?: return true
-        Approval.ask(uid, store)
+        // An ask already in flight may have left before the approval: wait for it, then ask once more.
+        Approval.asking(uid, store).await()
+        Approval.asking(uid, store).await()
         return true
     }
 }

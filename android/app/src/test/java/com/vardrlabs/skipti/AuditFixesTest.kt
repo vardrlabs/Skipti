@@ -408,6 +408,7 @@ class AuditFixesTest {
             write = { if (it === tooFar || it === there) throw RuleRefusal() },
             exists = { if (it === there) CloudRecords.Held.YES else CloudRecords.Held.NO },
             refusedByRules = ::ruled,
+            approval = { ApprovalState.APPROVED },
         )
         assertFalse("the push goes on", r.stopped)
         assertEquals(listOf(rs[0], there, rs[3]), r.uploaded)
@@ -420,13 +421,13 @@ class AuditFixesTest {
     fun a_transient_failure_still_stops_the_push() = runBlocking {
         val rs = (1..3).map { record(1, expense(300, listOf(me to 150, them to 150)), millis = it.toULong()) }
         for (exists in listOf(CloudRecords.Held.NO, CloudRecords.Held.UNKNOWN, CloudRecords.Held.DENIED)) {
-            val r = CloudRecords.oneByOne(rs, write = { if (it === rs[1]) throw Transient() }, exists = { exists }, refusedByRules = ::ruled)
+            val r = CloudRecords.oneByOne(rs, write = { if (it === rs[1]) throw Transient() }, exists = { exists }, refusedByRules = ::ruled, approval = { ApprovalState.APPROVED })
             assertTrue(r.stopped)
             assertEquals(listOf(rs[0]), r.uploaded)
             assertTrue(r.refused.isEmpty())
         }
         // Refused, but the read could not answer (offline after all): a stop, never a refusal for good.
-        val unsure = CloudRecords.oneByOne(rs, write = { if (it === rs[0]) throw RuleRefusal() }, exists = { CloudRecords.Held.UNKNOWN }, refusedByRules = ::ruled)
+        val unsure = CloudRecords.oneByOne(rs, write = { if (it === rs[0]) throw RuleRefusal() }, exists = { CloudRecords.Held.UNKNOWN }, refusedByRules = ::ruled, approval = { ApprovalState.APPROVED })
         assertTrue(unsure.stopped)
         assertTrue(unsure.refused.isEmpty())
         assertTrue(unsure.uploaded.isEmpty())
@@ -884,11 +885,58 @@ class AuditFixesTest {
             exists = { if (it === gone) CloudRecords.Held.DENIED else CloudRecords.Held.NO },
             refusedByRules = ::ruledOrBig,
             deniedByRules = ::denied,
+            approval = { ApprovalState.APPROVED },
         )
         assertFalse("the push goes on", r.stopped)
         assertEquals(listOf(gone), r.refused)
         assertEquals(listOf(stays), r.uploaded)
         assertEquals(1, r.written)
+    }
+
+    /** D-254 fix wave M1 (the twin of iOS's): a permission refusal parks a record only while the account is still
+     *  approved. Approval taken away while this phone held a stale approved copy: the push stops, nothing is parked, and
+     *  the state read is handed back (the phone hears it). No answer: a stop too. Approved: parks as before, reading the
+     *  server once. A refusal that is not a permission one (too big) parks without asking. */
+    @Test
+    fun a_permission_refusal_parks_only_while_the_account_is_approved() = runBlocking {
+        val first = recordIn(group, 1u)
+        val second = recordIn(group, 2u)
+        val third = recordIn(group, 3u)
+        val three = listOf(first, second, third)
+        var reads = 0
+        suspend fun push(state: ApprovalState, held: CloudRecords.Held = CloudRecords.Held.NO) = CloudRecords.oneByOne(
+            three, write = { if (it === second) throw RuleRefusal() }, exists = { held },
+            refusedByRules = ::ruledOrBig, deniedByRules = ::denied, approval = { reads++; state },
+        )
+        for (state in listOf(ApprovalState.PENDING, ApprovalState.DENIED)) {
+            val r = push(state)
+            assertTrue("$state", r.stopped)
+            assertTrue("$state: nothing parked", r.refused.isEmpty())
+            assertEquals(listOf(first), r.uploaded)
+            assertEquals(state, r.heard)
+        }
+        val removed = push(ApprovalState.DENIED, held = CloudRecords.Held.DENIED)
+        assertTrue("write and read denied: the account, not the group", removed.stopped && removed.refused.isEmpty())
+        val unsure = push(ApprovalState.UNKNOWN)
+        assertTrue(unsure.stopped)
+        assertTrue("never parked on a guess", unsure.refused.isEmpty())
+        assertEquals(ApprovalState.UNKNOWN, unsure.heard)
+        reads = 0
+        val approved = push(ApprovalState.APPROVED)
+        assertFalse(approved.stopped)
+        assertEquals(listOf(second), approved.refused)
+        assertEquals(listOf(first, third), approved.uploaded)
+        assertNull(approved.heard)
+        assertEquals("read once", 1, reads)
+        reads = 0
+        val big = CloudRecords.oneByOne(listOf(first), write = { throw TooBig() }, exists = { CloudRecords.Held.NO }, refusedByRules = ::ruledOrBig, deniedByRules = ::denied, approval = { reads++; ApprovalState.PENDING })
+        assertEquals(listOf(first), big.refused)
+        assertEquals("too big asks nothing", 0, reads)
+        val push = body("CloudSync.kt", "    suspend fun pushAll(", "    ")
+        assertTrue("approval = { serverApproval(uid) }," in push)
+        assertTrue("result.heard?.takeIf { it != ApprovalState.UNKNOWN }?.let { withContext(Dispatchers.Main) { Approval.heard(it, uid, store) } }" in push)
+        val read = body("CloudSync.kt", "    suspend fun serverApproval(uid: String)", "    ")
+        assertTrue(read, "Cloud.db().collection(\"approvals\").document(uid).get(Source.SERVER).awaitTask()" in read)
     }
 
     /** Negative: a network or auth failure with a denied or unanswered read still stops, and a personal record denied
@@ -898,14 +946,14 @@ class AuditFixesTest {
         val a = recordIn(group, 1u)
         val b = recordIn(group, 2u)
         for (held in listOf(CloudRecords.Held.DENIED, CloudRecords.Held.UNKNOWN)) {
-            val r = CloudRecords.oneByOne(listOf(a, b), write = { if (it === a) throw Transient() }, exists = { held }, refusedByRules = ::ruledOrBig, deniedByRules = ::denied)
+            val r = CloudRecords.oneByOne(listOf(a, b), write = { if (it === a) throw Transient() }, exists = { held }, refusedByRules = ::ruledOrBig, deniedByRules = ::denied, approval = { ApprovalState.APPROVED })
             assertTrue(r.stopped)
             assertTrue(r.uploaded.isEmpty() && r.refused.isEmpty())
         }
-        val big = CloudRecords.oneByOne(listOf(a, b), write = { if (it === a) throw TooBig() }, exists = { CloudRecords.Held.DENIED }, refusedByRules = ::ruledOrBig, deniedByRules = ::denied)
+        val big = CloudRecords.oneByOne(listOf(a, b), write = { if (it === a) throw TooBig() }, exists = { CloudRecords.Held.DENIED }, refusedByRules = ::ruledOrBig, deniedByRules = ::denied, approval = { ApprovalState.APPROVED })
         assertTrue("too big, read denied", big.stopped)
         val mine = recordIn(null, 3u)
-        val personal = CloudRecords.oneByOne(listOf(mine, b), write = { if (it === mine) throw RuleRefusal() }, exists = { CloudRecords.Held.DENIED }, refusedByRules = ::ruledOrBig, deniedByRules = ::denied)
+        val personal = CloudRecords.oneByOne(listOf(mine, b), write = { if (it === mine) throw RuleRefusal() }, exists = { CloudRecords.Held.DENIED }, refusedByRules = ::ruledOrBig, deniedByRules = ::denied, approval = { ApprovalState.APPROVED })
         assertTrue("a personal record denied both ways", personal.stopped)
         assertTrue(personal.refused.isEmpty())
     }
