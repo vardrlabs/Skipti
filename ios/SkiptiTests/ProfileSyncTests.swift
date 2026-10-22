@@ -956,15 +956,15 @@ final class ProfileSyncTests: XCTestCase {
         XCTAssertTrue(CloudSync.syncEnabled(store), "sync is on when unset")
         _ = ProfileShare.markCaughtUp(store)
         // A signed-in-looking state, sync on: a host still has no account.
-        XCTAssertNil(LaunchWork.signedInAccount(uid: "uid-prod", syncOn: true, owner: "uid-prod"))
+        XCTAssertNil(LaunchWork.signedInAccount(uid: "uid-prod", syncOn: true, owner: "uid-prod", approval: .approved))
         // The same rule outside a host answers the account (not vacuous).
-        XCTAssertEqual(LaunchWork.signedInAccount(uid: "uid-prod", syncOn: true, owner: "uid-prod", environment: [:]), "uid-prod")
-        XCTAssertNil(LaunchWork.signedInAccount(uid: "uid-prod", syncOn: false, owner: "uid-prod", environment: [:]))
-        XCTAssertNil(LaunchWork.signedInAccount(uid: nil, syncOn: true, owner: "uid-prod", environment: [:]))
+        XCTAssertEqual(LaunchWork.signedInAccount(uid: "uid-prod", syncOn: true, owner: "uid-prod", approval: .approved, environment: [:]), "uid-prod")
+        XCTAssertNil(LaunchWork.signedInAccount(uid: "uid-prod", syncOn: false, owner: "uid-prod", approval: .approved, environment: [:]))
+        XCTAssertNil(LaunchWork.signedInAccount(uid: nil, syncOn: true, owner: "uid-prod", approval: .approved, environment: [:]))
         // D-235 (C2, decision 107): a session the vault does not own syncs nothing (no owner: a reinstall's fresh
         // vault; another owner: the one-account rule).
-        XCTAssertNil(LaunchWork.signedInAccount(uid: "uid-prod", syncOn: true, owner: nil, environment: [:]))
-        XCTAssertNil(LaunchWork.signedInAccount(uid: "uid-prod", syncOn: true, owner: "uid-other", environment: [:]))
+        XCTAssertNil(LaunchWork.signedInAccount(uid: "uid-prod", syncOn: true, owner: nil, approval: .approved, environment: [:]))
+        XCTAssertNil(LaunchWork.signedInAccount(uid: "uid-prod", syncOn: true, owner: "uid-other", approval: .approved, environment: [:]))
         // And the real seam, on a caught-up vault, answers nothing.
         XCTAssertNil(ProfileShare.realAccount(store))
     }
@@ -972,7 +972,7 @@ final class ProfileSyncTests: XCTestCase {
     /// Fix 3 item 1: the same for the sync engine's own gate.
     @MainActor
     func testATestHostIsNeverReadyToSync() throws {
-        XCTAssertNil(LaunchWork.signedInAccount(uid: "uid-prod", syncOn: true, owner: "uid-prod"), "no account in a host")
+        XCTAssertNil(LaunchWork.signedInAccount(uid: "uid-prod", syncOn: true, owner: "uid-prod", approval: .approved), "no account in a host")
         XCTAssertNil(CloudSync.shared.ready(uid: "uid-prod"), "not ready to sync in a host, even signed in")
         XCTAssertNil(CloudSync.shared.ready(uid: Account.shared.uid), "and not with the real account state")
     }

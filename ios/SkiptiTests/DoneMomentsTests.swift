@@ -523,6 +523,8 @@ final class DoneMomentsTests: XCTestCase {
             "OverviewScreen.swift": (1, ["DoneCopy.groupPictureRemoved", "DoneCopy.groupPictureSaved"]),
             "UsernameStep.swift": (2, ["DoneCopy.usernameSaved, PeopleCopy.handle(h)", "DoneCopy.usernameSaved, PeopleCopy.handle(saved)"]),
             "AccountHubScreen.swift": (1, ["DoneCopy.signedOut"]),
+            // D-254: the approval toast, once; its words live in the gate's one table (ApprovalCopy, Android's parity).
+            "Approval.swift": (1, ["ApprovalCopy.approvedToast"]),
         ]
         var found: [String: Int] = [:]
         for file in try appFiles() where file != "DoneMoments.swift" {
@@ -536,7 +538,8 @@ final class DoneMomentsTests: XCTestCase {
             for arg in posts {
                 XCTAssertTrue(arg.hasPrefix("DoneMoments."), "\(file): the post goes through DoneMoments: \(arg)")
                 XCTAssertFalse(arg.contains("\""), "\(file): no string literal in a post: \(arg)")
-                XCTAssertTrue(["DoneCopy.", "DoneMoments.expense(", "DoneMoments.groupCreated(", "AddPersonCopy.done("]
+                XCTAssertTrue(["DoneCopy.", "DoneMoments.expense(", "DoneMoments.groupCreated(", "AddPersonCopy.done(",
+                               "ApprovalCopy.approvedToast"]
                     .contains { arg.contains($0) }, "\(file): the post reads DoneCopy: \(arg)")
             }
             let words = posts.joined(separator: "\n")
@@ -1075,21 +1078,26 @@ final class DoneMomentsTests: XCTestCase {
                 for phones in [nil, 1, 12] as [Int?] {
                     for mode in AppearanceMode.allCases {
                         for lock in LockTimeout.allCases {
-                            for canLock in [true, false] {
+                            // D-254: and every approval ("Waiting for approval", "Not approved" in the Account row).
+                            for canLock in [true, false] { for approval in ApprovalState.allCases {
                                 let facts = YouRowFacts(signedIn: signedIn, methodLabel: method, phoneCount: phones, theme: theme,
-                                                        mode: mode, lockTimeout: lock, lockAvailable: canLock, version: "1.10.10")
+                                                        mode: mode, lockTimeout: lock, lockAvailable: canLock, version: "1.10.10",
+                                                        approval: approval)
                                 for section in SettingsSection.allCases {
                                     let parts = YouRows.parts(section, facts)
                                     if seen.insert(parts.joined(separator: "|")).inserted {
                                         rows.append(SummaryRow(label: "You, \(section)", parts: parts, tile: true, trailing: chevron))
                                     }
                                 }
-                            }
+                            } }
                         }
                     }
                 }
             }
         }
+        // D-254: the Sync card's values while the account is not approved (no switch beside them), measured as a row.
+        rows.append(SummaryRow(label: "Sync, waiting", parts: [ApprovalCopy.syncWaitingValue], trailing: chevron))
+        rows.append(SummaryRow(label: "Sync, not approved", parts: [ApprovalCopy.syncDeniedValue], trailing: chevron))
         rows.append(SummaryRow(label: "Haptics", parts: [DoneCopy.hapticsSummary], tile: true, trailing: toggle))
         rows.append(SummaryRow(label: "Less motion", parts: [MotionCopy.summary], tile: true, trailing: toggle))
         // D-249 (decision 163): Spending on Home, the same switch row.

@@ -84,6 +84,9 @@ object Account {
         }
         val kept = keep(incoming, method, store) { signOut() }
         if (kept != Outcome.SignedIn) return kept
+        // D-254: ask for approval (the person's own name, this platform) and listen for the decision, before the cloud
+        // starts: it starts only for an approved account (`CloudSync.ready`), at once when approval arrives.
+        Approval.signedIn(incoming, store)
         return try {
             // D-193/D-194: register this phone, upload the ledger, start listening.
             CloudSync.appIsActive(true)
@@ -127,6 +130,9 @@ object Account {
         auth().signOut()
         // D-244 (M5): a later sign-in catches up with the account again.
         SettingsSync.signedOut(left)
+        // D-254: the approval listener stops and the vault forgets the state (sign-out everywhere, a deletion and a
+        // sign-out from another phone all come through here).
+        Approval.signedOut()
         CloudSync.accountSignedOut()
     }
 }
@@ -155,6 +161,8 @@ fun AuthEmulatorProof(vaultPath: String) {
             val outcome = Account.signIn(
                 GoogleAuthProvider.getCredential(token, null), SignInMethod.Google, LedgerStore(vaultPath),
             )
+            // D-254: the emulator account is approved (as the founder would), so the cloud starts.
+            Account.uid()?.let { out += "approved: ${EmulatorApproval.approve(it)}" }
             out += "outcome: $outcome"
             out += "uid: ${Account.uid() ?: "none"}"
             out += "method: ${Account.method(LedgerStore(vaultPath))?.label ?: "none"}"
@@ -220,6 +228,8 @@ fun SyncEmulatorProof(vaultPath: String) {
             val store = LedgerStore(vaultPath)
             val outcome = Account.signIn(GoogleAuthProvider.getCredential(token, null), SignInMethod.Google, store)
             out += "signed in: $outcome, uid ${Account.uid() ?: "none"}"
+            // D-254: the emulator account is approved (as the founder would), so the cloud starts.
+            Account.uid()?.let { out += "approved: ${EmulatorApproval.approve(it)}" }
             try {
                 store.setYourName("Sam on $me")
                 val group = store.createGroup("From $me", "USD", emptyList())
@@ -285,6 +295,8 @@ fun TwoAccountProof(vaultPath: String, link: String) {
             val store = LedgerStore(vaultPath)
             val outcome = Account.signIn(GoogleAuthProvider.getCredential(token, null), SignInMethod.Google, store)
             out += "Bo signed in: $outcome, uid ${Account.uid() ?: "none"}"
+            // D-254: the emulator account is approved (as the founder would), so the cloud starts.
+            Account.uid()?.let { out += "approved: ${EmulatorApproval.approve(it)}" }
             try {
                 store.setYourName("Bo")
                 val offer = Invites.peek(link)
@@ -394,6 +406,8 @@ object SettingsEmulatorProof {
         val outcome = Account.signIn(GoogleAuthProvider.getCredential(token, null), SignInMethod.Google, store)
         say("signed in: $outcome, uid ${Account.uid() ?: "none"}")
         val uid = Account.uid() ?: return say("NOT signed in")
+        // D-254: the emulator account is approved (as the founder would), so the cloud starts.
+        say("approved: ${EmulatorApproval.approve(uid)}")
         val started = System.currentTimeMillis()
         while (!SettingsSync.isSeeded(store, uid) && System.currentTimeMillis() - started < 60_000) delay(250)
         val seededAfter = (System.currentTimeMillis() - started) / 1000

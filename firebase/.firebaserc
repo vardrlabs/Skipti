@@ -1,5 +1,17 @@
 {
   "projects": {
     "default": "skipti-26"
+  },
+  "targets": {
+    "skipti-26": {
+      "hosting": {
+        "main": [
+          "skipti-26"
+        ],
+        "admin": [
+          "skipti-26-admin"
+        ]
+      }
+    }
   }
 }

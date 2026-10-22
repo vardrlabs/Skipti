@@ -74,6 +74,10 @@ sealed class UsernameStatus {
     data object NotAvailable : UsernameStatus()
     data object Offline : UsernameStatus()
     data object Limit : UsernameStatus()
+    /** D-254 fix wave I1: the check was refused for approval: the account is waiting, or was not approved ([words]:
+     *  the call's approval words). Never the offline line, and Save stays off (it would be refused the same way). iOS's
+     *  `.approval(String)`. */
+    data class Approval(val words: String) : UsernameStatus()
 
     companion object {
         /** What the phone can say at once, before any cloud check. `list`:
@@ -105,10 +109,12 @@ sealed class UsernameStatus {
             }
         }
 
-        /** A live check that failed: the day's limit says so; anything else
-         *  is the offline line. */
-        fun failedCheck(error: Throwable): UsernameStatus =
-            if ((error as? CloudFunctions.Failure.Refused)?.status == "RESOURCE_EXHAUSTED") Limit else Offline
+        /** A live check that failed: the day's limit says so; D-254 fix wave I1: a refusal for approval says that;
+         *  anything else is the offline line. */
+        fun failedCheck(error: Throwable): UsernameStatus {
+            ApprovalCopy.failure(error)?.let { return Approval(it) }
+            return if ((error as? CloudFunctions.Failure.Refused)?.status == "RESOURCE_EXHAUSTED") Limit else Offline
+        }
     }
 }
 
@@ -126,6 +132,8 @@ sealed class UsernameSaveFailure {
 
     companion object {
         fun from(error: Throwable): UsernameSaveFailure = when ((error as? CloudFunctions.Failure.Refused)?.status) {
+            // D-254: the account is not approved yet (or was not): its words, never the offline line.
+            null -> ApprovalCopy.failure(error)?.let(::Message) ?: Message(UsernameCopy.OFFLINE)
             "ALREADY_EXISTS" -> Taken
             "INVALID_ARGUMENT" -> NotAvailable
             "FAILED_PRECONDITION" -> Used
@@ -223,6 +231,7 @@ fun UsernameField(
             UsernameStatus.NotAvailable -> Text(UsernameCopy.NOT_AVAILABLE, style = line.copy(color = Tok.owed(dark)))
             UsernameStatus.Offline -> Text(UsernameCopy.OFFLINE, style = line.copy(color = Tok.owed(dark)))
             UsernameStatus.Limit -> Text(PeopleCopy.LIMIT, style = line.copy(color = Tok.owed(dark)))
+            is UsernameStatus.Approval -> Text(status.words, style = line.copy(color = Tok.owed(dark)))
         }
         if (suggestions.isNotEmpty()) {
             SectionLabel(UsernameCopy.SUGGESTED, dark)
@@ -349,7 +358,11 @@ fun UsernameStep(
             try {
                 val store = LedgerStore(vaultPath)
                 if (needsName) {
-                    withContext(Dispatchers.IO) { store.setYourName(name) }
+                    withContext(Dispatchers.IO) {
+                        store.setYourName(name)
+                        // D-254 look fix 3: an account not approved asks again with the name.
+                        Approval.nameSaved(store)
+                    }
                     CloudSync.ledgerChanged(vaultPath)
                 }
                 // A None read earlier may be stale (a username picked on
@@ -366,7 +379,8 @@ fun UsernameStep(
                 // The profile (and its participantId) first: setUsername
                 // refuses until it exists, and must never make a half one.
                 val version = AboutInfo.current(context).first
-                withContext(Dispatchers.IO) { CloudProfile.register(uid, store, version) }
+                // D-254: through the approval gate (an account not approved registers nothing).
+                withContext(Dispatchers.IO) { CloudSync.registration(uid, store, version) }
                 // D-211: the name just saved reaches the account's groups.
                 if (needsName) ProfileShare.request(store)
                 // `first`: never spends the one change. A username set on

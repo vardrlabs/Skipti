@@ -10,7 +10,40 @@ Newest session log entries go at the bottom.
 
 ---
 
-## NOW: 2026-10-21 (session 11 CLOSING; next session = session 12, opener `.drafts/stop/opus-opener-8.md`)
+## NOW: 2026-10-21 (session 12, Opus as controller; opener opus-opener-8)
+
+- Session 12 order: (1) D-254 approval gate, (2) U33 film, (3) README photos (his pick), (4) merge release-051-prep with
+  a full gate, (5) STOP with the Fable opener (`.drafts/stop/fable-opener-4.md` updated).
+- D-254 IN PROGRESS on branch `d254-approval-gate`: spec committed 1891b36
+  (`docs/superpowers/specs/2026-10-21-approval-gate-design.md`); mock-up https://claude.ai/artifact/4ULGr42bEn7YUhSu7pQaTx;
+  stage 1 (rules + Functions + tests) and stage 2 (admin page + Hosting targets) dispatched in parallel (Opus);
+  pop-up to the founder pending (words, guarantee 5, privacy line, README pick
+  https://claude.ai/artifact/J3EFygb5CUdhrU4wBa6ArU). Next: shells (stages 3 iOS, 4 Android) after his words.
+- NEW (the founder, chat, decision 232): public sample data American + USD only. D-255 = seed change both shells +
+  store re-capture + clips re-record, after D-254, BEFORE the film and README photos (they use the new shots).
+- His pop-ups answered (decisions 233 to 237, all recommended): build as shown; G5 "is on once your account is
+  approved" (committed 69ddcb4 with an Amendments entry); privacy line Version 3 as drafted (edit after stage 2
+  commits: it owns hosting.test); README = shots 01 04 05 07 08 09 (re-shot); caption 2 "Trips, roommates, dinners."
+- DONE: stage 1 server 5d27923 (307/307 emulator tests; 8 sabotage rows exact; 'none' = no approvals doc), stage 2
+  admin page d6e4078 (12/12 hosting), privacy v3 + dash scope a6c41b3, decision 238 d8d50dc (full-detail pictures,
+  D-255 brief section 5). RUNNING: stage 3 iOS, stage 4 Android (waits for xcodebuild before Gradle), server-side Opus
+  review -> `.drafts/d254/review-server.md` (no Critical/Important; 8 Minor, triage `.drafts/d254/triage-server.md`).
+  iOS stage 3 DONE 4c089f1 (1035 tests 0 failures; 10 sabotage rows exact). Server fix wave RUNNING (M1-M5 + formal
+  server sabotage S1-S17+). Android stage 4 DONE d3c201b1 (1238 JVM 0 failed, fresh XML 22:13; 6 sabotage rows exact; twin diffs: no auth
+  listener (cache cleared at next front, invisible), Join block 12 dp vs iOS 16 (judge in the look)). Shell review
+  DONE (0 Critical, I1 username ring, I2 unknown says waiting; triage `.drafts/d254/triage-shells.md`). Fix waves
+  DONE: server 846b0c7 (314 tests; 29-row matrix, 0 survived), Android 1ddc9806 (1247 JVM; 11 rows), iOS 5909f2dd
+  (1044 tests; FW1-FW9). LOOK DONE (gate works; twins match; 2 Important + 3 Minor, triage
+  `.drafts/d254/triage-look.md`; devices deleted). LOOK FIXES DONE: server/admin 77a2b25d (317 tests; L4a-L5b), Android
+  514f8152 (1251 JVM; L1-L7), iOS 14623891 (1049; LF1-LF7), incl. decision 252 layout. RE-LOOK PASSED (both phones, `.drafts/d254/relook/`).
+  FULL GATE 23/23 0 skipped (5m37s, a73877ca); recorded (record_unit.py exit 0); decisions 239-251 + his 253-257
+  (film: two 25 s cuts, App Store 9:16 iPhone + Play 16:9 Android, score, end card "Even up. Cheers all round.";
+  README 3x2; New York data). Merging. Then: full gate, records (decisions 239-251 drafted), record_unit.py, merge. Decisions drafted
+  `.drafts/d254/decisions-draft.md` (239-251). Next: whole-branch review after shells, fix wave, formal sabotage, look
+  (throwaway sim + AVD, emulators, admin page served locally), full gate, records, merge.
+- D-255 brief ready: `.drafts/d255/brief.md` (Miami trip / Apartment 4B / Ski weekend, USD; full detail section 5).
+
+## (previous) NOW: 2026-10-21 (session 11 CLOSING; next session = session 12, opener `.drafts/stop/opus-opener-8.md`)
 
 **RESUME (session 11 close; READ THIS FIRST):**
 - main is pushed with D-245 to D-253 merged (the welcome, rune glyph glow, Settle up's other amount and Undo, small

@@ -95,11 +95,15 @@ object ProfileSave {
         val changed: () -> Unit,
         /** Your groups (`ProfileShare.request`). */
         val share: () -> Unit,
+        /** D-254 look fix 3: an account not approved asks again with the new name (`Approval.nameSaved`), so the admin
+         *  page shows it. A saved name only, never a picture. */
+        val ask: () -> Unit,
     ) {
         companion object {
             fun live(vaultPath: String) = Effects(
                 changed = { CloudSync.ledgerChanged(vaultPath) },
                 share = { ProfileShare.request(LedgerStore(vaultPath)) },
+                ask = { Approval.nameSaved(LedgerStore(vaultPath)) },
             )
         }
     }
@@ -131,6 +135,7 @@ object ProfileSave {
             val me = store.setYourName(raw)
             effects.changed()
             effects.share()
+            effects.ask()
             NameOutcome.Saved(me.name ?: NameRule.trimmed(raw))
         } catch (e: Exception) {
             // Fix wave M4: in words, never the raw error.

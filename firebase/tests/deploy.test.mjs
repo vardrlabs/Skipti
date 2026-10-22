@@ -58,6 +58,16 @@ test('D-235 round 2: the composite indexes opsOf\'s queries need are declared (t
   }]);
 });
 
+test('D-254 fix wave M4: the admin list\'s newest-first query has its composite index declared (the emulator never asks for one)', () => {
+  const src = readFileSync(new URL('../functions/index.js', import.meta.url), 'utf8');
+  assert.match(src, /db\.collection\('approvals'\)\.where\('state', '==', state\)\.orderBy\('requestedAt', 'desc'\)\s*\.limit\(approvals\.LIST_MAX\)/,
+    'rowsIn: an equality on state, ordered by requestedAt, newest first');
+  const { indexes } = JSON.parse(readFileSync(new URL('../firestore.indexes.json', import.meta.url), 'utf8'));
+  assert.deepEqual(indexes.filter((i) => i.collectionGroup === 'approvals').map((i) => ({ scope: i.queryScope, fields: i.fields })), [{
+    scope: 'COLLECTION', fields: [{ fieldPath: 'state', order: 'ASCENDING' }, { fieldPath: 'requestedAt', order: 'DESCENDING' }],
+  }]);
+});
+
 test('D-235 round 2 m3: the record version the rules and the Functions accept is core\'s RECORD_HEADER_VERSION', () => {
   const core = readFileSync(new URL('../../core/src/straumr/mod.rs', import.meta.url), 'utf8');
   const m = core.match(/^pub const RECORD_HEADER_VERSION: u16 = (\d+);$/m);

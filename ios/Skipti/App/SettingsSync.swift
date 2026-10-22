@@ -97,7 +97,11 @@ enum SettingsSync {
     // MARK: - The write funnel
 
     /// Whether a change writes a record: this install is signed in to the vault's owner. No account, no record.
-    static func writesRecord(uid: String?, owner: String?) -> Bool { InstallSession.owned(uid: uid, owner: owner) != nil }
+    /// D-254: and the account is approved; while it waits, a change is kept on this phone only, and the first catch-up
+    /// after approval fills the account's gaps with it (`afterReceive`).
+    static func writesRecord(uid: String?, owner: String?, approval: ApprovalState) -> Bool {
+        Approval.gate(uid: uid, owner: owner, approval: approval) != nil
+    }
 
     /// A record waits to go up since the last page close (`pageClosed` pushes it).
     @MainActor private static var unsent = false
@@ -122,7 +126,8 @@ enum SettingsSync {
         applyFromAccount(key, value, defaults: defaults)
         // M3: a mode tapped by hand is a choice from now on (D-232's migrated `system` was not).
         if key == AppearanceMode.storageKey { defaults.removeObject(forKey: AppearanceMode.migratedKey) }
-        guard writesRecord(uid: uid, owner: Account.storedOwner(store)), accepts(key, value) else { return false }
+        guard writesRecord(uid: uid, owner: Account.storedOwner(store), approval: Approval.cached(store, uid: uid)),
+              accepts(key, value) else { return false }
         return (try? LedgerStore.Sync.appendGroupOps(store, [.setting(key: key, value: value)], placing: .none)) != nil
     }
 

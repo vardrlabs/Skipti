@@ -195,23 +195,23 @@ class BalanceScreenTest {
      */
     @Test
     fun the_account_hub_shows_no_account_controls_without_an_account() {
-        val none = accountHubModel(signedIn = false, syncOn = true)
+        val none = accountHubModel(signedIn = false, syncOn = true, approval = ApprovalState.UNKNOWN)
         assertEquals(AccountState.NO_ACCOUNT, none.state)
         assertFalse("no account must mean NO controls, not disabled ones", none.showsAccountControls)
-        val noneOff = accountHubModel(signedIn = false, syncOn = false)
+        val noneOff = accountHubModel(signedIn = false, syncOn = false, approval = ApprovalState.UNKNOWN)
         assertEquals(AccountState.NO_ACCOUNT, noneOff.state)
         assertFalse(noneOff.showsAccountControls)
 
-        // D-192: a signed-in phone has the account (no "waiting for
-        // approval": Firebase hands every phone of the account its data).
-        val active = accountHubModel(signedIn = true, syncOn = true)
+        // D-192: a signed-in phone has the account. D-254: once approved (or not heard yet); ApprovalTest covers the
+        // waiting and not approved states.
+        val active = accountHubModel(signedIn = true, syncOn = true, approval = ApprovalState.APPROVED)
         assertEquals(AccountState.ACTIVE, active.state)
         assertTrue(active.showsAccountControls)
 
         // Sync state rides through untouched: the hub renders it, the
         // switch owns it (D-125).
-        assertTrue(accountHubModel(signedIn = true, syncOn = true).syncOn)
-        assertFalse(accountHubModel(signedIn = true, syncOn = false).syncOn)
+        assertTrue(accountHubModel(signedIn = true, syncOn = true, approval = ApprovalState.APPROVED).syncOn)
+        assertFalse(accountHubModel(signedIn = true, syncOn = false, approval = ApprovalState.APPROVED).syncOn)
     }
 
     /** D-221 (L-D217-7, Design 14): "you are owed" sits at the row's end, as iOS's `Spacer(minLength: 12)` puts it: the

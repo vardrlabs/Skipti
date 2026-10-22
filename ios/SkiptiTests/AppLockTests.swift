@@ -93,7 +93,7 @@ final class AppLockTests: XCTestCase {
         let hub = try s2Source("AccountHubScreen.swift")
         let page = try s2Slice(hub, from: "private var securityPage: some View {", to: "\n    }\n")
         XCTAssertEqual(s2Count(page, "ListCard {"), 2, "the safe card and the careful card")
-        XCTAssertTrue(page.contains("SecurityRows.partition(SettingsMap.items(.security, signedIn: model.state == .active))"))
+        XCTAssertTrue(page.contains("SecurityRows.partition(SettingsMap.items(.security, signedIn: model.showsAccountControls))"))
         s2InOrder(page, ["if DeviceIntegrity.looksJailbroken {", "ModifiedPhoneWarning()", "ListCard {", "ForEach(cards.safe",
                          "if !cards.careful.isEmpty {", "sectionHeader(YouCopy.careful)", "ListCard {", "ForEach(cards.careful"])
         let rows = try s2Slice(hub, from: "private func securityRow(_ item: SettingItem) -> some View {", to: "\n    }\n")

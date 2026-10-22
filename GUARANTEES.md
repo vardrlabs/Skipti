@@ -20,7 +20,8 @@ a fork, not a quiet edit.
    account is opt-in and is never created, implied, or nudged for. Sharing a
    group with other people's phones needs an account, because shared groups
    live in the cloud for everyone in them. Sync requires an account, is on
-   once you have one, and can be turned off at any time in one tap.
+   once your account is approved, and can be turned off at any time in one
+   tap.
 
 6. **No third-party network origin except SKIPTI's cloud and the services it
    needs.** The app talks to SKIPTI's cloud, which runs on Google Firebase;
@@ -80,3 +81,11 @@ decided it.
   people's phones, because shared groups live in the cloud for everyone in
   them. The founder chose the words (decision 171); nothing about the app
   changes, so ADR-0013's fork is a clarification of the same promise.
+- **2026-10-21: #5, sync waits for approval.** While SKIPTI is in early
+  testing, a new account waits for the operator's approval before anything
+  is kept in the cloud: no sync, no shared groups, no invites. The ledger on
+  the phone works fully meanwhile, so the first sentence of #5 holds as it
+  was. "Is on once you have one" became "is on once your account is
+  approved". The founder chose the words (decisions 228 and 234), before the
+  gate was released; the design is
+  `docs/superpowers/specs/2026-10-21-approval-gate-design.md` (D-254).

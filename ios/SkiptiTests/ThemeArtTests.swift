@@ -1870,10 +1870,10 @@ final class ThemeArtTests: XCTestCase {
             try files.reduce(0) { $0 + (try appSource($1).components(separatedBy: needle).count - 1) }
         }
         // D-249: 42, Your spending's total card kicker, its where card and its Expenses label.
-        XCTAssertEqual(try count(".sectionLabel("), 42) // D-241: the currency list's Suggested label. D-223: Lately's label, inside its card. D-234: App icon's label went (its header row says it).
+        XCTAssertEqual(try count(".sectionLabel("), 43) // D-254: 43, the Sync card's label while not approved. // D-241: the currency list's Suggested label. D-223: Lately's label, inside its card. D-234: App icon's label went (its header row says it).
         // D-221: a block's currency when there are several. D-225 Task 6: 21, Add expense's split hint (A6, A8).
         // D-249: 23, the spending card's "This month" and the table's column heads.
-        XCTAssertEqual(try count(".microLabelFont("), 23)
+        XCTAssertEqual(try count(".microLabelFont("), 24) // D-254: 24, that card's value (Waiting, Off).
     }
 
     /// D-217: the Norse ornament's row holds its rune; Android's twin pins `ROW_HEIGHT`. D-226 (art.py section 46): 20

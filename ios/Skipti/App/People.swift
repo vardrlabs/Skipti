@@ -333,6 +333,8 @@ enum People {
     @MainActor
     static func invite(store: LedgerStore, group: NamedGroupWire, member: MemberWire, person: FoundPerson) async throws {
         guard let uid = Account.shared.uid else { throw CloudFunctions.Failure.signedOut }
+        // D-254: before the group is put in the cloud (a write the rules refuse an account not approved).
+        if let refusal = await Approval.shared.refusal(for: "inviteUser", uid: uid, store: store) { throw refusal }
         switch await CloudSync.ensureGroup(group.group.id, name: group.group.name, uid: uid) {
         case .member: break
         case .notMember: throw CloudFunctions.Failure.refused("PERMISSION_DENIED")
@@ -352,6 +354,8 @@ enum People {
     static func inviteKnown(store: LedgerStore, group: NamedGroupWire, member: MemberWire, recent: RecentPerson) async throws {
         guard let uid = Account.shared.uid else { throw CloudFunctions.Failure.signedOut }
         guard let participantId = recent.participantId, let via = recent.viaGroupId else { return }
+        // D-254: before the group is put in the cloud (a write the rules refuse an account not approved).
+        if let refusal = await Approval.shared.refusal(for: "inviteKnown", uid: uid, store: store) { throw refusal }
         switch await CloudSync.ensureGroup(group.group.id, name: group.group.name, uid: uid) {
         case .member: break
         case .notMember: throw CloudFunctions.Failure.refused("PERMISSION_DENIED")
@@ -631,33 +635,11 @@ struct FindPersonScreen: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                TextField(PeopleCopy.queryPrompt, text: $query)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .keyboardType(.emailAddress)
-                    .font(TypeRole.body())
-                    .padding(14)
-                    .glassCard(padding: 0)
-                    .onSubmit { Task { await search() } }
-                    .accessibilityLabel(PeopleCopy.queryPrompt)
-                Button(searchingByName ? PeopleCopy.searching : PeopleCopy.search) { Task { await search() } }
-                    .buttonStyle(PrimaryButtonStyle())
-                    .disabled(busy)
-                Button(PeopleCopy.fromContacts) { Task { await searchContacts() } }
-                    .buttonStyle(SecondaryButtonStyle())
-                    .disabled(busy)
-                Text(verbatim: PeopleCopy.contactsDetail).font(TypeRole.body(14)).foregroundStyle(Tokens.textDim)
-                if let message {
-                    Text(verbatim: message).font(TypeRole.body()).foregroundStyle(Tokens.text).glassCard()
-                }
-                if let results, !results.isEmpty {
-                    VStack(spacing: 0) {
-                        ForEach(Array(results.enumerated()), id: \.element.id) { i, person in
-                            if i > 0 { Divider().overlay(Tokens.hairline) }
-                            row(person)
-                        }
-                    }
-                    .glassCard(padding: 14)
+                // D-254: one line instead of the search and Find friends in contacts while the account is not approved.
+                if let line = ApprovalCopy.invite(Approval.shared.state) {
+                    Text(verbatim: line).font(TypeRole.body()).foregroundStyle(Tokens.textDim)
+                } else {
+                    findControls
                 }
             }
             .padding(16)
@@ -665,6 +647,38 @@ struct FindPersonScreen: View {
         .auroraBackground()
         .navigationTitle(PeopleCopy.findTitle(member.name))
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    @ViewBuilder
+    private var findControls: some View {
+        TextField(PeopleCopy.queryPrompt, text: $query)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .keyboardType(.emailAddress)
+            .font(TypeRole.body())
+            .padding(14)
+            .glassCard(padding: 0)
+            .onSubmit { Task { await search() } }
+            .accessibilityLabel(PeopleCopy.queryPrompt)
+        Button(searchingByName ? PeopleCopy.searching : PeopleCopy.search) { Task { await search() } }
+            .buttonStyle(PrimaryButtonStyle())
+            .disabled(busy)
+        Button(PeopleCopy.fromContacts) { Task { await searchContacts() } }
+            .buttonStyle(SecondaryButtonStyle())
+            .disabled(busy)
+        Text(verbatim: PeopleCopy.contactsDetail).font(TypeRole.body(14)).foregroundStyle(Tokens.textDim)
+        if let message {
+            Text(verbatim: message).font(TypeRole.body()).foregroundStyle(Tokens.text).glassCard()
+        }
+        if let results, !results.isEmpty {
+            VStack(spacing: 0) {
+                ForEach(Array(results.enumerated()), id: \.element.id) { i, person in
+                    if i > 0 { Divider().overlay(Tokens.hairline) }
+                    row(person)
+                }
+            }
+            .glassCard(padding: 14)
+        }
     }
 
     private func row(_ person: FoundPerson) -> some View {
@@ -862,6 +876,8 @@ struct AddPersonSheet: View {
     @State private var localDone = DoneCenter()
     @State private var error: String?
     private var signedIn: Bool { Account.shared.isSignedIn }
+    /// D-254: signed in, and the account not waiting or refused: Add by @username and the recents' invites are there.
+    private var invites: Bool { signedIn && ApprovalCopy.invite(Approval.shared.state) == nil }
 
     var body: some View {
         ScrollView {
@@ -872,7 +888,10 @@ struct AddPersonSheet: View {
                         .submitLabel(.done)
                         .onSubmit { if lookup == .idle { Task { await addName() } } }
                 }
-                if signedIn {
+                if signedIn, let line = ApprovalCopy.invite(Approval.shared.state) {
+                    // D-254: one line instead of Add by @username while the account is not approved.
+                    Text(verbatim: line).font(TypeRole.body(14)).foregroundStyle(Tokens.textDim)
+                } else if signedIn {
                     field(AddPersonCopy.username) {
                         HStack(spacing: 4) {
                             Text(verbatim: "@").font(TypeRole.body()).foregroundStyle(Tokens.accent)
@@ -954,12 +973,12 @@ struct AddPersonSheet: View {
                 AvatarView(avatar: r.preview, name: r.name, size: 32)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(verbatim: r.name).font(TypeRole.body(15)).foregroundStyle(Tokens.text)
-                    Text(verbatim: isAdded ? (signedIn && r.participantId != nil ? AddPersonCopy.addedAndInvited : AddPersonCopy.added)
+                    Text(verbatim: isAdded ? (invites && r.participantId != nil ? AddPersonCopy.addedAndInvited : AddPersonCopy.added)
                          : r.groups.joined(separator: ", "))
                         .font(TypeRole.body(12)).foregroundStyle(Tokens.textDim).lineLimit(1)
                 }
                 Spacer(minLength: 8)
-                if signedIn && r.participantId != nil || isAdded {
+                if invites && r.participantId != nil || isAdded {
                     Text(verbatim: isAdded ? AddPersonCopy.added : AddPersonCopy.onSkipti)
                         .font(TypeRole.label(11))
                         .padding(.horizontal, 8).padding(.vertical, 3)
@@ -1029,7 +1048,7 @@ struct AddPersonSheet: View {
         await run(r.name) {
             guard let pair = try addMember(r.name) else { return false }
             let (named, member) = pair
-            guard signedIn, r.participantId != nil else { return false }
+            guard invites, r.participantId != nil else { return false }
             try await People.inviteKnown(store: store, group: named, member: member, recent: r)
             return true
         }

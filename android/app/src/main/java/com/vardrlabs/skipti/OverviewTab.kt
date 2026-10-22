@@ -349,8 +349,8 @@ fun OverviewScreen(
             else -> {
                 // D-206 (the founder's item 5): a greeting by name and time of day.
                 HomeGreeting(vaultPath, dark)
-                // C2: an account signed in before usernames were asked.
-                if (username == UsernameState.None) UsernameCard(dark, onPickUsername)
+                // C2: an account signed in before usernames were asked. D-254 look fix 1: only once it is approved.
+                if (UsernameState.cardShows(username, Approval.state)) UsernameCard(dark, onPickUsername)
                 // D-249 (decision 165): with no group yet the hero asks; it replaces the old empty state.
                 if (error == null && HomeHero.kind(groups.size) == HomeHero.NO_GROUP) {
                     NoGroupHero(dark, onCreate = onCreateGroup, onJoin = onJoin, onImport = onImport)

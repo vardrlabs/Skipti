@@ -187,6 +187,7 @@ class PublicScopeTests(unittest.TestCase):
         for path in ("README.md", "CONTRIBUTING.md", "GUARANTEES.md", "SECURITY.md", "THREAT_MODEL.md",
                      "NOTICE", "docs/RELEASE-0.5.0.md", "firebase/public/privacy/index.html",
                      "firebase/public/404.html", "firebase/public/.well-known/apple-app-site-association",
+                     "firebase/admin/index.html", "firebase/admin/404.html",
                      "android/app/src/main/res/xml/data_extraction_rules.xml",
                      "android/app/src/main/res/values/strings.xml",
                      "android/app/src/main/AndroidManifest.xml", "android/app/src/play/AndroidManifest.xml",

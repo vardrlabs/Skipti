@@ -27,11 +27,13 @@ enum LaunchWork {
     /// the profile share or a push would reach it. `ProfileShare.realAccount`
     /// and `CloudSync.ready` both answer through this. D-235 (C2, decision
     /// 107): and only when it is the vault's `owner` (`InstallSession.owned`).
+    /// D-254: and only when the account is approved (`Approval.gate`).
     static func signedInAccount(
-        uid: String?, syncOn: Bool, owner: String?, environment: [String: String] = ProcessInfo.processInfo.environment
+        uid: String?, syncOn: Bool, owner: String?, approval: ApprovalState,
+        environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> String? {
         guard startsCloud(environment: environment), syncOn else { return nil }
-        return InstallSession.owned(uid: uid, owner: owner)
+        return Approval.gate(uid: uid, owner: owner, approval: approval)
     }
 }
 
@@ -233,6 +235,8 @@ struct SkiptiApp: App {
                     // work; the tests reach the cloud components through their
                     // own seams.
                     if !verificationArg && LaunchWork.startsCloud() { CloudSync.shared.appIsActive(phase == .active) }
+                    // D-254 fix wave (M4): whether approval heard may start the cloud now (the proofs too: they run in front).
+                    Approval.shared.inFront = phase == .active
                     // D-247 (decision 182): a settle held for Undo lands as SKIPTI leaves the front (inactive too: the
                     // app switcher, where a swipe ends the app with no further word).
                     if phase != .active { SettleHold.shared.commit() }
@@ -699,6 +703,8 @@ enum GroupEndProof {
         while Account.shared.uid == nil, Date().timeIntervalSince(started) < 60 {
             try? await Task.sleep(nanoseconds: 250_000_000)
         }
+        // D-254: the emulator account is approved (as the founder would), so the cloud starts.
+        if let uid = Account.shared.uid { say("approved: \(await EmulatorApproval.approve(uid))") }
         say("step \(step) \(arg): uid \(Account.shared.uid ?? "none")")
         do {
             switch step {

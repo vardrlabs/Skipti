@@ -302,7 +302,11 @@ class ImportJob(
     /** After `ffiApplyImportPlan` accepted the merge: your name if this gave
      *  you one, the group, then the expenses in one vault session. */
     fun commit(expenses: List<PortExpense>, store: LedgerStore) {
-        newName?.let { store.setYourName(it) }
+        newName?.let {
+            store.setYourName(it)
+            // D-254 look fix 3: an account not approved asks again with the name.
+            Approval.nameSaved(store)
+        }
         group?.let { store.adopt(it) }
         store.appendExpenses(expenses.map { ImportSetup.dto(it, selfId) })
     }

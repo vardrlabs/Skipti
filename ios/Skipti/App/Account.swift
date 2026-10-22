@@ -40,6 +40,8 @@ final class Account {
     func attachToFirebase() {
         guard listener == nil, FirebaseGate.accountAttaches, let auth = FirebaseGate.auth else { return }
         uid = auth.currentUser?.uid
+        // D-254: the last approval this phone heard for the account, for the first frame (no flash of the wrong state).
+        Approval.shared.load(uid: uid)
         // Firebase calls this on the main thread: a sign-out elsewhere (a
         // revoked session) reaches every screen.
         listener = auth.addStateDidChangeListener { [weak self] _, user in
@@ -47,7 +49,11 @@ final class Account {
                 self?.uid = user?.uid
                 // Decision 117: a session ended anywhere (here, another phone, a revoked or deleted account) means the
                 // next launch makes no Firebase call.
-                if user == nil { Account.setSignedInMark(.defaultStore(), false) }
+                if user == nil {
+                    Account.setSignedInMark(.defaultStore(), false)
+                    // D-254: the session ended: the approval listener stops and the vault forgets the state.
+                    Approval.shared.signedOut()
+                }
             }
         }
     }
@@ -133,6 +139,9 @@ final class Account {
         uid = incoming
         // Decision 117: the next launches configure Firebase again.
         Self.setSignedInMark(store, true)
+        // D-254: ask for approval (the person's own name, this platform) and listen for the decision, before the cloud
+        // starts: it starts only for an approved account (`CloudSync.ready`), at once when approval arrives.
+        await Approval.shared.signedIn(uid: incoming, store: store)
         // D-193/D-194: register this phone, upload the ledger, start listening.
         CloudSync.shared.appIsActive(true)
         return .signedIn
@@ -145,6 +154,9 @@ final class Account {
         Self.setSignedInMark(.defaultStore(), false)
         // D-244 (M5): a later sign-in catches up with the account again.
         SettingsSync.signedOut(.defaultStore(), uid: uid)
+        // D-254: the approval listener stops and the vault forgets the state (sign-out everywhere, a deletion and an
+        // erase all come through here).
+        Approval.shared.signedOut()
         uid = nil
         CloudSync.shared.accountSignedOut()
     }
@@ -238,6 +250,8 @@ struct AuthEmulatorProofScreen: View {
             let outcome = await account.signIn(
                 GoogleAuthProvider.credential(withIDToken: token, accessToken: ""), method: .google
             )
+            // D-254: the emulator account is approved (as the founder would), so the cloud starts.
+            if let uid = account.uid { lines.append("approved: \(await EmulatorApproval.approve(uid))") }
             lines.append("outcome: \(outcome)")
             lines.append("uid: \(account.uid ?? "none")")
             lines.append("method: \(account.method()?.label ?? "none")")
@@ -303,6 +317,8 @@ struct SyncEmulatorProofScreen: View {
                 GoogleAuthProvider.credential(withIDToken: token, accessToken: ""), method: .google
             )
             lines.append("signed in: \(outcome), uid \(account.uid ?? "none")")
+            // D-254: the emulator account is approved (as the founder would), so the cloud starts.
+            if let uid = account.uid { lines.append("approved: \(await EmulatorApproval.approve(uid))") }
             let store = LedgerStore.defaultStore()
             do {
                 _ = try store.setYourName("Sam on \(me)")
@@ -371,6 +387,8 @@ struct TwoAccountProofScreen: View {
         let token = #"{"sub":"proof-al","email":"al@example.test","email_verified":true}"#
         let outcome = await account.signIn(GoogleAuthProvider.credential(withIDToken: token, accessToken: ""), method: .google)
         lines.append("Al signed in: \(outcome), uid \(account.uid ?? "none")")
+        // D-254: the emulator account is approved (as the founder would), so the cloud starts.
+        if let uid = account.uid { lines.append("approved: \(await EmulatorApproval.approve(uid))") }
         let store = LedgerStore.defaultStore()
         let link: String
         do {
@@ -478,6 +496,8 @@ struct SettingsEmulatorProofScreen: View {
         let outcome = await account.signIn(GoogleAuthProvider.credential(withIDToken: token, accessToken: ""), method: .google)
         say("signed in: \(outcome), uid \(account.uid ?? "none")")
         guard let uid = account.uid else { return say("NOT signed in") }
+        // D-254: the emulator account is approved (as the founder would), so the cloud starts.
+        say("approved: \(await EmulatorApproval.approve(uid))")
         let started = Date()
         while !SettingsSync.isSeeded(store, uid: uid), Date().timeIntervalSince(started) < 60 {
             try? await Task.sleep(nanoseconds: 250_000_000)

@@ -20,14 +20,31 @@ function idToken(uid, claims = {}) {
   })}.`;
 }
 
+// D-254: every account these tests act as is approved (approvals/{uid},
+// seeded once a test, before its first call), so each refusal here is refused
+// for the reason it names, never for the approval gate; a call the gate
+// refuses anyway fails the test outright. The gate's own tests are in
+// approvals.test.mjs.
+let approvedUids = new Set();
+async function approve(uid) {
+  if (!uid || approvedUids.has(uid)) return;
+  approvedUids.add(uid);
+  await seed(`approvals/${uid}`, { state: 'approved' });
+}
+function notGated(name, uid, body) {
+  if (body.error?.details?.approval) throw new Error(`${name}: ${uid} was refused by the approval gate (${body.error.details.approval})`);
+}
+
 /** Calls a Function; resolves to { result } or { error: status }. */
 async function call(name, uid, data, claims) {
+  await approve(uid);
   const r = await fetch(`${FN}/${name}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...(uid && { authorization: `Bearer ${idToken(uid, claims)}` }) },
     body: JSON.stringify({ data }),
   });
   const body = await r.json();
+  notGated(name, uid, body);
   return body.error ? { error: body.error.status } : { result: body.result };
 }
 
@@ -58,6 +75,7 @@ const D = 'f'.repeat(32); // a device id
 beforeEach(async () => {
   const r = await fetch(`${FS}/emulator/v1/${DOCS}`, { method: 'DELETE' });
   assert.equal(r.status, 200, 'the Firestore emulator must be running');
+  approvedUids = new Set(); // D-254: the wipe took the approvals too
   await seed(`groups/${G}`, { name: 'Goa trip', memberUids: ['al'], createdBy: 'al', createdAt: new Date() });
   // D-235: the group's log makes the place an invite names (a join needs it).
   await seed(`groups/${G}/records/1000-0-${D}`, {
@@ -531,8 +549,12 @@ test('D-235 decision 121: a link invite (createInvite) names the inviter and the
 test('D-235 L3: a Function never makes a profile; the phone\'s registration does, with its participant id', async () => {
   await authUser('newbie');
   assert.deepEqual(await call('setFindable', 'newbie', { findable: false }, priyaEmail), { error: 'FAILED_PRECONDITION' });
-  assert.deepEqual(await call('requestDeletion', 'newbie', {}), { error: 'FAILED_PRECONDITION' });
-  assert.deepEqual((await call('cancelDeletion', 'newbie', {})).result, { cancelled: true }, 'nothing to cancel');
+  // D-254: deleting an account with no profile no longer fails ("setting up"): the marker goes on its
+  // approvals document instead (approvals.test.mjs), and still no half profile is made.
+  assert.ok((await call('requestDeletion', 'newbie', {})).result.deleteAt);
+  assert.ok((await read('approvals/newbie')).deleteAt, 'the marker is on the approval');
+  assert.deepEqual((await call('cancelDeletion', 'newbie', {})).result, { cancelled: true });
+  assert.equal((await read('approvals/newbie')).deleteAt, undefined, 'and kept');
   assert.equal(await read('users/newbie'), null, 'no half profile');
   await profile('newbie');
   assert.deepEqual((await call('setFindable', 'newbie', { findable: false }, priyaEmail)).result, { findable: false, byEmail: false });

@@ -1063,7 +1063,7 @@ final class AccountTests: XCTestCase {
     func testASectionPageKnowsTheAccountOnItsFirstFrame() throws {
         let hub = try s2Source("AccountHubScreen.swift")
         let page = try s2Slice(hub, from: "struct SettingsSectionScreen: View {", to: "    var body: some View {")
-        XCTAssertTrue(page.contains("@State private var model = accountHubModel(signedIn: Account.shared.isSignedIn, syncOn: true)"), page)
+        XCTAssertTrue(page.contains("@State private var model = accountHubModel(signedIn: Account.shared.isSignedIn, syncOn: true, approval: Approval.shared.state)"), page)
         XCTAssertFalse(page.contains("state: .noAccount, syncOn: true, showsAccountControls: false"), "not signed out until read")
     }
 
@@ -1076,7 +1076,8 @@ final class AccountTests: XCTestCase {
         let page = try s2Slice(hub, from: "private var yourDataPage: some View {", to: "\n    }\n")
         XCTAssertEqual(s2Count(page, "ListCard {"), 1)
         // D-225 fix wave (review M5): the items follow the real account state, so a signed-in data item would show.
-        s2InOrder(page, ["ListCard {", "ForEach(SettingsMap.items(.data, signedIn: model.state == .active), id: \\.self) { item in dataRow(item) }",
+        // D-254: every signed-in state (waiting and not approved too) is the account's (`showsAccountControls`).
+        s2InOrder(page, ["ListCard {", "ForEach(SettingsMap.items(.data, signedIn: model.showsAccountControls), id: \\.self) { item in dataRow(item) }",
                          "CardCaption(CurrencyCopy.detail)"])
         XCTAssertFalse(hub.contains("signedIn: false)"), "no page hard-codes signed out")
         let rows = try s2Slice(hub, from: "private func dataRow(_ item: SettingItem) -> some View {", to: "\n    }\n")
@@ -1304,7 +1305,9 @@ final class D235ShellTests: XCTestCase {
         XCTAssertEqual(s2Count(screen, "FirebaseGate.configure(owner: Account.ownerRead(.defaultStore()))"), 2, "both taps")
         let sync = try s2Source("CloudSync.swift")
         let register = try s2Slice(sync, from: "    func registerPhone() {", to: "\n    }\n")
-        XCTAssertTrue(register.contains("Account.storedOwner(store) == uid"), "no registration for a session the vault does not own")
+        // D-254: ownership is checked inside the approval gate now (`Approval.gate` asks `InstallSession.owned`).
+        XCTAssertTrue(register.contains("Approval.gate(uid: uid, owner: Account.storedOwner(store), approval: Approval.cached(store, uid: uid)) != nil"),
+                      "no registration for a session the vault does not own, nor for an account not approved")
     }
 
     /// Decision 116: a launch configures Firebase only when the vault names its owner; no owner, or a vault that could
@@ -1330,7 +1333,8 @@ final class D235ShellTests: XCTestCase {
         let signOut = try s2Slice(account, from: "    func signOut() {", to: "\n    }\n")
         XCTAssertTrue(signOut.contains("Self.setSignedInMark(.defaultStore(), false)"))
         let attach = try s2Slice(account, from: "    func attachToFirebase() {", to: "\n    }\n")
-        XCTAssertTrue(attach.contains("if user == nil { Account.setSignedInMark(.defaultStore(), false) }"))
+        // D-254: the same branch also stops the approval listener (`Approval.shared.signedOut()`).
+        s2InOrder(attach, ["if user == nil {", "Account.setSignedInMark(.defaultStore(), false)"])
         let app = try s2Source("SkiptiApp.swift")
         XCTAssertTrue(app.contains("LaunchFirebase.plan(ownerRead, signedIn: signedInMark, deleteOwed: deleteOwed)"))
         XCTAssertTrue(app.contains("if configuresAtLaunch(owner, signedIn: signedIn) { return .account }"))

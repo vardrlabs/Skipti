@@ -494,7 +494,11 @@ struct ImportFlowScreen: View {
                         groupName: job.ledgerName,
                         doneLabel: job.group == nil ? ProfileCopy.done : ImportCopy.showGroup,
                         names: job.names,
-                        save: { try job.commit($0, store: LedgerStore.defaultStore()) },
+                        save: {
+                            try job.commit($0, store: LedgerStore.defaultStore())
+                            // D-254 look fix (item 3): an import that gave you your name asks again while not approved.
+                            if job.newName != nil { Approval.shared.nameSaved() }
+                        },
                         finish: {
                             CloudSync.shared.ledgerChanged()
                             NotificationCenter.default.post(name: .skiptiLedgerImported, object: nil)

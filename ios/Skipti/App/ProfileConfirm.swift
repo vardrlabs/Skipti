@@ -73,6 +73,9 @@ enum ProfileSave {
         var share: @MainActor () -> Void
         /// The top-right picture and the greeting read again (`profile.revision`).
         var bump: @MainActor () -> Void
+        /// D-254 look fix (item 3): a saved NAME asks for approval again while the account is not approved
+        /// (`Approval.nameSaved`), so the approval page shows it. Pictures do not ask.
+        var ask: @MainActor () -> Void = {}
 
         static let live = Effects(
             changed: { CloudSync.shared.ledgerChanged() },
@@ -80,7 +83,8 @@ enum ProfileSave {
             bump: {
                 let defaults = UserDefaults.standard
                 defaults.set(defaults.integer(forKey: LedgerStore.profileRevisionKey) + 1, forKey: LedgerStore.profileRevisionKey)
-            })
+            },
+            ask: { Approval.shared.nameSaved() })
     }
 
     /// How a save says it is done: Profile's toast (D-224, its success haptic with it), or, inside the welcome, the
@@ -111,6 +115,7 @@ enum ProfileSave {
             effects.bump()
             effects.changed()
             effects.share()
+            effects.ask()
             done(DoneMoments.line(DoneCopy.nameSaved), feedback, center: center)
             return .saved(me.name ?? NameRule.trimmed(raw))
         } catch {

@@ -58,6 +58,7 @@ struct YourNameSheet: View {
         do {
             try store.setYourName(name)
             CloudSync.shared.ledgerChanged()
+            Approval.shared.nameSaved() // D-254 look fix (item 3)
             onSaved()
         } catch let e as CoreError {
             error = GroupCopy.message(e)
@@ -269,6 +270,7 @@ struct CreateGroupSheet: View {
                 store: store, yourName: needsYourName ? yourName : nil, name: groupName,
                 currency: currency, people: people.names, emoji: pictureEmoji, photo: picturePhoto
             ) { CloudSync.shared.ledgerChanged() }
+            if needsYourName { Approval.shared.nameSaved() } // D-254 look fix (item 3)
             GroupPictureStore.shared.load(store)
             // D-224 (Design 7): posted once here, not in the callers. The named groups after the create: the first one is
             // the big moment; a read that fails counts 0, the toast (never big without proof). Fix wave (F1): held, so the

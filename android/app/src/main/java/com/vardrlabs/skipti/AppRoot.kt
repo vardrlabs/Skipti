@@ -129,6 +129,9 @@ class MainActivity : ComponentActivity() {
         UsernameRules.load(applicationContext)
         // D-191: Firebase before anything can ask for the account.
         FirebaseConfig.configure(applicationContext)
+        // D-254: the account's approval (the hub, the invite pages and the gates' words read it), made here before the
+        // `--emulator-as` sign-in below can touch it from an IO thread (D-191's rule, below).
+        Approval.createState()
         // D-194: `--emulators` runs the ordinary app against the local Auth
         // and Firestore emulators. Debug builds only: another app can start
         // this activity with any extras.
@@ -1121,7 +1124,8 @@ private fun HomeShell(
                         var state = People.accountUsername()
                         if (state == null) Account.uid()?.let { uid ->
                             val version = AboutInfo.current(context).first
-                            withContext(Dispatchers.IO) { CloudProfile.register(uid, LedgerStore(vaultPath), version) }
+                            // D-254: through the approval gate (an account not approved registers nothing).
+                            withContext(Dispatchers.IO) { CloudSync.registration(uid, LedgerStore(vaultPath), version) }
                             state = People.accountUsername()
                         }
                         timer.cancel()
@@ -1797,6 +1801,8 @@ object GroupEndProof {
         runCatching { WelcomeGate.clear(store) }
         val started = System.currentTimeMillis()
         while (Account.uid() == null && System.currentTimeMillis() - started < 60_000) delay(250)
+        // D-254: the emulator account is approved (as the founder would), so the cloud starts.
+        Account.uid()?.let { say(files, "approved: ${EmulatorApproval.approve(it)}") }
         say(files, "step $step $arg: uid ${Account.uid() ?: "none"}")
         try {
             when (step) {

@@ -1561,6 +1561,82 @@ https://claude.ai/artifact/FwwzuzRkyyxiuGvJKNMPCG (v1); briefs `.drafts/u9/brief
 - **231:** the public README gets curated photos of the app, which YOU pick from the store shots; the web version will
   be its own private repo, skipti-web, using this repo's core pinned to a tag.
 
+### The D-254 chain, 239 to 251: the approval gate (your 228, 229, 233 to 235 and 252 asked for it)
+
+- **239:** approval is a document, `approvals/{uid}`, written only by Cloud Functions; not a custom claim (a claim
+  waits for a token refresh and needs a revocation to take back) and not a sign-in blocking function (a paid console
+  upgrade that refuses sign-in itself). Risk if wrong: one extra document read per cloud write.
+- **240:** the rules gate writes only: reading and deleting what is yours never waits for approval.
+- **241:** six callables are exempt (signOutDevice, signOutEverywhere, requestDeletion, cancelDeletion,
+  requestApproval, adminApprovals); a test reads every callable in the source and fails on any new one left ungated.
+- **242:** the admin is a deploy-time setting, `SKIPTI_ADMIN_UID`, with no committed production value (empty refuses
+  everyone), AND a Google sign-in; a refused caller is shown its own account id, which is how you set yours on deploy day.
+- **243:** the admin page signs in without an SDK (Google's id token, then Firebase's REST sign-in, then the Function
+  over fetch), keeps nothing in the browser beyond the sign-in round trip, and has an emulator mode only on localhost.
+- **244:** an account with no profile (waiting or denied) keeps its deletion marker on its approval document, so the
+  seven days and Keep my account work for everyone; the purge deletes the approval document with the account.
+- **245 (server review):** the migration can run again and writes in transactions (a sign-up in the deploy-day window
+  is not locked out; a denial is never overwritten); a denied phone may clear its own push address; the admin list is
+  the newest 500 (a new index, READY before the Functions); denying drops the name and email.
+- **246:** before the server has answered (the first launch after the update), the cloud stays closed but the screen
+  looks as today: no "Waiting" flash for testers already approved; a cloud action asks the server first (5 s) and
+  shows the offline words, never the waiting words, if it cannot tell.
+- **247:** the approval toast shows only to someone who was waiting; an approved account starts silently.
+- **248:** the approval listener runs while the app is open; each return to the front while not approved re-reads the
+  approval from the server (a read, never a write), which recovers a missed update (seen on iPhone in the look).
+- **249:** the denied invite page is titled "Not approved"; refused actions use the server's words.
+- **250:** the emulator sign-in used for looks does not auto-approve (a look can show waiting); the proofs do.
+- **251:** settings changed while waiting write no record (the first sync after approval fills them); saving your own
+  name while waiting sends it again, so your approval page shows it.
+
+### Public sample data is American, 232: your instruction (chat, 2026-10-21; first given in session 11 and lost)
+
+- **232:** every public picture of the app (store shots, the film, README photos) shows American names and US dollars
+  only: no INR, no rupee sign, no Indian names or places (you live in New York; that audience should see itself). The
+  store-shots seed (D-251) changes on both phones and the shots and clips are captured again (D-255, after D-254 and
+  before the film). The instruction was given in session 11 and never written down, so the re-capture kept Goa trip,
+  Meera and the rupee; recorded here so it cannot be lost again. "Sam" (173) and "Luna" (227) stay.
+
+### The approval gate and the American re-shoot, 233 to 237: your answers (pop-ups, 2026-10-21, session 12)
+
+Mock-up https://claude.ai/artifact/4ULGr42bEn7YUhSu7pQaTx (v1); README pick https://claude.ai/artifact/J3EFygb5CUdhrU4wBa6ArU.
+
+- **233 (D-254):** build the gate as the mock-up shows: "Waiting for approval" / "Not approved" on the You page's
+  account row, the Sync card's early-testing words, one toast on approval, the admin page with Waiting / Approved /
+  Denied and the one-time "Approve the N" migration. Design: `docs/superpowers/specs/2026-10-21-approval-gate-design.md`.
+- **234 (GUARANTEES #5, ADR-0013's fork, taken by you):** the last sentence becomes "Sync requires an account, is on
+  once your account is approved, and can be turned off at any time in one tap."
+- **235 (privacy page Version 3, public on 0.5.1's deploy day):** a new item under "With an account": "Approval: while
+  SKIPTI is in early testing, a new account waits for our approval before anything else is kept in the cloud. To
+  decide, we see the name you show others, your sign-in email if Apple or Google gave one, and whether you use an
+  iPhone or an Android phone."
+- **236 (README, decision 231):** the README shows store shots 01, 04, 05, 07, 08 and 09, in their American re-shoot.
+- **237 (store caption 2):** "Trips, flats, dinners. One page each." becomes "Trips, roommates, dinners. One page each."
+
+- **238 (your ask, chat; my implementation):** public pictures at full real detail, never upscaled: README images
+  composed so the app screen sits at its native 1320 x 2868 pixels (1:1, PNG); Android re-captured on a throwaway
+  1440 x 2560 phone (was 1080 x 1920); App Store stays at Apple's fixed 1320 x 2868; the film renders without
+  upscaling past the clips' native size. No AI upscaling or sharpening (it invents detail; 224: no edited pixels).
+  Done in D-255 (`.drafts/d255/brief.md` section 5).
+
+- **252 (yours, chat with a screenshot, 2026-10-21):** You > Profile and account: "Signed in with Google" and Sign out
+  (with its line) become ONE card at the top; Find me (the username) moves right below it; then Sync, Notifications
+  and the rest. Both phones. Built in D-254's branch (the same screen), after the look.
+
+### The film, the README and the re-shoot's data, 253 to 257: your answers (pop-ups, 2026-10-22)
+
+- **253 (D-255):** the American sample data has a New York flavour: Hamptons weekend, Apartment 4B, Brooklyn dinners;
+  Sam with Emma, Jake, Olivia and Ben; US dollars only (`.drafts/d255/brief.md`).
+- **254 (U33):** two films, 25 s each: the App Store preview in 9:16 with iPhone footage, the Play promo in 16:9 with
+  Android footage (Play takes a YouTube link: your upload). No separate web film; the README uses photos.
+- **255 (U33):** a wordless original score from the Motion type; the films must also work muted (store previews
+  autoplay silent).
+- **256 (U33, mine within your direction):** the end card reads SKIPTI, then "Even up. Cheers all round.", then
+  "Vardr Labs" small. You liked "Even up. Cheer up." and asked for more cheerful and cool; the toast keeps your "Even
+  up" and lands warmly for a group settling up. Overturn: one line.
+- **257 (README):** a section "What it looks like" right after the intro, a 3 x 2 grid of shots 01, 04, 05, 07, 08, 09
+  at full detail, each linked to its full-size file, no extra captions.
+
 ### Siri and Gemini, 210 to 213: your answers (pop-up, 2026-10-21)
 
 - **210 (U15, U16):** Siri and Gemini come in **0.5.2**, not 0.5.1.
