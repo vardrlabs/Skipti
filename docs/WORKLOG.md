@@ -40,7 +40,11 @@ Newest session log entries go at the bottom.
   (film: two 25 s cuts, App Store 9:16 iPhone + Play 16:9 Android, score, end card "Even up. Cheers all round.";
   README 3x2; New York data). MERGED b4a61da3, pushed, no Actions run.
 - D-255 STARTED on branch `d255-american-shots` (brief `.drafts/d255/brief.md`: seed both shells, then re-capture at
-  full detail, then clips). Then U33 film (decisions 254-256), README (236, 257), release-051-prep merge, Fable opener. Then: full gate, records (decisions 239-251 drafted), record_unit.py, merge. Decisions drafted
+  full detail, then clips). Then U33 film (decisions 254-256), README (236, 257), release-051-prep merge, Fable opener.
+  Seed DONE 847af05a + 896b0bae (New York, USD; Sam owes Ben $65 in Brooklyn dinners; Trains; both shells green,
+  6 sabotage rows exact). RE-CAPTURE RUNNING (brief `.drafts/d255/capture-brief.md`; report will be
+  `.drafts/d255/capture-report.md`). README insert script ready: `.drafts/readme/apply.py`. Film settled (decisions
+  254-256, 258: two 25 s cuts, Runestone glow, Norse colours, score, "Even up. Cheers all round."). Then: full gate, records (decisions 239-251 drafted), record_unit.py, merge. Decisions drafted
   `.drafts/d254/decisions-draft.md` (239-251). Next: whole-branch review after shells, fix wave, formal sabotage, look
   (throwaway sim + AVD, emulators, admin page served locally), full gate, records, merge.
 - D-255 brief ready: `.drafts/d255/brief.md` (Miami trip / Apartment 4B / Ski weekend, USD; full detail section 5).
