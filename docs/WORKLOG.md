@@ -44,7 +44,10 @@ Newest session log entries go at the bottom.
   Seed DONE 847af05a + 896b0bae (New York, USD; Sam owes Ben $65 in Brooklyn dinners; Trains; both shells green,
   6 sabotage rows exact). RE-CAPTURE RUNNING (brief `.drafts/d255/capture-brief.md`; report will be
   `.drafts/d255/capture-report.md`). README insert script ready: `.drafts/readme/apply.py`. Film settled (decisions
-  254-256, 258: two 25 s cuts, Runestone glow, Norse colours, score, "Even up. Cheers all round."). Then: full gate, records (decisions 239-251 drafted), record_unit.py, merge. Decisions drafted
+  254-256, 258: two 25 s cuts, Runestone glow, Norse colours, score, "Even up. Cheers all round.").
+  Capture DONE (`.drafts/d255/capture-report.md`); wrap fix 253321e3 (his 261); README section + 6 native images;
+  FULL GATE 23/23 (454c3977, 5m34s); recorded (JVM carried forward: Gradle cache from 05:38Z fresh run). Merging.
+  FILM agent RUNNING (brief `.drafts/u33/film-brief.md`). Then: full gate, records (decisions 239-251 drafted), record_unit.py, merge. Decisions drafted
   `.drafts/d254/decisions-draft.md` (239-251). Next: whole-branch review after shells, fix wave, formal sabotage, look
   (throwaway sim + AVD, emulators, admin page served locally), full gate, records, merge.
 - D-255 brief ready: `.drafts/d255/brief.md` (Miami trip / Apartment 4B / Ski weekend, USD; full detail section 5).
