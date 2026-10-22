@@ -346,6 +346,18 @@ fn narrow(v: i128) -> Result<i64, CoreError> {
     i64::try_from(v).map_err(|_| CoreError::Overflow)
 }
 
+/// D-259: a sum of a group's records as a shell may hold it: within i64 AND
+/// not i64::MIN, whose magnitude no i64 holds (Swift's `abs(Int64.min)`
+/// traps, Kotlin's `-Long.MIN_VALUE` stays negative). One member's records
+/// can reach either bound (9,224 records of `check::MAX_AMOUNT_MINOR`), so a
+/// balance or settled sum outside it is `Overflow`, never a value.
+pub(crate) fn narrow_sum(v: i128) -> Result<i64, CoreError> {
+    if v.unsigned_abs() > i64::MAX as u128 {
+        return Err(CoreError::Overflow);
+    }
+    narrow(v)
+}
+
 pub(crate) fn money_make(minor: i64, code: &str) -> Result<Money, CoreError> {
     Ok(Money::new(minor as i128, Currency::parse(code)?))
 }
@@ -1008,7 +1020,7 @@ pub fn balance_line(
                     .unwrap_or(0);
                 Ok(ShareOut {
                     id: hex_encode(&p),
-                    minor_units: narrow(they_owe - you_owe)?,
+                    minor_units: narrow_sum(they_owe - you_owe)?,
                 })
             })
             .collect::<Result<Vec<_>, CoreError>>()?;
@@ -1032,14 +1044,14 @@ pub fn balance_line(
                 Ok(TransferOut {
                     from: hex_encode(&t.from),
                     to: hex_encode(&t.to),
-                    amount_minor: narrow(t.amount)?,
+                    amount_minor: narrow_sum(t.amount)?,
                 })
             })
             .collect::<Result<Vec<_>, CoreError>>()?;
 
         out.push(BalanceLineOut {
             currency_code: code,
-            viewer_net_minor: narrow(viewer_net)?,
+            viewer_net_minor: narrow_sum(viewer_net)?,
             entries,
             transfers,
         });
@@ -1135,8 +1147,8 @@ pub fn settled_progress(
         };
         out.push(SettledProgressOut {
             currency_code: code,
-            settled_minor: narrow(settled)?,
-            outstanding_minor: narrow(outstanding)?,
+            settled_minor: narrow_sum(settled)?,
+            outstanding_minor: narrow_sum(outstanding)?,
             basis_points: u32::try_from(basis_points).map_err(|_| CoreError::Overflow)?,
             settled: outstanding == 0,
         });

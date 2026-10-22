@@ -3533,9 +3533,19 @@ data class GroupNetOut (
     var `groupId`: kotlin.String
     , 
     /**
-     * Your net in this group, one per currency, largest first.
+     * Your net in this group, one per currency, largest first. Empty when
+     * `overflowed`.
      */
     var `nets`: List<CurrencyAmountOut>
+    , 
+    /**
+     * D-259: this group's amounts are too large to add up: its own balance
+     * is past i64 (`balance_line`'s `Overflow`), or adding it to a total or
+     * a person's amount would be. It adds nothing to `totals` or `people`
+     * and its card says so; every other group is unchanged. One member can
+     * write records that reach the bound, so this is a state, not an error.
+     */
+    var `overflowed`: kotlin.Boolean
     
 ){
     
@@ -3554,17 +3564,20 @@ public object FfiConverterTypeGroupNetOut: FfiConverterRustBuffer<GroupNetOut> {
         return GroupNetOut(
             FfiConverterString.read(buf),
             FfiConverterSequenceTypeCurrencyAmountOut.read(buf),
+            FfiConverterBoolean.read(buf),
         )
     }
 
     override fun allocationSize(value: GroupNetOut) = (
             FfiConverterString.allocationSize(value.`groupId`) +
-            FfiConverterSequenceTypeCurrencyAmountOut.allocationSize(value.`nets`)
+            FfiConverterSequenceTypeCurrencyAmountOut.allocationSize(value.`nets`) +
+            FfiConverterBoolean.allocationSize(value.`overflowed`)
     )
 
     override fun write(value: GroupNetOut, buf: ByteBuffer) {
             FfiConverterString.write(value.`groupId`, buf)
             FfiConverterSequenceTypeCurrencyAmountOut.write(value.`nets`, buf)
+            FfiConverterBoolean.write(value.`overflowed`, buf)
     }
 }
 

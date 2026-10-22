@@ -301,6 +301,12 @@ pub const SETTING_VALUE_MAX_CHARS: usize = 64;
 /// D-244: the one key whose value core checks beyond the text rule: a
 /// default currency must be a code core knows.
 pub const SETTING_KEY_DEFAULT_CURRENCY: &str = "money.default-currency";
+/// D-259: the key prefixes kept on each phone and never synced: the app
+/// lock's timeout and screen privacy are security controls of the phone they
+/// were set on (iOS `SettingsSync.perPhone`, Android's twin). Both shells
+/// already drop such a key; core refuses one too, so no account record can
+/// carry one to a build that forgets. Compared ignoring ASCII case.
+pub const SETTING_PER_PHONE_PREFIXES: [&str; 2] = ["applock.", "privacy."];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GroupOpError {
@@ -358,7 +364,7 @@ fn check_group_name(name: &str) -> Result<(), GroupOpError> {
 }
 
 /// D-244: a setting as a shell may write it. The key is 1 to 48 characters of
-/// `A-Z a-z 0-9 . -`; the value is trimmed, 1 to 64 characters, no control
+/// `A-Z a-z 0-9 . -` and (D-259) not a per-phone key; the value is trimmed, 1 to 64 characters, no control
 /// characters (the member name rule); a default currency is a code core knows.
 fn check_setting(key: &str, value: &str) -> Result<(), GroupOpError> {
     let key_ok = !key.is_empty()
@@ -368,6 +374,15 @@ fn check_setting(key: &str, value: &str) -> Result<(), GroupOpError> {
             .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-');
     if !key_ok {
         return Err(GroupOpError::Invalid(format!("setting key {key:?}")));
+    }
+    let per_phone = SETTING_PER_PHONE_PREFIXES.iter().any(|prefix| {
+        key.get(..prefix.len())
+            .is_some_and(|head| head.eq_ignore_ascii_case(prefix))
+    });
+    if per_phone {
+        return Err(GroupOpError::Invalid(format!(
+            "setting key {key:?} is kept on each phone and never synced"
+        )));
     }
     if value.is_empty()
         || value.trim() != value
@@ -5293,6 +5308,91 @@ mod tests {
                 "{value:?}"
             );
         }
+    }
+
+    /// D-259: a per-phone key (the app lock's timeout, screen privacy) is
+    /// refused at encode and at decode, in any ASCII case; a synced key, and
+    /// a key that only contains the words elsewhere, is still accepted.
+    #[test]
+    fn a_per_phone_setting_key_is_refused() {
+        for key in [
+            "applock.timeout",
+            "privacy.hide-when-captured",
+            "applock.anything",
+            "privacy.x",
+            "AppLock.timeout",
+            "PRIVACY.hide-when-captured",
+        ] {
+            assert!(
+                matches!(
+                    encode(&setting(key, "on")),
+                    Err(GroupOpError::Invalid(m)) if m.contains("kept on each phone")
+                ),
+                "{key}"
+            );
+            let raw = format!(r#"{{"op":"setting","key":"{key}","value":"on"}}"#);
+            assert!(
+                matches!(decode(raw.as_bytes()), Err(GroupOpError::Invalid(_))),
+                "{key}"
+            );
+        }
+        for key in [
+            "appearance.theme",
+            "money.default-currency",
+            "appearance.lessMotion",
+            "applock",
+            "privacy",
+            "applocks.timeout",
+            "x.applock.timeout",
+            "my.privacy.x",
+        ] {
+            // A currency code is a valid value for every key.
+            assert!(encode(&setting(key, "USD")).is_ok(), "{key}");
+            let raw = format!(r#"{{"op":"setting","key":"{key}","value":"USD"}}"#);
+            assert!(decode(raw.as_bytes()).is_ok(), "{key}");
+        }
+        assert_eq!(SETTING_PER_PHONE_PREFIXES, ["applock.", "privacy."]);
+        assert_eq!(
+            encode(&setting("applock.timeout", "off"))
+                .unwrap_err()
+                .to_string(),
+            r#"invalid group operation: setting key "applock.timeout" is kept on each phone and never synced"#
+        );
+    }
+
+    /// D-259: the projection lists a per-phone setting record as rejected,
+    /// even as the latest write, and keeps the valid writes around it.
+    #[test]
+    fn a_per_phone_setting_record_lands_in_rejected() {
+        let raw = |id: VersionId, json: &str| OpRecord {
+            id,
+            bytes: json.as_bytes().to_vec(),
+        };
+        let recs = vec![
+            rec(vid(1000, 0, 1), &setting("appearance.theme", "norse")),
+            raw(
+                vid(2000, 0, 1),
+                r#"{"op":"setting","key":"applock.timeout","value":"off"}"#,
+            ),
+            raw(
+                vid(3000, 0, 2),
+                r#"{"op":"setting","key":"privacy.hide-when-captured","value":"false"}"#,
+            ),
+            rec(vid(1500, 0, 2), &setting("money.default-currency", "GBP")),
+        ];
+        let p = project(&recs);
+        assert_eq!(
+            p.settings,
+            vec![
+                held_setting("appearance.theme", "norse", vid(1000, 0, 1)),
+                held_setting("money.default-currency", "GBP", vid(1500, 0, 2)),
+            ]
+        );
+        assert_eq!(
+            p.rejected,
+            vec![vid(2000, 0, 1).render(), vid(3000, 0, 2).render()]
+        );
+        assert!(p.pending.is_empty() && p.contested.is_empty());
     }
 
     /// The default currency must be a code core knows; the same value under
