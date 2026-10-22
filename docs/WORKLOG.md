@@ -27,6 +27,8 @@ Newest session log entries go at the bottom.
   films take his pick. None seen or heard by us (no signed-in browser).
   He picked lo-fi (265): reworked grown-up with hits on measured taps (13 in the App Store film, 9 in Play); both films
   now on it: App Store Fc1bbR8GH4s2ptwLpKo4E3, Play Bp78HQrtXhEr1bY3R1FCVC. Variants a to c left as they are.
+  PARKED (266): the clicks did not match and it read as a jazz app; he brings a DRM-free reference track; then rework
+  the score with hits only on the film's own moments (cuts, captions, flip, end card) unless timing can be verified.
 - Next: Fable's pass (opener `.drafts/stop/fable-opener-4.md`), then the 0.5.1 deploy day with him, then going public
   (U35). The Developer Tools exemption goes OFF before any signed or store build (his action).
 
