@@ -71,10 +71,12 @@ Cloud Function but the ones that let a person leave refuses an unapproved caller
   - `list`: `{ pending, approved, denied }`, each newest first, at most 500, fields as stored plus `uid`.
   - `decide({ uid, state: 'approved' | 'denied' })`: the document must exist; sets `state`, `decidedAt`, `decidedBy:
     'admin'`. Taking approval away (approved to denied) is the same call.
-  - `migrate()`: once (`meta/approvalsMigration` absent, else `failed-precondition`): every `users/{uid}` profile
+  - `migrate()` (re-runnable, review fix M1; `meta/approvalsMigration` keeps the first run's count and time and counts
+    runs): every `users/{uid}` profile
     without an approval document becomes `approved`, `decidedBy: 'migration'`; a `pending` one too (its profile
     predates the gate: the rules refuse a profile to an unapproved account); `denied` is left alone. Returns the count.
-    Writes in batches of at most 400.
+    Each page of at most 400 is one transaction that re-reads profiles and approvals (M2): a uid purged meanwhile or
+    decided meanwhile is skipped. A run with nothing to do approves 0.
 - `requestDeletion` / `cancelDeletion` for an account with no profile (a pending or denied account): the deletion
   marker goes on `approvals/{uid}` instead of failing with "setting up"; `purgeDeletedAccounts` also purges approval
   documents past their `deleteAt` (the document and the Auth user). For every purged account, `approvals/{uid}` is
@@ -95,7 +97,7 @@ Cloud Function but the ones that let a person leave refuses an unapproved caller
   `identitytoolkit.googleapis.com/v1/accounts:signInWithIdp` for a Firebase ID token held in memory; then the callable
   over `fetch` (`POST {data}` with the bearer token). Reload means sign in again.
 - Views: signed out ("Sign in with Google"); not the admin ("This is not the admin account." and the caller's id);
-  the list: a one-time migration banner while `meta/approvalsMigration` is absent ("N accounts already had a profile
+  the list: a migration banner while `toMigrate` is above 0 ("N accounts already had a profile
   before the gate. Approve them so nobody already testing is locked out." / "Approve the N"); Waiting (name or "No
   name yet", provider, email or "no email shared", iPhone or Android, how long ago) with Approve and Deny; Approved and
   Denied folded, each row with the opposite button. Every action re-reads the list.
@@ -147,7 +149,8 @@ Cloud Function but the ones that let a person leave refuses an unapproved caller
 - Functions: every gated callable refuses an unapproved caller first (the structural test over `index.js`); exempt
   ones work; `requestApproval` creates, refreshes, never overturns a decision, stores email only when verified;
   `adminApprovals` refuses a non-admin, an Apple-signed admin uid, an empty param; `list`, `decide` both ways,
-  `migrate` once (second run refused, denied untouched, pending with a profile approved); deletion of a profile-less
+  `migrate` re-runnable (a second run changes nothing; a deploy-window profile is approved by a second press; denied
+  untouched; pending with a profile approved); deletion of a profile-less
   account; purge removes the approval document.
 - Hosting: the admin target's headers, the page's single hashed script, no external origin but the two named, the
   shells' API key and client id; the main target unchanged.
@@ -170,6 +173,12 @@ Cloud Function but the ones that let a person leave refuses an unapproved caller
 5. CLOUD-SECURITY section 2 rows for each; the cloud audit script learns the second site.
 Until step 3 runs, every existing tester would be refused, so the order matters. A 0.5.0 phone signed in AFTER the
 gate gets refusals and no waiting words (it never asks for approval); 0.5.0 was internal testing only.
+
+## 9b. Review fixes (2026-10-21)
+
+Server review M1 to M5 (`.drafts/d254/triage-server.md`): migrate re-runnable and transactional; a device update
+that only removes `fcmToken` (and sets `lastSeen`) needs no approval; `list` is the newest 500 per state (index
+`approvals (state ASC, requestedAt DESC)`, deployed and READY before the Functions); denying drops `name` and `email`.
 
 ## 10. Not in this unit
 

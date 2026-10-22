@@ -24,8 +24,18 @@ Newest session log entries go at the bottom.
 - His pop-ups answered (decisions 233 to 237, all recommended): build as shown; G5 "is on once your account is
   approved" (committed 69ddcb4 with an Amendments entry); privacy line Version 3 as drafted (edit after stage 2
   commits: it owns hosting.test); README = shots 01 04 05 07 08 09 (re-shot); caption 2 "Trips, roommates, dinners."
-- Running: stage 1 server, stage 2 admin page, stage 3 iOS (Opus). Stage 4 Android after stage 1 frees the emulators
-  (memory). D-255 brief ready: `.drafts/d255/brief.md` (Miami trip / Apartment 4B / Ski weekend, USD).
+- DONE: stage 1 server 5d27923 (307/307 emulator tests; 8 sabotage rows exact; 'none' = no approvals doc), stage 2
+  admin page d6e4078 (12/12 hosting), privacy v3 + dash scope a6c41b3, decision 238 d8d50dc (full-detail pictures,
+  D-255 brief section 5). RUNNING: stage 3 iOS, stage 4 Android (waits for xcodebuild before Gradle), server-side Opus
+  review -> `.drafts/d254/review-server.md` (no Critical/Important; 8 Minor, triage `.drafts/d254/triage-server.md`).
+  iOS stage 3 DONE 4c089f1 (1035 tests 0 failures; 10 sabotage rows exact). Server fix wave RUNNING (M1-M5 + formal
+  server sabotage S1-S17+). Android stage 4 DONE d3c201b1 (1238 JVM 0 failed, fresh XML 22:13; 6 sabotage rows exact; twin diffs: no auth
+  listener (cache cleared at next front, invisible), Join block 12 dp vs iOS 16 (judge in the look)). Shell review
+  DONE (0 Critical, I1 username ring, I2 unknown says waiting; triage `.drafts/d254/triage-shells.md`). iOS and
+  Android fix waves RUNNING in parallel; server fix wave RUNNING. Then: look on throwaway devices, full gate, records. Decisions drafted
+  `.drafts/d254/decisions-draft.md` (239-251). Next: whole-branch review after shells, fix wave, formal sabotage, look
+  (throwaway sim + AVD, emulators, admin page served locally), full gate, records, merge.
+- D-255 brief ready: `.drafts/d255/brief.md` (Miami trip / Apartment 4B / Ski weekend, USD; full detail section 5).
 
 ## (previous) NOW: 2026-10-21 (session 11 CLOSING; next session = session 12, opener `.drafts/stop/opus-opener-8.md`)
 
