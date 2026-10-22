@@ -1648,6 +1648,10 @@ Mock-up https://claude.ai/artifact/4ULGr42bEn7YUhSu7pQaTx (v1); README pick http
   beats (runes and the ᚠ, then Home, Add, Split, Settle, the theme flip Aurora to Norse as the climax, the end card).
   The theme beat stops before Vardr Labs (it shows only as a tile); Android's split clip is a softer 1080 x 1920 copy
   (the 18.9 MB original is over the upload limit). Nobody has watched them play yet: scrub both before exporting.
+- **263 (yours, pop-up after watching, 2026-10-22):** the end card line becomes "Split the bill, not the friendship."
+  ("Even up. Cheers all round." read robotic: 256 overturned).
+- **264 (yours):** the score was not catchy; four scores on the same App Store cut so you can choose (stomp and clap
+  folk-pop, Nordic drums and horn, bright synth pulse, warm lo-fi groove); the Play promo takes folk-pop until you pick.
 - **257 (README):** a section "What it looks like" right after the intro, a 3 x 2 grid of shots 01, 04, 05, 07, 08, 09
   at full detail, each linked to its full-size file, no extra captions.
 
