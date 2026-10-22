@@ -92,6 +92,15 @@ service cloud.firestore {
       return changesOnly(['fcmToken', 'lastSeen'])
         && !('fcmToken' in request.resource.data);
     }
+    // D-258 (G-26, decision 269): a phone signed out from another phone (signOutDevice, Sign out everywhere, a
+    // deletion request: `signedOut` on its device document, which only Functions set) writes no more records,
+    // whatever its app does with the flag. Read from the record's own deviceId. A MISSING device document does not
+    // refuse: a phone's first records can go up before its registration lands (appIsActive registers and pushes
+    // together). One more document read per record create once the document exists (always, after registration).
+    function deviceSignedOut() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid)/devices/$(request.resource.data.deviceId))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)/devices/$(request.resource.data.deviceId)).data.get('signedOut', false) == true;
+    }
     function intIn(v, lo, hi) {
       return v is int && v >= lo && v <= hi;
     }
@@ -161,7 +170,9 @@ service cloud.firestore {
         && validName();
 
       // The account's phones. `signedOut` is set only by a Function; a phone
-      // can neither set nor clear it.
+      // can neither set nor clear it. D-258 (G-26): a phone's entry that says
+      // signed out takes no update but the token removal (removing what is
+      // yours never waits); signed in again, the phone deletes and remakes it.
       match /devices/{deviceId} {
         allow get, list: if isUser(uid);
         allow create: if isUser(uid) && approved()
@@ -172,7 +183,7 @@ service cloud.firestore {
           && shortText(request.resource.data.appVersion, 20)
           && request.resource.data.lastSeen == request.time
           && validToken();
-        allow update: if isUser(uid) && (approved() || tokenRemovalOnly())
+        allow update: if isUser(uid) && ((approved() && resource.data.get('signedOut', false) != true) || tokenRemovalOnly())
           && changesOnly(['name', 'appVersion', 'lastSeen', 'fcmToken'])
           && shortText(request.resource.data.name, 60)
           && shortText(request.resource.data.appVersion, 20)
@@ -184,7 +195,8 @@ service cloud.firestore {
       // The personal ledger (unit 4). No push line: nobody else is told.
       match /records/{recordId} {
         allow get, list: if isUser(uid);
-        allow create: if isUser(uid) && approved() && validRecord() && !('notice' in request.resource.data);
+        allow create: if isUser(uid) && approved() && validRecord() && !('notice' in request.resource.data)
+          && !deviceSignedOut();
       }
 
       // Invitations sent to this account (unit 7): written by a Function,
@@ -230,7 +242,7 @@ service cloud.firestore {
       match /records/{recordId} {
         allow get, list: if isMember(groupId)
           || (signedIn() && formerAt(groupId) != null && resource.data.createdAt <= formerAt(groupId).at);
-        allow create: if isMember(groupId) && approved() && validRecord();
+        allow create: if isMember(groupId) && approved() && validRecord() && !deviceSignedOut();
       }
     }
 

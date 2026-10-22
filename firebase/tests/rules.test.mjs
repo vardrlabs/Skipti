@@ -36,8 +36,9 @@ function value(v) {
   return { mapValue: { fields: fields(v) } };
 }
 const SERVER_TIME = Symbol('serverTime');
+const DROP = Symbol('drop'); // D-258: in an 'update', the field is in the mask and absent, so it is removed
 function fields(o) {
-  return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== SERVER_TIME).map(([k, v]) => [k, value(v)]));
+  return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== SERVER_TIME && v !== DROP).map(([k, v]) => [k, value(v)]));
 }
 
 // One write through :commit, so server timestamps and preconditions work.
@@ -605,4 +606,46 @@ test('D-235 round 3: a phone never writes a group\'s removal count (only removeM
   assert.equal(await write('alice', 'groups/g1', { ...group('alice'), removals: 0 }), DENIED, 'at create');
   assert.equal(await write('alice', 'groups/g1', group('alice')), OK);
   assert.equal(await write('alice', 'groups/g1', { removals: 0 }, 'update'), DENIED, 'at update');
+});
+
+// --- D-258 (G-26, decision 269): a phone signed out from another phone ------
+test('D-258: a phone signed out from another phone writes no record and updates nothing but its token removal', async () => {
+  const OUT = 'c'.repeat(32); // the phone signed out (signOutDevice: Functions only)
+  const IN = 'e'.repeat(32); // the account's other phone, still signed in
+  const NONE = 'f'.repeat(32); // a phone whose registration has not landed yet
+  const from = (author, deviceId) => ({ ...record(author), deviceId, hlc: { ...record(author).hlc, device: deviceId } });
+  const phone = `users/alice/devices/${OUT}`;
+  assert.equal(await write('owner', phone, { ...device(), lastSeen: new Date(), fcmToken: 't1', signedOut: true, signedOutAt: new Date() }), OK);
+  assert.equal(await write('owner', `users/alice/devices/${IN}`, { ...device(), lastSeen: new Date() }), OK);
+  assert.equal(await write('owner', 'groups/g1', { ...group('alice'), createdAt: new Date() }), OK);
+  // Records: the signed-out phone's are refused, personal and group; the others' go up.
+  assert.equal(await write('alice', 'users/alice/records/r1', from('alice', OUT)), DENIED, 'a personal record from the signed-out phone');
+  assert.equal(await write('alice', 'groups/g1/records/r1', from('alice', OUT)), DENIED, 'a group record from the signed-out phone');
+  assert.equal(await write('alice', 'users/alice/records/r2', from('alice', IN)), OK, 'the signed-in phone is unaffected');
+  assert.equal(await write('alice', 'groups/g1/records/r2', from('alice', IN)), OK);
+  assert.equal(await write('alice', 'users/alice/records/r3', from('alice', NONE)), OK, 'no device document: still writes');
+  assert.equal(await write('alice', 'groups/g1/records/r3', from('alice', NONE)), OK);
+  // A flag that says false is no sign-out.
+  assert.equal(await write('owner', `users/alice/devices/${IN}`, { signedOut: false }, 'update'), OK);
+  assert.equal(await write('alice', 'users/alice/records/r4', from('alice', IN)), OK, 'signedOut false writes');
+  // The signed-out phone's entry: the token removal goes through, nothing else does.
+  assert.equal(await write('alice', phone, { name: 'Pixel 9', lastSeen: SERVER_TIME }, 'update'), DENIED, 'a name update');
+  assert.equal(await write('alice', phone, { appVersion: '0.5.1', lastSeen: SERVER_TIME }, 'update'), DENIED, 'a version update');
+  assert.equal(await write('alice', phone, { fcmToken: 't2', lastSeen: SERVER_TIME }, 'update'), DENIED, 'a new token');
+  assert.equal(await write('alice', phone, { fcmToken: DROP, lastSeen: SERVER_TIME }, 'update'), OK, 'the token removal');
+  // With no token left, the same update (tokenUpdate(nil): the token field removed, lastSeen stamped) is the
+  // lastSeen stamp alone; it still goes through (D-254 M3's tokenRemovalOnly), and the flag stays.
+  assert.equal(await write('alice', phone, { fcmToken: DROP, lastSeen: SERVER_TIME }, 'update'), OK, 'again, with no token left');
+  assert.equal(await write('alice', phone, { fcmToken: 't3', lastSeen: SERVER_TIME }, 'update'), DENIED, 'a token after it');
+  assert.equal(await write('alice', 'users/alice/records/r7', from('alice', OUT)), DENIED, 'still signed out');
+  assert.equal(await write('alice', `users/alice/devices/${IN}`, { name: 'Pixel 9', lastSeen: SERVER_TIME }, 'update'), OK,
+    'the signed-in phone still updates its entry');
+  // Signed in again: the phone deletes its entry and makes it fresh (CloudProfile.register), and writes again.
+  assert.equal(await write('alice', phone, null, 'delete'), OK);
+  assert.equal(await write('alice', phone, device()), OK);
+  assert.equal(await write('alice', 'users/alice/records/r5', from('alice', OUT)), OK, 'a fresh entry writes');
+  assert.equal(await write('alice', 'groups/g1/records/r5', from('alice', OUT)), OK);
+  // Another account's signed-out phone with the same id changes nothing for alice (the read is under her own uid).
+  assert.equal(await write('owner', `users/bob/devices/${IN}`, { ...device(), lastSeen: new Date(), signedOut: true }), OK);
+  assert.equal(await write('alice', 'users/alice/records/r6', from('alice', IN)), OK, 'only her own phones count');
 });

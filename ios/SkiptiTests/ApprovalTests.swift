@@ -539,6 +539,88 @@ final class ApprovalTests: XCTestCase {
         XCTAssertTrue(read.contains("Cloud.db.collection(\"approvals\").document(uid).getDocument(source: .server)"))
     }
 
+    /// D-258 (G-26, decision 269): an approved account's permission refusal is parked only while the server does not
+    /// say this phone was signed out. Flagged since this sign-in: nothing parked, the push stops, and the flag is handed
+    /// on (pushAll runs the remote sign-out path with it). Flagged before this sign-in: nothing parked, nothing signed
+    /// out. Not flagged, or no answer: parked as before (decision 114). The entry is read once a push, only then.
+    @MainActor
+    func testASignedOutPhonesRefusalIsNotParked() async throws {
+        let records = (0..<3).map { i -> RecordWire in
+            RecordWire(version: 1, recordType: 1, groupId: i == 2 ? String(repeating: "a", count: 32) : nil, epoch: 0,
+                       hlcMillis: 1_790_000_000_000, hlcCounter: UInt32(i),
+                       hlcDeviceId: String(repeating: "d", count: 32), authorDeviceId: String(repeating: "d", count: 32),
+                       nonceSession: Data([0, 0, 0, 1]), flags: 0, blob: Data())
+        }
+        let ids = records.map(CloudRecords.documentId)
+        func push(_ flag: CloudSync.PhoneFlag, code: FirestoreErrorCode.Code = .permissionDenied,
+                  approval: ApprovalState = .approved) async
+            -> (uploaded: [String], refused: [String], offline: Bool, heard: ApprovalState?, phone: CloudSync.PhoneFlag?, asked: Int) {
+            var asked = 0
+            let one = await CloudSync.uploadOneByOne(records, write: { r in
+                if r.hlcCounter >= 1 { throw NSError(domain: FirestoreErrorDomain, code: code.rawValue) }
+            }, onServer: { _ in .notThere }, approval: { approval }, phone: { asked += 1; return flag })
+            return (one.uploaded, one.refused, one.offline, one.heard, one.phone, asked)
+        }
+        for flag in [CloudSync.PhoneFlag.signedOut, .signedOutBefore] {
+            let r = await push(flag)
+            XCTAssertEqual(r.refused, [], "nothing parked (\(flag))")
+            XCTAssertTrue(r.offline, "the push stops (\(flag))")
+            XCTAssertEqual(r.phone, flag, "the flag is handed on")
+            XCTAssertNil(r.heard)
+            XCTAssertEqual(r.uploaded, [ids[0]], "what went up before stays up")
+            XCTAssertEqual(r.asked, 1)
+        }
+        for flag in [CloudSync.PhoneFlag.signedIn, .unknown] {
+            let r = await push(flag)
+            XCTAssertEqual(r.refused, [ids[1], ids[2]], "parked as before (\(flag)), personal and group")
+            XCTAssertFalse(r.offline)
+            XCTAssertEqual(r.phone, flag)
+            XCTAssertEqual(r.asked, 1, "read once a push")
+        }
+        let invalid = await push(.signedOut, code: .invalidArgument)
+        XCTAssertEqual(invalid.refused, [ids[1], ids[2]], "not a permission refusal: parked, nothing asked")
+        XCTAssertEqual(invalid.asked, 0)
+        XCTAssertNil(invalid.phone)
+        let waiting = await push(.signedOut, approval: .pending)
+        XCTAssertEqual(waiting.heard, .pending, "approval first: an account not approved stops as M1 says")
+        XCTAssertEqual(waiting.asked, 0)
+        XCTAssertNil(waiting.phone)
+        // Untouched by default (every other caller): parked as before.
+        let plain = await CloudSync.uploadOneByOne(records, write: { r in
+            if r.hlcCounter == 1 { throw NSError(domain: FirestoreErrorDomain, code: FirestoreErrorCode.permissionDenied.rawValue) }
+        }, onServer: { _ in .notThere })
+        XCTAssertEqual(plain.refused, [ids[1]])
+
+        // The reading: since this sign-in signs out; before it, a stale flag; none (or false, or no entry) is signed in.
+        let signedInAt: Int64 = 1_790_000_000_000
+        let at = { (ms: Int64) -> [String: Any] in ["signedOut": true, "signedOutAt": CloudRecords.timestamp(ms)] }
+        XCTAssertEqual(CloudSync.phoneFlag(at(signedInAt + 1), authTimeMs: signedInAt), .signedOut)
+        XCTAssertEqual(CloudSync.phoneFlag(at(signedInAt), authTimeMs: signedInAt), .signedOut)
+        XCTAssertEqual(CloudSync.phoneFlag(at(signedInAt - 1), authTimeMs: signedInAt), .signedOutBefore)
+        XCTAssertEqual(CloudSync.phoneFlag(["signedOut": true], authTimeMs: signedInAt), .signedOut, "no time: now")
+        XCTAssertEqual(CloudSync.phoneFlag(["signedOut": false], authTimeMs: signedInAt), .signedIn)
+        XCTAssertEqual(CloudSync.phoneFlag(["name": "iPhone"], authTimeMs: signedInAt), .signedIn)
+        XCTAssertEqual(CloudSync.phoneFlag(nil, authTimeMs: signedInAt), .signedIn, "no entry yet")
+        XCTAssertTrue(CloudSync.PhoneFlag.signedOut.flagged && CloudSync.PhoneFlag.signedOutBefore.flagged)
+        XCTAssertFalse(CloudSync.PhoneFlag.signedIn.flagged || CloudSync.PhoneFlag.unknown.flagged)
+
+        // pushAll reads this phone's entry from the server and, flagged since this sign-in, runs the remote sign-out
+        // path, the same one the entry's listener runs; before any parking.
+        let sync = try appSource("CloudSync.swift")
+        let all = try slice(sync, from: "    static func pushAll(uid: String, store: LedgerStore) async -> Int {", to: "\n    enum GroupState")
+        inOrder(all, ["}, phone: {", "await serverPhone(uid: uid, store: store)",
+                      "if one.phone == .signedOut, Account.shared.uid == uid {", "await signedOutElsewhere()",
+                      "try? CloudRecords.park(store, Set(one.refused)"])
+        let path = try slice(sync, from: "    static func signedOutElsewhere() async {", to: "\n    }\n")
+        inOrder(path, ["await Push.shared.stop(inCloud: false)", "RemoteSignOut.shared.happened()"])
+        let listener = try slice(sync, from: "        // D-198: this phone's own entry; a sign-out from elsewhere ends here.", to: "groupListeners = GroupListeners(")
+        inOrder(listener, ["if Phones.signedOutSince(data, authTimeMs: await Phones.authTimeMs()) {", "await CloudSync.signedOutElsewhere()"])
+        let read = try slice(sync, from: "    static func serverPhone(uid: String, store: LedgerStore) async -> PhoneFlag {", to: "\n    }\n")
+        XCTAssertTrue(read.contains("Cloud.db.collection(\"users\").document(uid).collection(\"devices\").document(device)"))
+        XCTAssertTrue(read.contains(".getDocument(source: .server)"))
+        XCTAssertTrue(read.contains("Bounded.value(seconds: groupReadTimeout, otherwise: PhoneFlag.unknown)"))
+    }
+
     /// M3: Notifications and Find me are away while the account waits or was not approved (they do nothing until then);
     /// Sign out, Sync and Delete account stay. Approved, or not heard yet, the page is as before.
     func testNotificationsAndFindMeWaitForApproval() throws {

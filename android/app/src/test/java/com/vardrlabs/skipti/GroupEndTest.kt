@@ -435,8 +435,9 @@ class GroupEndTest {
         // a deleted group's tombstone (the vanished check and ensureGroup share it).
         assertEquals(
             "a record's existence, a group's existence, groupRead (removal and D-252 share it), the catch-up, " +
-                "D-254 fix wave M1's approval read before parking (serverApproval), and tombstoneRead",
-            6, cloud.split("get(Source.SERVER)").size - 1,
+                "D-254 fix wave M1's approval read before parking (serverApproval), tombstoneRead, and D-258's own-entry " +
+                "read after the approval (serverPhone)",
+            7, cloud.split("get(Source.SERVER)").size - 1,
         )
         // D-256: the tombstone read is bounded, from the server, and writes nothing; ensureGroup's refusal reads it.
         val tomb = cloud.substringAfter("suspend fun tombstoneRead(").substringBefore("\n    /** D-256 (decision 276): after [ensureGroup]")
