@@ -606,7 +606,9 @@ enum SettingsMap {
     static func items(_ section: SettingsSection, signedIn: Bool) -> [SettingItem] {
         switch section {
         case .profileAccount:
-            return signedIn ? [.signedInAs, .signOut, .sync, .notifications, .findMe] : [.signIn]
+            // Decision 252 (the founder, 2026-10-21): how you are signed in and Sign out first (one card, `cards`), then
+            // Find me (your username), then Sync and Notifications.
+            return signedIn ? [.signedInAs, .signOut, .findMe, .sync, .notifications] : [.signIn]
         case .appearance:
             return [.theme, .appearanceMode, .textSize]
         case .security:
@@ -624,6 +626,23 @@ enum SettingsMap {
     /// D-254 fix wave (review M3): the account controls that do nothing until the account is approved (no push reaches
     /// it, and no one can find it): away while it waits or was not approved. Sign out and Delete account stay.
     static let waitsForApproval: Set<SettingItem> = [.notifications, .findMe]
+
+    /// Decision 252: the one card that holds how you are signed in, the sign-out line and Sign out.
+    static let accountCard: [SettingItem] = [.signedInAs, .signOut]
+
+    /// Decision 252: the page's cards, in order. `accountCard`'s two items share one card when both are shown (they are
+    /// next to each other in `items`); every other item is its own card.
+    static func cards(_ items: [SettingItem]) -> [[SettingItem]] {
+        var cards: [[SettingItem]] = []
+        for item in items {
+            if let last = cards.last, last == [accountCard[0]], item == accountCard[1] {
+                cards[cards.count - 1].append(item)
+            } else {
+                cards.append([item])
+            }
+        }
+        return cards
+    }
 
     /// A section's items as the page shows them for `model`'s account state.
     static func shown(_ section: SettingsSection, model: AccountHubModel) -> [SettingItem] {
@@ -719,7 +738,8 @@ struct AccountHubScreen: View {
                 YouHero(store: LedgerStore(path: vaultPath), signedIn: signedIn, username: username,
                         progress: facts.map(SetupSteps.progress))
                 // C2: an account signed in before usernames were asked.
-                if usernameState == UsernameState.none {
+                // D-254 look fix (item 1): only once the account is approved.
+                if UsernameCard.shows(usernameState, approval: Approval.shared.state) {
                     UsernameCard { pickingUsername = true }
                 }
                 // D-221 (L41): the first undone step; while the username card shows, it already asks.
@@ -882,8 +902,19 @@ struct SettingsSectionScreen: View {
                 case .data:
                     yourDataPage
                 default:
-                    ForEach(SettingsMap.shown(section, model: model), id: \.self) { item in
-                        view(for: item)
+                    // Decision 252: drawn card by card (`SettingsMap.cards`): Profile and account's first card holds how you
+                    // are signed in and Sign out together.
+                    ForEach(SettingsMap.cards(SettingsMap.shown(section, model: model)), id: \.self) { items in
+                        if items == SettingsMap.accountCard {
+                            // The method row, 10 below it the sign-out line, 10 below that Sign out (the card's spacing;
+                            // Android's twin).
+                            card {
+                                signedInLine
+                                signOutLine
+                            }
+                        } else if let item = items.first {
+                            view(for: item)
+                        }
                     }
                 }
             }
@@ -1040,27 +1071,9 @@ struct SettingsSectionScreen: View {
                 .buttonStyle(SecondaryButtonStyle())
             }
         case .signedInAs:
-            card {
-                if let method {
-                    methodRow(method)
-                } else {
-                    Text("Signed in")
-                        .font(TypeRole.body())
-                        .foregroundStyle(Color(Tokens.text))
-                }
-            }
+            card { signedInLine }
         case .signOut:
-            // D-155: a plain sign-out.
-            card {
-                Text(AccountSignOut.note)
-                    .font(TypeRole.body(TypeScale.detail))
-                    .foregroundStyle(Color(Tokens.textDim))
-                Button("Sign out") {
-                    Task { await signOut() }
-                }
-                .buttonStyle(SecondaryButtonStyle())
-                .disabled(busy)
-            }
+            card { signOutLine }
         case .sync:
             syncCard
         case .notifications:
@@ -1220,6 +1233,31 @@ struct SettingsSectionScreen: View {
         // D-176: frosted glass over the Aurora glow, 24-point corners.
         VStack(alignment: .leading, spacing: 10) { content() }
             .glassCard()
+    }
+
+    /// How this phone signed in (D-172), or "Signed in" for a sign-in from before it.
+    @ViewBuilder
+    private var signedInLine: some View {
+        if let method {
+            methodRow(method)
+        } else {
+            Text("Signed in")
+                .font(TypeRole.body())
+                .foregroundStyle(Color(Tokens.text))
+        }
+    }
+
+    /// D-155: a plain sign-out, its line above the button.
+    @ViewBuilder
+    private var signOutLine: some View {
+        Text(AccountSignOut.note)
+            .font(TypeRole.body(TypeScale.detail))
+            .foregroundStyle(Color(Tokens.textDim))
+        Button("Sign out") {
+            Task { await signOut() }
+        }
+        .buttonStyle(SecondaryButtonStyle())
+        .disabled(busy)
     }
 
     /// D-172: Apple's logo, Google's G, or the address, with the words.

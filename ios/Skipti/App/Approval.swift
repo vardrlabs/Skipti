@@ -205,6 +205,30 @@ final class Approval {
         return answered.uid != uid || answered.state != state
     }
 
+    /// D-254 look fix (item 2): a front event reads the server's word while the account is not approved (pending, denied,
+    /// or not heard yet); an approved one has the listener and nothing to recover.
+    nonisolated static func frontReads(_ state: ApprovalState) -> Bool { !allowsCloud(state) }
+
+    /// D-254 look fix (item 2): the front's read. Approved: nil, nothing read. Otherwise one read of `approvals/{uid}`
+    /// from the server, bounded (`seconds`); its state, or nil when it gave none (offline, a timeout: nothing heard).
+    static func frontRecheck(state: ApprovalState, seconds: TimeInterval = resolveSeconds,
+                             read: @escaping @MainActor () async -> ApprovalState) async -> ApprovalState? {
+        guard frontReads(state) else { return nil }
+        let answer = await Bounded.value(seconds: seconds, otherwise: ApprovalState.unknown, read)
+        return answer == .unknown ? nil : answer
+    }
+
+    /// D-254 look fix (item 2): the front's read, `approvals/{uid}` from the server (`CloudSync.serverApproval`); a seam
+    /// for the tests.
+    static var serverRead: @MainActor (_ uid: String) async -> ApprovalState = { await CloudSync.serverApproval(uid: $0) }
+
+    /// D-254 look fix (item 3): saving the person's own name while signed in to the vault's owner and not approved asks
+    /// again, so the founder's approval page shows the new name. An approved account has nothing to ask. Android's twin
+    /// is `Approval.asksOnRename`.
+    nonisolated static func nameAsks(uid: String?, owner: String?, state: ApprovalState) -> Bool {
+        InstallSession.owned(uid: uid, owner: owner) != nil && !allowsCloud(state)
+    }
+
     /// What hearing `server` does, given what the phone last knew (`cached`). The toast only follows a state the
     /// phone showed (waiting or denied): an account heard as approved for the first time (an install from before the
     /// gate, or a second phone of an approved account) starts its cloud without one.
@@ -266,6 +290,17 @@ final class Approval {
               let uid = InstallSession.owned(uid: uid, owner: Account.storedOwner(store)) else { return }
         if loadedFor != uid { load(uid: uid, store: store) }
         listen(uid: uid, store: store)
+        // D-254 look fix (item 2): not approved, the front also READS the server's word once (bounded), so a decision the
+        // listener missed (seen on iOS after the Firestore emulator's GOAWAY) is heard at the next front. A read, never a
+        // write: the ask below keeps M5's once per process.
+        if Self.frontReads(state) {
+            let current = state
+            Task {
+                if let heard = await Self.frontRecheck(state: current, read: { await Approval.serverRead(uid) }) {
+                    Approval.shared.heard(heard, uid: uid, store: store)
+                }
+            }
+        }
         guard Self.frontAsks(answered: answered, uid: uid, state: state) else { return }
         Task { await Approval.shared.ask(uid: uid, store: store) }
     }
@@ -274,9 +309,10 @@ final class Approval {
     /// this platform. Its answer is heard like the listener's, and returned (D-254 fix wave I2: the call gate resolves
     /// an unknown state with it); a failure (offline) changes nothing and returns unknown. One at a time: a second ask
     /// while one runs gets its answer.
+    /// `fresh` (D-254 look fix, item 3): never join an ask in flight (it may carry an old name); wait for it, then ask.
     @discardableResult
-    func ask(uid: String, store: LedgerStore = .defaultStore()) async -> ApprovalState {
-        await asks.run(uid) {
+    func ask(uid: String, store: LedgerStore = .defaultStore(), fresh: Bool = false) async -> ApprovalState {
+        await asks.run(uid, fresh: fresh) {
             var data: [String: Any] = ["platform": "ios"]
             if let name = CloudProfile.cloudName((try? store.loadSelf())?.name) { data["name"] = name }
             guard let result = try? await CloudFunctions.call("requestApproval", data) else { return .unknown }
@@ -286,6 +322,18 @@ final class Approval {
             if Account.shared.uid == uid { shared.answered = (uid, answer) }
             return answer
         }
+    }
+
+    /// D-254 look fix (item 3): the person's own name was saved (Profile and the welcome through `ProfileSave.Effects.ask`,
+    /// the Add your name sheet, a new group's "your name", the username step's name). Signed in to the vault's owner and
+    /// not approved: a FRESH ask (`requestApproval` sends the name now in the vault); an ask already in flight may carry
+    /// the old name, so it is waited for, never joined. M5's once per process is for front events only.
+    func nameSaved(store: LedgerStore = .defaultStore()) {
+        guard LaunchWork.startsCloud(), FirebaseGate.isConfigured else { return }
+        let current = Account.shared.uid
+        guard Self.nameAsks(uid: current, owner: Account.storedOwner(store), state: Self.cached(store, uid: current)),
+              let uid = current else { return }
+        Task { await Approval.shared.ask(uid: uid, store: store, fresh: true) }
     }
 
     /// D-254 fix wave (I2): the live call gate (`callRefusal`) for `name`, with the vault's state for `uid`.

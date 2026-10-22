@@ -1670,7 +1670,15 @@ final class SingleFlight<Value> {
 
     func isRunning(_ key: String) -> Bool { running?.key == key }
 
-    func run(_ key: String, _ work: @escaping @MainActor () async -> Value) async -> Value {
+    /// `fresh` (D-254 look fix): a caller whose work must start after any in flight for this key (the one running may
+    /// carry stale input) waits for it to finish, then starts its own (or joins one started after it).
+    func run(_ key: String, fresh: Bool = false, _ work: @escaping @MainActor () async -> Value) async -> Value {
+        if fresh {
+            while let current = running, current.key == key {
+                _ = await current.task.value
+                if running?.token == current.token { running = nil }
+            }
+        }
         if let running, running.key == key { return await running.task.value }
         lastToken += 1
         let token = lastToken

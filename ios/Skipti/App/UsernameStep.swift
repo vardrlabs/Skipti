@@ -310,6 +310,7 @@ struct UsernameStep: View {
             if needsName {
                 _ = try store.setYourName(name)
                 CloudSync.shared.ledgerChanged()
+                Approval.shared.nameSaved() // D-254 look fix (item 3)
             }
             // A `.none` read earlier may be stale (a username picked on
             // another phone since): setUsername would then spend the one
@@ -447,6 +448,13 @@ struct UsernameChangeSheet: View {
 /// itself comes and goes with a sync (D-208: a sheet on it was torn down).
 struct UsernameCard: View {
     var onPick: () -> Void
+
+    /// D-254 look fix (item 1): the card asks only an APPROVED account with no username. Until then the server refuses a
+    /// username (no one can find the account), so the card would only lead to a refusal; pending, denied and not heard
+    /// yet leave it out. Balance and You both decide here. Android's twin is `UsernameCard.shows`.
+    static func shows(_ state: UsernameState?, approval: ApprovalState) -> Bool {
+        state == UsernameState.none && Approval.allowsCloud(approval)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {

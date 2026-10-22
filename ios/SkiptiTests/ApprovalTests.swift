@@ -376,7 +376,8 @@ final class ApprovalTests: XCTestCase {
         inOrder(signIn, ["try SignInMethod.remember(method, store)", "uid = incoming", "Self.setSignedInMark(store, true)",
                          "await Approval.shared.signedIn(uid: incoming, store: store)", "CloudSync.shared.appIsActive(true)"])
         let approval = try appSource("Approval.swift")
-        let ask = try slice(approval, from: "    func ask(uid: String, store: LedgerStore = .defaultStore()) async -> ApprovalState {", to: "\n    }\n")
+        // D-254 look fix (item 3): `ask` gained `fresh` (a saved name never joins an ask in flight).
+        let ask = try slice(approval, from: "    func ask(uid: String, store: LedgerStore = .defaultStore(), fresh: Bool = false) async -> ApprovalState {", to: "\n    }\n")
         inOrder(ask, ["[\"platform\": \"ios\"]", "CloudProfile.cloudName((try? store.loadSelf())?.name)",
                       "CloudFunctions.call(\"requestApproval\", data)",
                       "let answer = ApprovalState.server(result[\"state\"] as? String)", "shared.heard(answer, uid: uid, store: store)",
@@ -546,7 +547,8 @@ final class ApprovalTests: XCTestCase {
         }
         XCTAssertEqual(shown(.pending), [.signedInAs, .signOut, .sync])
         XCTAssertEqual(shown(.denied), [.signedInAs, .signOut, .sync])
-        XCTAssertEqual(shown(.approved), [.signedInAs, .signOut, .sync, .notifications, .findMe])
+        // D-254 look fix (item 6, decision 252): Find me now sits right under Sign out (was after Notifications).
+        XCTAssertEqual(shown(.approved), [.signedInAs, .signOut, .findMe, .sync, .notifications])
         XCTAssertEqual(shown(.unknown), shown(.approved), "not heard yet: as before")
         XCTAssertEqual(SettingsMap.waitsForApproval, [.notifications, .findMe])
         let waiting = accountHubModel(signedIn: true, syncOn: true, approval: .pending)
@@ -554,7 +556,8 @@ final class ApprovalTests: XCTestCase {
         XCTAssertEqual(SettingsMap.shown(.profileAccount, model: accountHubModel(signedIn: false, syncOn: true, approval: .pending)),
                        [.signIn])
         let hub = try appSource("AccountHubScreen.swift")
-        XCTAssertTrue(hub.contains("ForEach(SettingsMap.shown(section, model: model), id: \\.self) { item in"))
+        // D-254 look fix (item 6): the page draws `shown` card by card (`SettingsMap.cards`), still never `items` alone.
+        XCTAssertTrue(hub.contains("ForEach(SettingsMap.cards(SettingsMap.shown(section, model: model)), id: \\.self) { items in"))
         XCTAssertFalse(hub.contains("ForEach(SettingsMap.items(section, signedIn: model.showsAccountControls)"))
     }
 
@@ -589,7 +592,8 @@ final class ApprovalTests: XCTestCase {
         inOrder(front, ["listen(uid: uid, store: store)", "guard Self.frontAsks(answered: answered, uid: uid, state: state) else { return }",
                         "Approval.shared.ask(uid: uid, store: store)"])
         XCTAssertFalse(approval.contains("askedRecently"), "no time window any more")
-        let ask = try slice(approval, from: "    func ask(uid: String, store: LedgerStore = .defaultStore()) async -> ApprovalState {", to: "\n    }\n")
+        // D-254 look fix (item 3): `ask` gained `fresh`.
+        let ask = try slice(approval, from: "    func ask(uid: String, store: LedgerStore = .defaultStore(), fresh: Bool = false) async -> ApprovalState {", to: "\n    }\n")
         inOrder(ask, ["shared.heard(answer, uid: uid, store: store)", "if Account.shared.uid == uid { shared.answered = (uid, answer) }"])
         let signedOut = try slice(approval, from: "    func signedOut(store: LedgerStore = .defaultStore()) {", to: "\n    }\n")
         XCTAssertTrue(signedOut.contains("answered = nil"))
@@ -619,6 +623,144 @@ final class ApprovalTests: XCTestCase {
         await fulfillment(of: [done], timeout: 5)
         XCTAssertEqual(calls, [true], "the token leaves the device document too")
         XCTAssertEqual(Set(CloudProfile.tokenUpdate(nil).keys), ["fcmToken", "lastSeen"], "a token-only update")
+    }
+
+    // MARK: - The look fixes (D-254 triage-look items 1, 2, 3, 6)
+
+    /// Item 1: the "Pick your username" card asks only an approved account with no username, on Balance and on You.
+    func testTheUsernameCardWaitsForApproval() throws {
+        XCTAssertTrue(UsernameCard.shows(UsernameState.none, approval: .approved))
+        XCTAssertFalse(UsernameCard.shows(UsernameState.none, approval: .pending))
+        XCTAssertFalse(UsernameCard.shows(UsernameState.none, approval: .denied))
+        XCTAssertFalse(UsernameCard.shows(UsernameState.none, approval: .unknown), "not heard yet: closed")
+        XCTAssertFalse(UsernameCard.shows(.canChange("ada"), approval: .approved))
+        XCTAssertFalse(UsernameCard.shows(.final("ada"), approval: .approved))
+        XCTAssertFalse(UsernameCard.shows(nil, approval: .approved), "not read yet")
+        for file in ["OverviewScreen.swift", "AccountHubScreen.swift"] {
+            let source = try appSource(file)
+            XCTAssertEqual(source.components(separatedBy: "UsernameCard { pickingUsername = true }").count, 2, file)
+            inOrder(source, ["if UsernameCard.shows(usernameState, approval: Approval.shared.state) {",
+                             "UsernameCard { pickingUsername = true }"])
+            XCTAssertFalse(source.contains("if usernameState == UsernameState.none {"), file)
+        }
+    }
+
+    /// Item 2: a front event while not approved READS the server's word (bounded) and hears it; approved reads nothing;
+    /// no answer hears nothing. The read is the server read, never a write.
+    @MainActor
+    func testTheFrontReadsTheServerWhileNotApproved() async throws {
+        var reads = 0
+        func read(_ answer: ApprovalState) -> @MainActor () async -> ApprovalState { { reads += 1; return answer } }
+        let approved = await Approval.frontRecheck(state: .approved, read: read(.approved))
+        XCTAssertNil(approved)
+        XCTAssertEqual(reads, 0, "approved: nothing read")
+        let fromPending = await Approval.frontRecheck(state: .pending, read: read(.approved))
+        XCTAssertEqual(fromPending, .approved)
+        XCTAssertEqual(reads, 1)
+        let stillPending = await Approval.frontRecheck(state: .pending, read: read(.pending))
+        XCTAssertEqual(stillPending, .pending)
+        let fromDenied = await Approval.frontRecheck(state: .denied, read: read(.approved))
+        XCTAssertEqual(fromDenied, .approved)
+        let fromUnknown = await Approval.frontRecheck(state: .unknown, read: read(.approved))
+        XCTAssertEqual(fromUnknown, .approved)
+        let noAnswer = await Approval.frontRecheck(state: .pending, read: read(.unknown))
+        XCTAssertNil(noAnswer, "no answer: nothing heard")
+        let never = await Approval.frontRecheck(state: .pending, seconds: 0.2) {
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            return .approved
+        }
+        XCTAssertNil(never, "a read that never answers is bounded")
+        XCTAssertEqual(Approval.resolveSeconds, 5)
+        let approval = try appSource("Approval.swift")
+        let front = try slice(approval, from: "    func front(uid: String?, store: LedgerStore = .defaultStore()) {", to: "\n    }\n")
+        inOrder(front, ["listen(uid: uid, store: store)", "if Self.frontReads(state) {",
+                        "await Self.frontRecheck(state: current, read: { await Approval.serverRead(uid) })",
+                        "Approval.shared.heard(heard, uid: uid, store: store)",
+                        "guard Self.frontAsks(answered: answered, uid: uid, state: state) else { return }"])
+        XCTAssertTrue(approval.contains("static var serverRead: @MainActor (_ uid: String) async -> ApprovalState = { await CloudSync.serverApproval(uid: $0) }"))
+    }
+
+    /// Item 3: a saved name asks for approval again while the account is not approved; a refused name asks nothing.
+    @MainActor
+    func testSavingYourNameAsksAgainWhileNotApproved() throws {
+        for state in [ApprovalState.pending, .denied, .unknown] {
+            XCTAssertTrue(Approval.nameAsks(uid: "u", owner: "u", state: state), "\(state)")
+        }
+        XCTAssertFalse(Approval.nameAsks(uid: "u", owner: "u", state: .approved), "approved: nothing to ask")
+        XCTAssertFalse(Approval.nameAsks(uid: nil, owner: "u", state: .pending), "signed out")
+        XCTAssertFalse(Approval.nameAsks(uid: "u", owner: "v", state: .pending), "not the vault's owner")
+        let store = tempStore()
+        var asks = 0
+        let spy = ProfileSave.Effects(changed: {}, share: {}, bump: {}, ask: { asks += 1 })
+        let center = DoneCenter(gate: SuccessGate(), haptic: { _, _ in }, announce: { _ in })
+        XCTAssertEqual(ProfileSave.name("   ", store: store, effects: spy, center: center), .refused("Add a name first."))
+        XCTAssertEqual(asks, 0, "a refused name asks nothing")
+        XCTAssertEqual(ProfileSave.name("Ada", store: store, effects: spy, center: center), .saved("Ada"))
+        XCTAssertEqual(asks, 1, "one ask per saved name")
+        XCTAssertNil(ProfileSave.returned("Ada", saved: "Ada", store: store, effects: spy, center: center))
+        XCTAssertEqual(asks, 1, "an unchanged Return saves and asks nothing")
+        let confirm = try appSource("ProfileConfirm.swift")
+        XCTAssertTrue(confirm.contains("ask: { Approval.shared.nameSaved() })"), "the live save asks")
+        let approval = try appSource("Approval.swift")
+        let saved = try slice(approval, from: "    func nameSaved(store: LedgerStore = .defaultStore()) {", to: "\n    }\n")
+        inOrder(saved, ["Self.nameAsks(uid: current, owner: Account.storedOwner(store), state: Self.cached(store, uid: current))",
+                        "await Approval.shared.ask(uid: uid, store: store, fresh: true)"])
+        // The other places your own name is saved ask too.
+        let sheets = try appSource("GroupSheets.swift")
+        inOrder(sheets, ["try store.setYourName(name)", "Approval.shared.nameSaved()"])
+        inOrder(sheets, ["try CreateGroup.create(", "if needsYourName { Approval.shared.nameSaved() }"])
+        inOrder(try appSource("UsernameStep.swift"), ["_ = try store.setYourName(name)", "Approval.shared.nameSaved()"])
+        inOrder(try appSource("ImportFlow.swift"), ["try job.commit($0, store: LedgerStore.defaultStore())",
+                                                    "if job.newName != nil { Approval.shared.nameSaved() }"])
+        // Every file that saves your own name (Android's twin guards the same list). The four that do not ask are the
+        // Debug proofs and seeds (Account, GroupsScreen, SkiptiApp: emulator accounts approved first) and the store
+        // shots' seed (no account); a new path that saves your name must ask, or be added here with its reason.
+        let saves = Set(try appSources().filter { $0.text.contains(".setYourName(") }.map(\.name))
+        XCTAssertEqual(saves, ["Account.swift", "GroupSheets.swift", "GroupsScreen.swift", "ImportFlow.swift",
+                               "ProfileConfirm.swift", "SkiptiApp.swift", "StoreShots.swift", "UsernameStep.swift"])
+    }
+
+    /// Item 3: a fresh run never joins the one in flight (its input may be stale): it waits, then runs its own work.
+    @MainActor
+    func testAFreshRunWaitsForTheOneInFlightThenRunsItsOwn() async {
+        let flight = SingleFlight<String>()
+        var gate: CheckedContinuation<Void, Never>?
+        var started: [String] = []
+        let first = Task { @MainActor in
+            await flight.run("k") {
+                started.append("old")
+                await withCheckedContinuation { gate = $0 }
+                return "old"
+            }
+        }
+        while gate == nil { await Task.yield() }
+        let joined = Task { @MainActor in await flight.run("k") { started.append("joiner"); return "joiner" } }
+        let fresh = Task { @MainActor in await flight.run("k", fresh: true) { started.append("new"); return "new" } }
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertEqual(started, ["old"], "nothing else starts while one is in flight")
+        gate?.resume()
+        let answers = (await first.value, await joined.value, await fresh.value)
+        XCTAssertEqual(answers.0, "old")
+        XCTAssertEqual(answers.1, "old", "an ordinary caller joins")
+        XCTAssertEqual(answers.2, "new", "a fresh caller runs its own work after")
+        XCTAssertEqual(started, ["old", "new"])
+    }
+
+    /// Item 6 (decision 252): Profile and account's cards: how you are signed in with Sign out (one card), Find me, then
+    /// Sync and Notifications; waiting or denied, Find me and Notifications are away.
+    func testProfileAndAccountCardsPutSignOutAndFindMeFirst() {
+        func shown(_ approval: ApprovalState, signedIn: Bool = true) -> [SettingItem] {
+            SettingsMap.shown(.profileAccount, model: accountHubModel(signedIn: signedIn, syncOn: true, approval: approval))
+        }
+        XCTAssertEqual(SettingsMap.cards(shown(.approved)), [[.signedInAs, .signOut], [.findMe], [.sync], [.notifications]])
+        XCTAssertEqual(SettingsMap.cards(shown(.unknown)), SettingsMap.cards(shown(.approved)))
+        XCTAssertEqual(SettingsMap.cards(shown(.pending)), [[.signedInAs, .signOut], [.sync]])
+        XCTAssertEqual(SettingsMap.cards(shown(.denied)), [[.signedInAs, .signOut], [.sync]])
+        XCTAssertEqual(SettingsMap.cards(shown(.approved, signedIn: false)), [[.signIn]])
+        XCTAssertEqual(SettingsMap.accountCard, [.signedInAs, .signOut])
+        // Only the two account items join; every other section keeps one card per item.
+        XCTAssertEqual(SettingsMap.cards([.signOut, .signedInAs]), [[.signOut], [.signedInAs]])
+        XCTAssertEqual(SettingsMap.cards([.theme, .appearanceMode, .textSize]), [[.theme], [.appearanceMode], [.textSize]])
     }
 
     // MARK: - The emulator helper
