@@ -18,7 +18,21 @@ export const MAX_HASHES = 500;
 // a phone asks once per (group, unaliased id), a handful ever, so 100 covers a large first repair: two full calls).
 // D-230 decision 55: `places`, sharePlaces' records (one per (group, place, you) a phone ever holds; 100 covers two
 // full calls).
-export const LIMITS = { searches: 40, hashes: 2000, invites: 50, checks: 100, aliases: 100, places: 100 };
+// D-257 (G-04, G-23 lead (a)): per-GROUP kinds, charged on the counter document `limits/group-{groupId}` (an
+// account's uid is alphanumeric, so it never names one). `groupInvites` 100: createInvite, inviteUser and inviteKnown
+// each charge the group once (a group of 20 inviting 5 people each is 100; an honest group adds a handful a day).
+// `groupJoins` 50: acceptInvite charges a join that happens (a whole new group of 50 joining in one day still fits).
+// `groupRemovals` 100: removeMember and adoptRemovals charge a removal that happens (closes the remove, re-invite,
+// rejoin cycle of lead (a), one removal record a cycle; an honest group removes a few people ever).
+// D-257 (G-17): `pushes` 300, per AUTHOR account: onGroupRecord charges each record carrying a notice (an honest
+// person adds a few dozen expenses a day at most); past it the record stays and no push goes.
+export const LIMITS = {
+  searches: 40, hashes: 2000, invites: 50, checks: 100, aliases: 100, places: 100,
+  groupInvites: 100, groupJoins: 50, groupRemovals: 100, pushes: 300,
+};
+
+/** D-257: the counter document of group `groupId` (`limits/group-{groupId}`). */
+export const groupLimitId = (groupId) => `group-${groupId}`;
 
 // C2 (approved by the founder 2026-10-13): the one list, which both apps
 // bundle as it is. reserved: the whole handle; anywhere: inside it; whole:
@@ -143,6 +157,18 @@ export function charge(state, today, kind, amount = 1) {
 }
 
 export const utcDay = (ms) => new Date(ms).toISOString().slice(0, 10);
+
+/** D-257 (G-17): a push of an author's record, charged on their counters.
+ *  `send`: whether the push goes; `write`: the counters to store, or null
+ *  for none; `log`: whether this is the first push held back today (logged
+ *  once a day at most: `pushesCapped` marks the day, and goes with it). */
+export function chargePush(state, today) {
+  const next = charge(state, today, 'pushes');
+  if (next) return { send: true, write: next, log: false };
+  // Refused, so today's counter is full (charge refuses only on today's).
+  if (state.pushesCapped === true) return { send: false, write: null, log: false };
+  return { send: false, write: { ...state, pushesCapped: true }, log: true };
+}
 
 /** D-235 decision 121: what an in-app invite stores and sends, built from the
  *  server's names alone: `inviterName` (the inviter's profile name, or null)

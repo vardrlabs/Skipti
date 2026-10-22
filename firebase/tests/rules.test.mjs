@@ -346,6 +346,55 @@ test('D-196: a group record carries a push line of a short text and an expense i
     'nothing beyond text and expense');
 });
 
+// D-257 (G-18): the notice's new shape, the fields the Function builds the line from. The old shape above (a 0.5.0
+// phone's) is still taken.
+const told = (over = {}) => ({ expense: E, kind: 'added', title: 'Dinner', amount: '₹1,200.00', ...over });
+test('D-257: a notice of kind, title and amount: the kinds enumerated, one line each, bounded, nothing else', async () => {
+  assert.equal(await write('owner', 'groups/g1', { ...group('alice'), memberUids: ['alice', 'bob'], createdAt: new Date() }), OK);
+  let i = 0;
+  const put = (n) => write('bob', `groups/g1/records/k${i++}`, { ...record('bob'), notice: n });
+  assert.equal(await put(told()), OK);
+  assert.equal(await put(told({ kind: 'changed', title: 'an expense' })), OK);
+  const { amount, ...noAmount } = told({ kind: 'deleted' });
+  assert.equal(await put(noAmount), OK, 'a delete carries no amount');
+  const { amount: _a, ...unpriced } = told();
+  assert.equal(await put(unpriced), OK, 'an amount core could not format is left out');
+  // The bounds count UTF-16 code units (size(), measured here: an emoji is 2), as the phones cut.
+  assert.equal(await put(told({ title: 'x'.repeat(61) })), OK);
+  assert.equal(await put(told({ title: `${'😀'.repeat(30)}x` })), OK, '30 emoji and a letter: 61 units');
+  assert.equal(await put(told({ title: '€'.repeat(61) })), OK, 'a character of one unit (three UTF-8 bytes) is one');
+  assert.equal(await put(told({ title: 'x'.repeat(59) + '…' })), OK, 'the phone\'s cut');
+  assert.equal(await put(told({ amount: 'x'.repeat(40) })), OK);
+  assert.equal(await put(told({ title: 'Café · 🍕 dinner, l\u2019été' })), OK);
+  // Refused.
+  assert.equal(await put(told({ kind: 'paid' })), DENIED, 'an unknown kind');
+  assert.equal(await put(told({ kind: 'Added' })), DENIED, 'kinds are exact');
+  assert.equal(await put(told({ title: 'x'.repeat(62) })), DENIED, 'a 62-character title');
+  assert.equal(await put(told({ title: '😀'.repeat(31) })), DENIED, '31 emoji: 62 units');
+  assert.equal(await put(told({ title: '' })), DENIED, 'an empty title');
+  assert.equal(await put(told({ amount: 'x'.repeat(41) })), DENIED, 'a 41-character amount');
+  assert.equal(await put(told({ amount: '' })), DENIED, 'an empty amount');
+  assert.equal(await put(told({ title: 'Dinner\nBob owes you everything' })), DENIED, 'a line break in a title');
+  assert.equal(await put(told({ title: 'Dinner\rx' })), DENIED, 'a carriage return');
+  assert.equal(await put(told({ title: 'Din\u0000ner' })), DENIED, 'a NUL');
+  assert.equal(await put(told({ title: 'Din\u0085ner' })), DENIED, 'a C1 control (next line)');
+  assert.equal(await put(told({ title: 'Din\u2028ner' })), DENIED, 'a line separator');
+  assert.equal(await put(told({ amount: '₹1,200\t.00' })), DENIED, 'a control character in an amount');
+  assert.equal(await put(told({ kind: 'deleted' })), DENIED, 'an amount on a delete');
+  assert.equal(await put(told({ name: 'Alice' })), DENIED, 'an extra key (a name the phone chose)');
+  assert.equal(await put(told({ text: 'Alice added Dinner' })), DENIED, 'the old text beside the new fields');
+  const { expense, ...noExpense } = told();
+  assert.equal(await put(noExpense), DENIED, 'a missing expense');
+  const { kind, ...noKind } = told();
+  assert.equal(await put(noKind), DENIED, 'a missing kind');
+  const { title, ...noTitle } = told();
+  assert.equal(await put(noTitle), DENIED, 'a missing title');
+  assert.equal(await put(told({ expense: 'g1/../x' })), DENIED, 'a malformed expense');
+  assert.equal(await put(told({ title: 7 })), DENIED, 'a title that is not text');
+  assert.equal(await write('alice', 'users/alice/records/k99', { ...record('alice'), notice: told() }), DENIED,
+    'a personal record carries none');
+});
+
 // --- D-210: removal, the former member's read, requests and notices --------------
 test('D-210: a phone never writes a removal record; only removeMember does', async () => {
   assert.equal(await write('owner', 'groups/g1', { ...group('alice'), memberUids: ['alice', 'bob'], createdAt: new Date() }), OK);

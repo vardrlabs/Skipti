@@ -180,6 +180,8 @@ export const createInvite = onCall(CALLABLE, async (request) => {
   const uid = await approvedCaller(request);
   const fields = inviteFields(request.data ?? {});
   await memberGroup(fields.groupId, uid);
+  // D-257 (G-04): the group's daily invites, charged before the log is read.
+  await charge(people.groupLimitId(fields.groupId), 'groupInvites');
   const groupName = await refuseHeld(fields.groupId, fields.memberId);
   // D-235 decision 121 (extended to links): the link names the inviter and
   // the group from the server's records, as deliverInvite does, so peekInvite
@@ -312,6 +314,9 @@ export const acceptInvite = onCall(CALLABLE, async (request) => {
     const groupRef = db.collection('groups').doc(invite.groupId);
     const group = await tx.get(groupRef);
     if (!group.exists) throw new HttpsError('not-found', 'This group no longer exists.');
+    // D-257 (G-04): the group's daily joins, read before the log; written
+    // with the join, so the refusal (or any other) leaves the invite unspent.
+    const chargeJoin = await groupChargeIn(tx, invite.groupId, 'groupJoins');
     // D-235 (H1): someone removed never comes back through a link made at or
     // before their removal (one they made themselves while a member, or an
     // older one forwarded to them): refused, the invite unspent, `former`
@@ -407,6 +412,7 @@ export const acceptInvite = onCall(CALLABLE, async (request) => {
     // a former one.
     tx.update(groupRef, 'memberUids', FieldValue.arrayUnion(uid), new FieldPath('former', uid), FieldValue.delete());
     tx.update(ref, { usedBy: uid, usedAt: FieldValue.serverTimestamp() });
+    chargeJoin();
     for (const [mark, r] of marks) tx.create(mark.doc, heldDoc(r, uid, FieldValue.serverTimestamp(), mark.hlc));
     copies.docs.forEach((d) => tx.delete(d.ref));
     return { groupId: invite.groupId, memberId: invite.memberId, groupName: invite.groupName };
@@ -418,10 +424,17 @@ export const acceptInvite = onCall(CALLABLE, async (request) => {
 // reads the group and the members' phones, sends, and forgets the push
 // addresses FCM says are gone. A record without a notice (people, names,
 // settlements, any record from before D-196) sends nothing.
+// D-257 (G-17): each notice is charged to its author's daily `pushes` before
+// the group is read; past the cap the record stays (the rules took it) and no
+// push goes. (G-18): the line is built here from the checked fields and the
+// author's name as the server holds it (push.body), never the phone's text.
+// The title stays the group document's name: the log's (groupNameOf) would
+// cost a read of the whole log per record (lead (d), cosmetic).
 export const onGroupRecord = onDocumentCreated('groups/{groupId}/records/{recordId}', async (event) => {
   const record = event.data?.data();
   const n = push.notice(record);
-  if (!n) return;
+  if (!n || typeof record.authorUid !== 'string' || !record.authorUid) return;
+  if (!(await chargePush(record.authorUid))) return;
   const { groupId } = event.params;
   const group = await db.collection('groups').doc(groupId).get();
   if (!group.exists) return;
@@ -433,9 +446,16 @@ export const onGroupRecord = onDocumentCreated('groups/{groupId}/records/{record
   }))).flat();
   const sent = push.tokens(phones);
   if (!sent.length) return;
-  const response = await getMessaging().sendEachForMulticast({
-    ...push.message(n, groupId, group.data().name), tokens: sent.map((s) => s.token),
-  });
+  const author = await db.collection('users').doc(record.authorUid).get();
+  const built = push.message(n, groupId, group.data().name, push.authorName(author.exists ? author.data() : null));
+  // FCM has no emulator: under the Functions emulator the message is stored
+  // (emulatorPushes/{recordId}, no rule: Functions only) instead of sent, so
+  // the emulator suite can read what would have gone. Never in production.
+  if (process.env.FUNCTIONS_EMULATOR === 'true') {
+    await db.collection('emulatorPushes').doc(event.params.recordId).set({ ...built, phones: sent.length });
+    return;
+  }
+  const response = await getMessaging().sendEachForMulticast({ ...built, tokens: sent.map((s) => s.token) });
   report('onGroupRecord', sent, response);
   await Promise.all(push.deadTokens(sent, response).map((s) =>
     db.collection('users').doc(s.uid).collection('devices').doc(s.id)
@@ -445,15 +465,47 @@ export const onGroupRecord = onDocumentCreated('groups/{groupId}/records/{record
 // ---- D-197 (unit 7): finding people. Every rule is in people.js (tested
 // directly); these read and write the documents. ----
 
-/** Charges today's counter for `kind`, or refuses past the daily limit. */
-async function charge(uid, kind, amount = 1) {
-  const ref = db.collection('limits').doc(uid);
+const TOO_MANY = 'Too many for today. Try again tomorrow.';
+
+/** Charges today's counter for `kind`, or refuses past the daily limit.
+ *  `id` is the counter document: an account's uid, or (D-257)
+ *  people.groupLimitId(groupId) for a group's. */
+async function charge(id, kind, amount = 1) {
+  const ref = db.collection('limits').doc(id);
   await db.runTransaction(async (tx) => {
     const snapshot = await tx.get(ref);
     const next = people.charge(snapshot.exists ? snapshot.data() : null, people.utcDay(Date.now()), kind, amount);
-    if (!next) throw new HttpsError('resource-exhausted', 'Too many for today. Try again tomorrow.');
+    if (!next) throw new HttpsError('resource-exhausted', TOO_MANY);
     tx.set(ref, next);
   });
+}
+
+/** D-257 (G-04): a group's daily `kind` (groupJoins, groupRemovals) charged
+ *  inside the caller's transaction, so only what commits counts: a refused
+ *  join or removal spends none of the group's day (a link holder or a plain
+ *  member cannot use up a group's joins or removals with calls that fail).
+ *  Read first; refuses at once when the day is full; returns the write the
+ *  caller makes with its own (`write()`, after every read). */
+async function groupChargeIn(tx, groupId, kind) {
+  const ref = db.collection('limits').doc(people.groupLimitId(groupId));
+  const snapshot = await tx.get(ref);
+  const next = people.charge(snapshot.exists ? snapshot.data() : null, people.utcDay(Date.now()), kind);
+  if (!next) throw new HttpsError('resource-exhausted', TOO_MANY);
+  return () => tx.set(ref, next);
+}
+
+/** D-257 (G-17): charges one push to its author's daily `pushes`; false past
+ *  the cap (the push is held back), logged the first time a day. */
+async function chargePush(uid) {
+  const ref = db.collection('limits').doc(uid);
+  const verdict = await db.runTransaction(async (tx) => {
+    const snapshot = await tx.get(ref);
+    const v = people.chargePush(snapshot.exists ? snapshot.data() : null, people.utcDay(Date.now()));
+    if (v.write) tx.set(ref, v.write);
+    return v;
+  });
+  if (verdict.log) logger.info('push: capped', { limit: people.LIMITS.pushes });
+  return verdict.send;
 }
 
 // Your @username. Unique by the document id of usernames/{handle}. C2: set
@@ -595,6 +647,8 @@ export const inviteUser = onCall(CALLABLE, async (request) => {
   }
   const profile = await db.collection('users').doc(target).get();
   if (!profile.exists || !people.findable(profile.data())) throw new HttpsError('not-found', 'No such person.');
+  // D-257 (G-04): the group's daily invites, charged before the log is read.
+  await charge(people.groupLimitId(fields.groupId), 'groupInvites');
   const groupName = await refuseHeld(fields.groupId, fields.memberId);
   await charge(uid, 'invites');
   await deliverInvite('inviteUser', fields, uid, target, groupName);
@@ -664,6 +718,8 @@ export const inviteKnown = onCall(CALLABLE, async (request) => {
   if ((group.data().memberUids ?? []).includes(target)) {
     throw new HttpsError('failed-precondition', 'They are already in this group.');
   }
+  // D-257 (G-04): the group's daily invites, charged before the log is read.
+  await charge(people.groupLimitId(fields.groupId), 'groupInvites');
   const groupName = await refuseHeld(fields.groupId, fields.memberId);
   await charge(uid, 'invites');
   await deliverInvite('inviteKnown', fields, uid, target, groupName);
@@ -1408,6 +1464,8 @@ export const removeMember = onCall(CALLABLE, async (request) => {
   try {
     ({ asked, target, groupName } = await db.runTransaction(async (tx) => {
       const g = await again(tx, ref);
+      // D-257 (G-04): the group's daily removals; written with the removal.
+      const chargeRemoval = await groupChargeIn(tx, groupId, 'groupRemovals');
       const place = await placeIn(tx, ref, g, member, you);
       const open = await tx.get(requestRef);
       // Only a place the group's log made (as requestRemoval), or (round 4,
@@ -1428,6 +1486,7 @@ export const removeMember = onCall(CALLABLE, async (request) => {
       // the accounts that ever joined (each through an accepted invite).
       if (!t && (g.removals ?? 0) + data.records.length > REMOVALS_MAX) throw new HttpsError('resource-exhausted', REMOVALS_FULL);
       const now = FieldValue.serverTimestamp();
+      chargeRemoval();
       for (const r of data.records) tx.create(ref.collection('records').doc(r.id), removalDoc(r, uid, now));
       if (t) {
         tx.update(ref, 'memberUids', FieldValue.arrayRemove(t), 'admins', FieldValue.arrayRemove(t),
@@ -1546,6 +1605,8 @@ export const adoptRemovals = onCall(CALLABLE, async (request) => {
   try {
     await db.runTransaction(async (tx) => {
       const g = await again(tx, ref);
+      // D-257 (G-04): the group's daily removals, one a call; written with the records.
+      const chargeRemoval = await groupChargeIn(tx, groupId, 'groupRemovals');
       const members = g.memberUids ?? [];
       // Round 3 (R2-1): only while the group has never had anyone else: no
       // other member now, none removed (`former`) or purged (`departed`), no
@@ -1557,6 +1618,7 @@ export const adoptRemovals = onCall(CALLABLE, async (request) => {
       }
       if ((g.removals ?? 0) + data.records.length > REMOVALS_MAX) throw new HttpsError('resource-exhausted', REMOVALS_FULL);
       const now = FieldValue.serverTimestamp();
+      chargeRemoval();
       for (const r of data.records) tx.create(ref.collection('records').doc(r.id), removalDoc(r, uid, now));
       tx.update(ref, { removals: FieldValue.increment(data.records.length) });
     });

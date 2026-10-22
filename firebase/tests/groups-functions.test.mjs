@@ -2782,3 +2782,37 @@ test('D-237 A3 (G-29): an outsider who copies a member\'s participant id no long
   assert.equal((await list('users/kit/invites')).length, 2);
   assert.equal((await list('users/out/invites')).length, 0);
 });
+
+// ---- D-257 (G-04): a group's daily removals, on limits/group-{groupId}, charged with the removal ----
+const GL = `limits/group-${G}`;
+const TODAY = () => new Date().toISOString().slice(0, 10);
+const YESTERDAY = () => new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+const removalsToday = async () => Number((await read(GL))?.groupRemovals?.integerValue ?? 0);
+
+test('D-257: removeMember charges the group\'s day with the removal; a refused call spends none; a full day refuses', async () => {
+  assert.deepEqual(await call('removeMember', 'me', remove('sam')), { error: 'PERMISSION_DENIED' });
+  assert.equal(await read(GL), null, 'a plain member\'s refused call spends none of the group\'s removals');
+  assert.deepEqual((await call('removeMember', 'ad', remove('sam'))).result, { removed: true });
+  assert.equal(await removalsToday(), 1);
+  await seed(GL, { day: TODAY(), groupRemovals: 100, groupInvites: 7 });
+  const recordsBefore = (await list(`groups/${G}/records`)).length;
+  const meOut = remove('me', { records: [movedFrom(M.me, 3), removalAt(M.me, 4)] });
+  assert.deepEqual(await call('removeMember', 'ow', meOut), { error: 'RESOURCE_EXHAUSTED' });
+  assert.deepEqual(strings((await read(`groups/${G}`)).memberUids), ['ow', 'ad', 'me'], 'nobody removed');
+  assert.equal((await list(`groups/${G}/records`)).length, recordsBefore, 'no record written');
+  assert.equal(await removalsToday(), 100);
+  await seed(GL, { day: YESTERDAY(), groupRemovals: 100 });
+  assert.deepEqual((await call('removeMember', 'ow', meOut)).result, { removed: true }, 'the next UTC day');
+  assert.equal(await removalsToday(), 1);
+});
+
+test('D-257: adoptRemovals charges the group\'s day, one a call; a full day refuses, nothing written', async () => {
+  await alone();
+  await seed(GL, { day: TODAY(), groupRemovals: 100 });
+  const records = [removalOf(M.sam), movedFrom(M.sam)];
+  assert.deepEqual(await call('adoptRemovals', 'ow', { groupId: G, records }), { error: 'RESOURCE_EXHAUSTED' });
+  assert.equal(await read(`groups/${G}/records/${removalOf(M.sam).id}`), null, 'nothing written');
+  await seed(GL, { day: TODAY(), groupRemovals: 99 });
+  assert.deepEqual((await call('adoptRemovals', 'ow', { groupId: G, records })).result, { adopted: 2 });
+  assert.equal(await removalsToday(), 100, 'one a call, whatever its records');
+});

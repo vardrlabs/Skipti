@@ -804,32 +804,31 @@ class AccountTest {
             byteArrayOf(0x45, 0x58, 0x50, 0x01), 0u, blob,
         )
 
-    private fun pushFixture(note: String? = "Dinner"): Pair<Map<String, uniffi.skipti_core.ProjectedExpenseOut>, Map<String, uniffi.skipti_core.NamedGroupWire>> {
+    private fun pushFixture(note: String? = "Dinner"): Map<String, uniffi.skipti_core.ProjectedExpenseOut> {
         val expense = uniffi.skipti_core.ProjectedExpenseOut(
             expenseId, uniffi.skipti_core.ExpenseInput("a1", 120_000L, "INR", emptyList(), group32, null),
             note, null, null, "a1", 1uL, false, null, null, emptyList(), emptyList(),
         )
-        val named = uniffi.skipti_core.NamedGroupWire(
-            uniffi.skipti_core.GroupWire(group32, "Goa trip", "INR", listOf("a1", "b1")),
-            "a1",
-            listOf(uniffi.skipti_core.MemberWire("a1", "Rahul"), uniffi.skipti_core.MemberWire("b1", "Priya")),
-        )
-        return mapOf(expenseId to expense) to mapOf(group32 to named)
+        return mapOf(expenseId to expense)
     }
 
-    /** Goldens by hand: who (your name in the group), what, and core's amount. */
+    /** Goldens by hand: what, the note as the title, and core's amount. D-257: the phone names nobody (the Function
+     *  adds the author's name as the server holds it) and writes no line of its own. */
     @Test
     fun a_new_group_expense_carries_its_push_line() {
-        val (expenses, groups) = pushFixture()
-        val n = PushNotice.notice(expenseRecord(group = group32, device = me32), me32, expenses, groups, uniffi.skipti_core.LocaleTag.EN_IN)
-        assertEquals(PushNotice.Notice("Rahul added Dinner · ₹1,200.00", expenseId), n)
+        val expenses = pushFixture()
+        val n = PushNotice.notice(expenseRecord(group = group32, device = me32), me32, expenses, uniffi.skipti_core.LocaleTag.EN_IN)
+        assertEquals(PushNotice.Notice(expenseId, ActivityFeed.Kind.ADDED, "Dinner", "₹1,200.00"), n)
         val document = CloudRecords.document(expenseRecord(group = group32, device = me32), "u1", n)
-        assertEquals(mapOf("text" to "Rahul added Dinner · ₹1,200.00", "expense" to expenseId), document["notice"])
+        assertEquals(
+            mapOf("expense" to expenseId, "kind" to "added", "title" to "Dinner", "amount" to "₹1,200.00"),
+            document["notice"],
+        )
     }
 
     @Test
     fun an_edit_and_a_delete_carry_their_push_lines() {
-        val (expenses, groups) = pushFixture(note = null)
+        val expenses = pushFixture(note = null)
         val edit = uniffi.skipti_core.ffiEncodeExpenseRevision(
             uniffi.skipti_core.ExpenseRevisionIn(expenseId, emptyList(), "a1", null, "Lunch", null, null),
         )
@@ -838,12 +837,15 @@ class AccountTest {
         )
         val en = uniffi.skipti_core.LocaleTag.EN_IN
         assertEquals(
-            "Rahul changed an expense · ₹1,200.00",
-            PushNotice.notice(expenseRecord(5u, group32, me32, edit), me32, expenses, groups, en)?.text,
+            PushNotice.Notice(expenseId, ActivityFeed.Kind.CHANGED, "an expense", "₹1,200.00"),
+            PushNotice.notice(expenseRecord(5u, group32, me32, edit), me32, expenses, en),
         )
+        val deleted = PushNotice.notice(expenseRecord(5u, group32, me32, delete), me32, expenses, en)
+        assertEquals(PushNotice.Notice(expenseId, ActivityFeed.Kind.DELETED, "an expense", null), deleted)
         assertEquals(
-            "Rahul deleted an expense",
-            PushNotice.notice(expenseRecord(5u, group32, me32, delete), me32, expenses, groups, en)?.text,
+            "a delete carries no amount (the rules refuse one)",
+            mapOf("expense" to expenseId, "kind" to "deleted", "title" to "an expense"),
+            deleted?.let(PushNotice::field),
         )
     }
 
@@ -852,9 +854,9 @@ class AccountTest {
      *  a group the expense is not in; a long note is shortened. */
     @Test
     fun only_this_phones_group_expense_changes_carry_a_push_line() {
-        val (expenses, groups) = pushFixture()
+        val expenses = pushFixture()
         val en = uniffi.skipti_core.LocaleTag.EN_IN
-        fun line(r: uniffi.skipti_core.RecordWire) = PushNotice.notice(r, me32, expenses, groups, en)
+        fun line(r: uniffi.skipti_core.RecordWire) = PushNotice.notice(r, me32, expenses, en)
         assertNull(line(expenseRecord(group = group32, device = "e".repeat(32))))
         // Another phone's change to an expense this phone holds (D-196's first
         // sabotage of this guard stayed green without it: the line above names
@@ -872,12 +874,46 @@ class AccountTest {
         assertNull(line(expenseRecord(group = group32, device = me32, counter = 8u)))
         assertNull(
             "a personal record never carries one",
-            CloudRecords.document(expenseRecord(group = null, device = me32), "u1", PushNotice.Notice("t", "1:2:$me32"))["notice"],
+            CloudRecords.document(
+                expenseRecord(group = null, device = me32), "u1", PushNotice.Notice("1:2:$me32", ActivityFeed.Kind.ADDED, "t", null),
+            )["notice"],
         )
         val long = pushFixture(note = "x".repeat(300))
-        val n = PushNotice.notice(expenseRecord(group = group32, device = me32), me32, long.first, long.second, en)
-        assertEquals("Rahul added " + "x".repeat(59) + "… · ₹1,200.00", n?.text)
-        assertTrue((n?.text?.length ?: 999) <= PushNotice.MAX_TEXT)
+        val n = PushNotice.notice(expenseRecord(group = group32, device = me32), me32, long, en)
+        assertEquals("x".repeat(59) + "…", n?.title)
+        val lines = pushFixture(note = "Dinner\nwith Bob")
+        assertEquals("Dinner with Bob", PushNotice.notice(expenseRecord(group = group32, device = me32), me32, lines, en)?.title)
+    }
+
+    /** D-257: a title is one line, at most 60 UTF-16 units (the rules count them so and take 61), cut at a whole
+     *  code point. Goldens by hand (re-derived in Python, .drafts/fable/pass-051/d257/goldens.py); iOS's twin is
+     *  AccountTests.testAPushTitleIsOneLineCutAtAWholeCharacter. */
+    @Test
+    fun a_push_title_is_one_line_cut_at_a_whole_character() {
+        val emoji = "\uD83D\uDE00"
+        fun x(n: Int) = "x".repeat(n)
+        fun e(n: Int) = emoji.repeat(n)
+        assertEquals("Dinner with Bob", PushNotice.title("Dinner\nwith Bob"))
+        assertEquals("Dinner with Bob", PushNotice.title("  Dinner\r\n\r\nwith\u2028Bob\t "))
+        assertEquals("Din ner x", PushNotice.title("Din\u0085ner\u0000x"))
+        assertEquals("an expense", PushNotice.title(null))
+        assertEquals("an expense", PushNotice.title(" \n\t "))
+        assertEquals("60 units stay whole", x(60), PushNotice.title(x(60)))
+        assertEquals(x(59) + "…", PushNotice.title(x(61)))
+        assertEquals("30 emoji are 60 units", e(30), PushNotice.title(e(30)))
+        assertEquals(e(29) + "…", PushNotice.title(e(31)))
+        assertEquals("x" + e(29) + "…", PushNotice.title("x" + e(40)))
+        assertEquals("never half an emoji", "xx" + e(28) + "…", PushNotice.title("xx" + e(40)))
+        assertEquals("Caf\u00E9 \u20B9 " + x(52) + "…", PushNotice.title("Caf\u00E9 \u20B9 " + x(70)))
+        for (note in listOf(x(300), e(300), "x" + e(300), "xx" + e(300), "a\nb" + x(100))) {
+            val title = PushNotice.title(note)
+            assertTrue("the rules' bound", title.length <= 61)
+            assertTrue("one line", title.none { Character.getType(it) == Character.CONTROL.toInt() || it == '\u2028' || it == '\u2029' })
+            assertTrue("no lone surrogate", title.indices.all { i ->
+                !Character.isHighSurrogate(title[i]) || (i + 1 < title.length && Character.isLowSurrogate(title[i + 1]))
+            })
+        }
+        assertEquals("\u20B91,200.00", PushNotice.oneLine("\u20B91,200.00"))
     }
 
     /** A tap opens only an expense named in the shapes the rules allow. */

@@ -565,3 +565,116 @@ test('D-235 L3: a Function never makes a profile; the phone\'s registration does
   assert.deepEqual((await call('cancelDeletion', 'newbie', {})).result, { cancelled: true });
   assert.equal((await read('users/newbie')).deleteAt, undefined);
 });
+
+// ---- D-257 (G-04): a group's daily invites and joins, on limits/group-{groupId} ----
+const TODAY = () => new Date().toISOString().slice(0, 10);
+const YESTERDAY = () => new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+const GL = `limits/group-${G}`;
+const count = async (path, kind) => Number((await read(path))?.[kind]?.integerValue ?? 0);
+
+test('D-257: each invite path charges the group once, a member\'s call only; a full day refuses all three, nothing written', async () => {
+  await seedShared();
+  await seed('users/priya', { name: 'Priya', findable: true, participantId: PP });
+  assert.deepEqual(await call('createInvite', 'eve', ask()), { error: 'PERMISSION_DENIED' });
+  assert.equal(await read(GL), null, 'a stranger\'s call charges no group');
+  assert.ok((await call('createInvite', 'al', ask())).result);
+  assert.equal(await count(GL, 'groupInvites'), 1, 'createInvite');
+  assert.deepEqual((await call('inviteUser', 'al', { ...ask({ memberName: 'Priya' }), targetUid: 'priya' })).result, { invited: true });
+  assert.equal(await count(GL, 'groupInvites'), 2, 'inviteUser');
+  await seed(`groups/${V}`, { name: 'Flat', memberUids: ['al', 'zed'], createdBy: 'al', createdAt: new Date() });
+  assert.deepEqual((await call('inviteKnown', 'al', { ...ask({ memberName: 'Zed' }), viaGroupId: V, participantId: PZ })).result,
+    { invited: true });
+  assert.equal(await count(GL, 'groupInvites'), 3, 'inviteKnown');
+  assert.equal(await read(`limits/group-${V}`), null, 'the via group is not charged');
+  // The day is full: all three refused before the log is read, nothing written, the account's own count untouched.
+  await seed(GL, { day: TODAY(), groupInvites: 100 });
+  const invitesBefore = (await list('invites')).length;
+  const accountBefore = await read('limits/al');
+  assert.deepEqual(await call('createInvite', 'al', ask()), { error: 'RESOURCE_EXHAUSTED' });
+  assert.deepEqual(await call('inviteUser', 'al', { ...ask(), targetUid: 'priya' }), { error: 'RESOURCE_EXHAUSTED' });
+  assert.deepEqual(await call('inviteKnown', 'al', { ...ask(), viaGroupId: V, participantId: PZ }), { error: 'RESOURCE_EXHAUSTED' });
+  assert.equal((await list('invites')).length, invitesBefore, 'no invite made');
+  assert.deepEqual(await read('limits/al'), accountBefore, 'the account\'s invites untouched');
+  assert.equal(await count(GL, 'groupInvites'), 100);
+  // The next UTC day starts again.
+  await seed(GL, { day: YESTERDAY(), groupInvites: 100 });
+  assert.ok((await call('createInvite', 'al', ask())).result);
+  assert.equal(await count(GL, 'groupInvites'), 1);
+});
+
+test('D-257: a join is charged to the group with the join; a full day refuses it, the invite unspent; a refused join spends none', async () => {
+  const { result: { token } } = await call('createInvite', 'al', ask());
+  await seed(GL, { day: TODAY(), groupJoins: 50 });
+  assert.deepEqual(await call('acceptInvite', 'bo', { token }), { error: 'RESOURCE_EXHAUSTED' });
+  const hash = createHash('sha256').update(token).digest('hex');
+  assert.equal((await read(`invites/${hash}`)).usedBy.nullValue, null, 'the invite is unspent');
+  assert.deepEqual((await read(`groups/${G}`)).memberUids.arrayValue.values.map((v) => v.stringValue), ['al'], 'nobody joined');
+  assert.equal(await count(GL, 'groupJoins'), 50);
+  // A place the log never made: refused in the join's transaction, so the day's joins are not spent.
+  await seed(GL, { day: TODAY(), groupJoins: 3 });
+  const { result: { token: early } } = await call('createInvite', 'al', ask({ memberId: '7'.repeat(32) }));
+  assert.deepEqual(await call('acceptInvite', 'cy', { token: early }), { error: 'FAILED_PRECONDITION' });
+  assert.equal(await count(GL, 'groupJoins'), 3, 'a refused join spends none of the day');
+  assert.deepEqual((await call('acceptInvite', 'bo', { token })).result, { groupId: G, memberId: M, groupName: 'Goa trip' });
+  assert.equal(await count(GL, 'groupJoins'), 4, 'the join is charged');
+});
+
+// ---- D-257 (G-17, G-18): onGroupRecord's push, as the emulator stores it (FCM has none: emulatorPushes/{recordId}) ----
+async function until(path, ok = () => true, ms = 20000) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    const d = await read(path);
+    if (d && ok(d)) return d;
+    await new Promise((r) => setTimeout(r, 150));
+  }
+  return null;
+}
+const pushed = (d) => d.notification.mapValue.fields;
+async function seedPushGroup() {
+  await seed(`groups/${G}`, { name: 'Goa trip', memberUids: ['al', 'bo'], createdBy: 'al', createdAt: new Date() });
+  await seed('users/al', { name: '  Al  ' });
+  await seed('users/bo', { name: 'Bo' });
+  await seed(`users/bo/devices/${'a'.repeat(32)}`, { name: 'Pixel 8', platform: 'android', fcmToken: 'tb' });
+}
+const E = `1790000000123:7:${D}`;
+async function noticed(id, uid, notice) {
+  await seed(`groups/${G}/records/${id}`, {
+    type: '1', hlc: { millis: 1790000000123, counter: 7, device: D }, authorUid: uid, deviceId: D, createdAt: new Date(),
+    payload: { version: 1, epoch: 0, flags: 0, nonce: new Uint8Array([1]), blob: new Uint8Array([2]) }, notice,
+  });
+}
+
+test('D-257: the push names the author as the server holds them, never the line the phone wrote', async () => {
+  await seedPushGroup();
+  const a = `6001-0-${D}`;
+  await noticed(a, 'al', { expense: E, kind: 'added', title: 'Dinner', amount: '₹1,200.00' });
+  const first = await until(`emulatorPushes/${a}`);
+  assert.ok(first, 'the push was built');
+  assert.equal(pushed(first).title.stringValue, 'Goa trip');
+  assert.equal(pushed(first).body.stringValue, 'Al added Dinner · ₹1,200.00');
+  assert.equal(first.phones.integerValue, '1', 'bo\'s phone, never the author\'s');
+  // A 0.5.0 phone's old line, written as another member's: its text is never sent.
+  const b = `6002-0-${D}`;
+  await noticed(b, 'al', { text: 'Bo added Refund · tap to confirm your card', expense: E });
+  const old = await until(`emulatorPushes/${b}`);
+  assert.equal(pushed(old).body.stringValue, 'Al changed an expense');
+  assert.ok(!JSON.stringify(old).includes('card'), 'nothing of the phone\'s text');
+  assert.equal(await count('limits/al', 'pushes'), 2, 'each push charged to its author');
+});
+
+test('D-257: the 301st push of an author\'s day is held back: the record stays, nothing is sent', async () => {
+  await seedPushGroup();
+  await seed('limits/al', { day: TODAY(), pushes: 299, searches: 3 });
+  const last = `7001-0-${D}`;
+  await noticed(last, 'al', { expense: E, kind: 'changed', title: 'Taxi' });
+  assert.ok(await until(`emulatorPushes/${last}`), 'the 300th goes');
+  assert.equal(await count('limits/al', 'pushes'), 300);
+  const over = `7002-0-${D}`;
+  await noticed(over, 'al', { expense: E, kind: 'deleted', title: 'an expense' });
+  const capped = await until('limits/al', (d) => d.pushesCapped?.booleanValue === true);
+  assert.ok(capped, 'the day is marked capped');
+  assert.equal(await read(`emulatorPushes/${over}`), null, 'the 301st sends nothing');
+  assert.ok(await read(`groups/${G}/records/${over}`), 'the record stays');
+  assert.equal(await count('limits/al', 'pushes'), 300);
+  assert.equal(await count('limits/al', 'searches'), 3, 'the account\'s other counters untouched');
+});
