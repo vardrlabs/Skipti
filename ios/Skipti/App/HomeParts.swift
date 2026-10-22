@@ -198,11 +198,13 @@ struct LedgerCard<Tile: View>: View {
         VStack(alignment: .leading, spacing: ThemeArt.m("ledgerCardGap")) {
             HStack(spacing: ThemeArt.m("ledgerTileGap")) {
                 tile(ThemeArt.m("ledgerTile"))
+                // Decision 261: a long name wraps to two lines and is cut only past them; the tile stays centred on it.
                 Text(verbatim: name)
                     .font(TypeRole.name(TypeScale.ledgerName))
                     .foregroundStyle(Tokens.text)
-                    .lineLimit(1)
+                    .lineLimit(2)
                     .truncationMode(.tail)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Text(Self.words(line))
                 .font(TypeRole.body(TypeScale.detail))

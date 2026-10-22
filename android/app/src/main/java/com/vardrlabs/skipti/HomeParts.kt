@@ -280,12 +280,13 @@ fun LedgerCard(
             .clearAndSetSemantics { contentDescription = spoken },
         verticalArrangement = Arrangement.spacedBy(ThemeArt.m("ledgerCardGap").dp),
     ) {
+        // Decision 261: a long name wraps to two lines and is cut only past them; the tile stays centred on it (iOS's).
         Row(verticalAlignment = Alignment.CenterVertically) {
             tile()
             Spacer(Modifier.width(ThemeArt.m("ledgerTileGap").dp))
             Text(
                 name.withRunes(), style = Type.name(dark, TypeScale.ledgerName.toInt()),
-                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                maxLines = 2, overflow = TextOverflow.Ellipsis,
             )
         }
         // D-250: the line's amount rolls when it changes (core's integer behind it), the small meter sweeps.

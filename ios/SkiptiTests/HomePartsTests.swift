@@ -221,6 +221,71 @@ final class HomePartsTests: XCTestCase {
         XCTAssertFalse(parts.contains("String(format:"), "money is formatted by core")
     }
 
+    /// Decision 261 (D-255): a long ledger name wraps to two lines, never cut at one ("Hamptons wee..."); past two it
+    /// is cut at the tail, and the name grows the card rather than being squeezed. The tile stays centred on it.
+    func testALedgerCardsNameTakesTwoLines() throws {
+        let card = try slice(try appSource("HomeParts.swift"), from: "struct LedgerCard<", to: "struct LatelyCard:")
+        let name = try slice(card, from: "Text(verbatim: name)", to: "}")
+        XCTAssertTrue(name.contains(".lineLimit(2)"), "two lines")
+        XCTAssertFalse(name.contains(".lineLimit(1)"), "never one")
+        XCTAssertTrue(name.contains(".truncationMode(.tail)"), "cut at the tail past two")
+        XCTAssertTrue(name.contains(".fixedSize(horizontal: false, vertical: true)"), "the name grows the card")
+        XCTAssertTrue(card.contains("HStack(spacing: ThemeArt.m(\"ledgerTileGap\")) {"), "the tile centred on the name")
+    }
+
+    /// Decision 261, measured: on a 375 pt phone at the default text size, in every theme, a long name makes its card
+    /// taller than a one-line name's (two lines), a longer one no taller again (cut past two), and in a grid row the
+    /// one-line card stretches to its two-line neighbour's height.
+    @MainActor
+    func testALongLedgerNameWrapsAndTheRowKeepsOneHeight() throws {
+        let shared = AppearanceState.shared
+        let saved = (shared.theme, shared.phoneCategory, shared.textStep)
+        defer { (shared.theme, shared.phoneCategory, shared.textStep) = saved }
+        shared.phoneCategory = .large
+        shared.textStep = 0
+        func card(_ name: String) -> some View {
+            LedgerCard(name: name, nets: [CurrencyAmountOut(currencyCode: "USD", amountMinor: 4_200)], blocks: []) { size in
+                Color.gray.frame(width: size, height: size)
+            }
+        }
+        // One column of the grid on a 375 pt phone: Home's 16 pt gutters and the grid's gap.
+        let column = (375 - 2 * 16 - ThemeArt.m("ledgerGridGap")) / 2
+        func height(_ view: some View) -> CGFloat {
+            UIHostingController(rootView: view.dynamicTypeSize(.large))
+                .sizeThatFits(in: CGSize(width: column, height: .greatestFiniteMagnitude)).height
+        }
+        for theme in AppTheme.allCases {
+            shared.theme = theme
+            let one = height(card("Flat"))
+            let two = height(card("Hamptons weekend"))
+            let long = height(card("Hamptons weekend with the whole crew and then some"))
+            // The 33 pt tile sets a one-line row; two lines of the 16 pt name stand about 9 pt taller (measured 8 to 8.7).
+            XCTAssertGreaterThan(two, one + 4, "\(theme): a long name takes a second line")
+            XCTAssertEqual(long, two, accuracy: 0.5, "\(theme): cut past two lines")
+
+            final class Heights { var value: [Int: CGFloat] = [:] }
+            let heights = Heights()
+            let names = ["Flat", "Hamptons weekend"]
+            let grid = ScrollView {
+                LedgerGrid(count: 2) { i in
+                    AnyView(card(names[i]).background(GeometryReader { g in
+                        Color.clear.onAppear { heights.value[i] = g.size.height }
+                    }))
+                }
+                .padding(16)
+            }
+            .dynamicTypeSize(.large)
+            let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 375, height: 812))
+            window.rootViewController = UIHostingController(rootView: grid)
+            window.isHidden = false
+            RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+            window.isHidden = true
+            let a = try XCTUnwrap(heights.value[0], "\(theme): the one-line card"), b = try XCTUnwrap(heights.value[1])
+            XCTAssertEqual(a, b, accuracy: 0.5, "\(theme): one row, one height")
+            XCTAssertGreaterThan(b, one + 4, "\(theme): the row is the two-line card's")
+        }
+    }
+
     /// L53: Lately's rows: the soft initials avatar in the person shape, the meta line through the theme's separator,
     /// the words of `RelativeWhen`; the card's gap and pick; Home shows it only when it has entries.
     func testLatelyRowsAreSoftAndShared() throws {
