@@ -5,10 +5,17 @@ import UIKit
 import UserNotifications
 
 /// D-196 (the Firebase plan's unit 6): push notifications. When you add,
-/// change or delete an expense in a shared group, your phone writes the line
-/// the others will see ("Rahul added Dinner · ₹1,200.00") into the record's
-/// `notice`, and the `onGroupRecord` Function sends it to their phones,
-/// titled with the group's name. A tap opens the expense.
+/// change or delete an expense in a shared group, your phone writes what the
+/// push is about into the record's `notice`, and the `onGroupRecord` Function
+/// sends it to the others' phones, titled with the group's name. A tap opens
+/// the expense.
+///
+/// D-257 (G-18): the phone writes only checked fields, `kind` (added,
+/// changed, deleted), `title` (the expense's note as one line, cut to 60 with
+/// an ellipsis, or "an expense") and `amount` (core's string, never on a
+/// delete); the Function builds the line ("Rahul added Dinner · ₹1,200.00")
+/// with the author's name as the server holds it, so no phone chooses whose
+/// line it reads as. Lengths are UTF-16 code units, as the rules count them.
 ///
 /// GUARANTEES #5: nothing here reaches Google without an account. Firebase
 /// Messaging's automatic start is off (Info.plist), so no token exists and no
@@ -16,22 +23,24 @@ import UserNotifications
 /// turning sync off deletes the token. Android's twin is Push.kt.
 enum PushNotice {
     struct Notice: Equatable {
-        let text: String
         let expense: String
+        let kind: ActivityFeed.Kind
+        let title: String
+        let amount: String?
     }
 
+    /// UTF-16 code units, as the rules' size() counts (they take 61 and 40).
     static let maxTitle = 60
-    static let maxText = 180
+    static let maxAmount = 40
 
-    /// The push line for `record`, when it is this phone's own change to an
-    /// expense in a group: a new expense, an edit, a delete. Nil for anything
-    /// else (people, names, settlements, personal records, other phones'
-    /// records). The amount is core's string.
+    /// What the push for `record` is about, when it is this phone's own
+    /// change to an expense in a group: a new expense, an edit, a delete. Nil
+    /// for anything else (people, names, settlements, personal records, other
+    /// phones' records). The amount is core's string.
     static func notice(
         _ record: RecordWire,
         thisDevice: String,
         expenses: [String: ProjectedExpenseOut],
-        groups: [String: NamedGroupWire],
         locale: LocaleTag
     ) -> Notice? {
         guard let groupId = record.groupId, record.authorDeviceId == thisDevice else { return nil }
@@ -50,18 +59,37 @@ enum PushNotice {
         }
         guard PushRoute.isExpenseID(expenseID), let expense = expenses[expenseID],
               expense.expense.group == groupId else { return nil }
-        let named = groups[groupId]
-        let who = named.flatMap { n in n.members.first { $0.id == n.selfId }?.name } ?? ActivityFeed.someone
-        let note = expense.note?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let title = note.isEmpty ? ActivityFeed.anExpense
-            : note.count > maxTitle ? String(note.prefix(maxTitle - 1)) + "…" : note
-        var text = ActivityFeed.line(kind, who: who, title: title)
-        if kind != .deleted, let amount = try? ffiMoneyFormat(
-            minorUnits: expense.expense.paidMinor, currencyCode: expense.expense.currencyCode, locale: locale) {
-            text += " · " + amount
+        var amount: String?
+        if kind != .deleted, let formatted = try? ffiMoneyFormat(
+            minorUnits: expense.expense.paidMinor, currencyCode: expense.expense.currencyCode, locale: locale),
+           !formatted.trimmingCharacters(in: .whitespaces).isEmpty, formatted.utf16.count <= maxAmount,
+           oneLine(formatted) == formatted {
+            amount = formatted
         }
-        if text.count > maxText { text = String(text.prefix(maxText - 1)) + "…" }
-        return Notice(text: text, expense: expenseID)
+        return Notice(expense: expenseID, kind: kind, title: title(expense.note), amount: amount)
+    }
+
+    /// `text` with each run of control characters and line or paragraph
+    /// separators made one space (the rules refuse them in a notice).
+    static func oneLine(_ text: String) -> String {
+        text.replacingOccurrences(of: "[\\p{Cc}\\u2028\\u2029]+", with: " ", options: .regularExpression)
+    }
+
+    /// The note as one line, trimmed; "an expense" without one; past 60 units
+    /// cut at a whole code point to 59 or fewer, then the ellipsis.
+    static func title(_ note: String?) -> String {
+        let line = oneLine(note ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if line.isEmpty { return ActivityFeed.anExpense }
+        if line.utf16.count <= maxTitle { return line }
+        var cut = String.UnicodeScalarView()
+        var units = 0
+        for scalar in line.unicodeScalars {
+            let n = String(scalar).utf16.count
+            if units + n > maxTitle - 1 { break }
+            cut.append(scalar)
+            units += n
+        }
+        return String(cut) + "…"
     }
 
     /// The notices for the records about to go up, by document id. Reads the
@@ -74,15 +102,19 @@ enum PushNotice {
         }
         guard !candidates.isEmpty, let projected = try? store.projectedExpenses() else { return [:] }
         let expenses = Dictionary(projected.expenses.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        // A group waiting for your name still gets a notice, from "Someone".
-        let groups = Dictionary(((try? store.namedGroups()) ?? []).map { ($0.group.id, $0) },
-                                uniquingKeysWith: { a, _ in a })
         var out: [String: Notice] = [:]
         for record in candidates {
-            if let n = notice(record, thisDevice: device, expenses: expenses, groups: groups, locale: AppLocale.current) {
+            if let n = notice(record, thisDevice: device, expenses: expenses, locale: AppLocale.current) {
                 out[CloudRecords.documentId(record)] = n
             }
         }
+        return out
+    }
+
+    /// The `notice` field as the rules take it (D-257's shape).
+    static func field(_ n: Notice) -> [String: String] {
+        var out = ["expense": n.expense, "kind": n.kind.rawValue, "title": n.title]
+        if let amount = n.amount { out["amount"] = amount }
         return out
     }
 }

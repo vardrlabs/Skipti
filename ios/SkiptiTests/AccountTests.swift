@@ -640,7 +640,7 @@ final class AccountTests: XCTestCase {
         )
     }
 
-    private func pushFixture(note: String? = "Dinner") -> ([String: ProjectedExpenseOut], [String: NamedGroupWire], String) {
+    private func pushFixture(note: String? = "Dinner") -> ([String: ProjectedExpenseOut], String) {
         let id = "1790000000123:7:\(me32)"
         let expense = ProjectedExpenseOut(
             id: id,
@@ -648,45 +648,45 @@ final class AccountTests: XCTestCase {
             note: note, category: nil, timestampMs: nil, addedBy: "a1", addedAtMs: 1, deleted: false,
             lastEditedAtMs: nil, lastEditedBy: nil, seen: [], moneyConflict: []
         )
-        let named = NamedGroupWire(
-            group: GroupWire(id: group32, name: "Goa trip", settlementCurrency: "INR", members: ["a1", "b1"]),
-            selfId: "a1", members: [MemberWire(id: "a1", name: "Rahul"), MemberWire(id: "b1", name: "Priya")]
-        )
-        return ([id: expense], [group32: named], id)
+        return ([id: expense], id)
     }
 
-    /// Goldens by hand: who (your name in the group), what, and core's amount.
+    /// Goldens by hand: what, the note as the title, and core's amount. D-257: the phone names nobody (the Function
+    /// adds the author's name as the server holds it) and writes no line of its own.
     func testANewGroupExpenseCarriesItsPushLine() {
-        let (expenses, groups, id) = pushFixture()
+        let (expenses, id) = pushFixture()
         let n = PushNotice.notice(expenseRecord(group: group32, device: me32), thisDevice: me32,
-                                  expenses: expenses, groups: groups, locale: .enIn)
-        XCTAssertEqual(n, PushNotice.Notice(text: "Rahul added Dinner · ₹1,200.00", expense: id))
+                                  expenses: expenses, locale: .enIn)
+        XCTAssertEqual(n, PushNotice.Notice(expense: id, kind: .added, title: "Dinner", amount: "₹1,200.00"))
         let document = CloudRecords.document(expenseRecord(group: group32, device: me32), uid: "u1", notice: n)
-        XCTAssertEqual(document["notice"] as? [String: String], ["text": "Rahul added Dinner · ₹1,200.00", "expense": id])
+        XCTAssertEqual(document["notice"] as? [String: String],
+                       ["expense": id, "kind": "added", "title": "Dinner", "amount": "₹1,200.00"])
     }
 
     func testAnEditAndADeleteCarryTheirPushLines() throws {
-        let (expenses, groups, id) = pushFixture(note: nil)
+        let (expenses, id) = pushFixture(note: nil)
         let edit = try ffiEncodeExpenseRevision(revision: ExpenseRevisionIn(
             target: id, seen: [], editor: "a1", money: nil, note: "Lunch", category: nil, deleted: nil))
         let delete = try ffiEncodeExpenseRevision(revision: ExpenseRevisionIn(
             target: id, seen: [], editor: "a1", money: nil, note: nil, category: nil, deleted: true))
         XCTAssertEqual(PushNotice.notice(expenseRecord(type: 5, group: group32, device: me32, blob: edit), thisDevice: me32,
-                                         expenses: expenses, groups: groups, locale: .enIn)?.text,
-                       "Rahul changed an expense · ₹1,200.00")
-        XCTAssertEqual(PushNotice.notice(expenseRecord(type: 5, group: group32, device: me32, blob: delete), thisDevice: me32,
-                                         expenses: expenses, groups: groups, locale: .enIn)?.text,
-                       "Rahul deleted an expense")
+                                         expenses: expenses, locale: .enIn),
+                       PushNotice.Notice(expense: id, kind: .changed, title: "an expense", amount: "₹1,200.00"))
+        let deleted = PushNotice.notice(expenseRecord(type: 5, group: group32, device: me32, blob: delete), thisDevice: me32,
+                                        expenses: expenses, locale: .enIn)
+        XCTAssertEqual(deleted, PushNotice.Notice(expense: id, kind: .deleted, title: "an expense", amount: nil))
+        XCTAssertEqual(deleted.map(PushNotice.field), ["expense": id, "kind": "deleted", "title": "an expense"],
+                       "a delete carries no amount (the rules refuse one)")
     }
 
     /// Negative: no line for another phone's record, a personal record, a
     /// record that is not an expense, an expense this phone does not hold,
     /// or a group the expense is not in; a long note is shortened.
     func testOnlyThisPhonesGroupExpenseChangesCarryAPushLine() throws {
-        let (expenses, groups, id) = pushFixture()
+        let (expenses, id) = pushFixture()
         let other = String(repeating: "e", count: 32)
         func line(_ r: RecordWire, _ e: [String: ProjectedExpenseOut] = [:]) -> PushNotice.Notice? {
-            PushNotice.notice(r, thisDevice: me32, expenses: e.isEmpty ? expenses : e, groups: groups, locale: .enIn)
+            PushNotice.notice(r, thisDevice: me32, expenses: e.isEmpty ? expenses : e, locale: .enIn)
         }
         XCTAssertNil(line(expenseRecord(group: group32, device: other)))
         // Another phone's change to an expense this phone holds (D-196's first
@@ -705,13 +705,42 @@ final class AccountTests: XCTestCase {
         unknown.hlcCounter = 8
         XCTAssertNil(line(unknown))
         XCTAssertNil(CloudRecords.document(expenseRecord(group: nil, device: me32), uid: "u1",
-                                           notice: .init(text: "t", expense: "1:2:\(me32)"))["notice"],
+                                           notice: .init(expense: "1:2:\(me32)", kind: .added, title: "t", amount: nil))["notice"],
                      "a personal record never carries one")
         let long = pushFixture(note: String(repeating: "x", count: 300))
         let n = PushNotice.notice(expenseRecord(group: group32, device: me32), thisDevice: me32,
-                                  expenses: long.0, groups: long.1, locale: .enIn)
-        XCTAssertEqual(n?.text, "Rahul added " + String(repeating: "x", count: 59) + "… · ₹1,200.00")
-        XCTAssertLessThanOrEqual(n?.text.count ?? 999, PushNotice.maxText)
+                                  expenses: long.0, locale: .enIn)
+        XCTAssertEqual(n?.title, String(repeating: "x", count: 59) + "…")
+        let lines = pushFixture(note: "Dinner\nwith Bob")
+        XCTAssertEqual(PushNotice.notice(expenseRecord(group: group32, device: me32), thisDevice: me32,
+                                         expenses: lines.0, locale: .enIn)?.title, "Dinner with Bob")
+    }
+
+    /// D-257: a title is one line, at most 60 UTF-16 units (the rules count them so and take 61), cut at a whole code
+    /// point. Goldens by hand (re-derived in Python, .drafts/fable/pass-051/d257/goldens.py); Android's twin is
+    /// AccountTest.a_push_title_is_one_line_cut_at_a_whole_character.
+    func testAPushTitleIsOneLineCutAtAWholeCharacter() {
+        let emoji = "\u{1F600}"
+        let x = { (n: Int) in String(repeating: "x", count: n) }
+        let e = { (n: Int) in String(repeating: emoji, count: n) }
+        XCTAssertEqual(PushNotice.title("Dinner\nwith Bob"), "Dinner with Bob")
+        XCTAssertEqual(PushNotice.title("  Dinner\r\n\r\nwith\u{2028}Bob\t "), "Dinner with Bob")
+        XCTAssertEqual(PushNotice.title("Din\u{85}ner\u{0}x"), "Din ner x")
+        XCTAssertEqual(PushNotice.title(nil), "an expense")
+        XCTAssertEqual(PushNotice.title(" \n\t "), "an expense")
+        XCTAssertEqual(PushNotice.title(x(60)), x(60), "60 units stay whole")
+        XCTAssertEqual(PushNotice.title(x(61)), x(59) + "…")
+        XCTAssertEqual(PushNotice.title(e(30)), e(30), "30 emoji are 60 units")
+        XCTAssertEqual(PushNotice.title(e(31)), e(29) + "…")
+        XCTAssertEqual(PushNotice.title("x" + e(40)), "x" + e(29) + "…")
+        XCTAssertEqual(PushNotice.title("xx" + e(40)), "xx" + e(28) + "…", "never half an emoji")
+        XCTAssertEqual(PushNotice.title("Caf\u{E9} \u{20B9} " + x(70)), "Caf\u{E9} \u{20B9} " + x(52) + "…")
+        for note in [x(300), e(300), "x" + e(300), "xx" + e(300), "a\nb" + x(100)] {
+            let title = PushNotice.title(note)
+            XCTAssertLessThanOrEqual(title.utf16.count, 61, "the rules' bound")
+            XCTAssertNil(title.rangeOfCharacter(from: .controlCharacters), "one line")
+        }
+        XCTAssertEqual(PushNotice.oneLine("\u{20B9}1,200.00"), "\u{20B9}1,200.00")
     }
 
     /// A tap opens only an expense named in the shapes the rules allow.

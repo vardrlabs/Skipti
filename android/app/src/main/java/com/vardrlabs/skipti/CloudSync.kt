@@ -1025,7 +1025,7 @@ object CloudRecords {
         // D-196: only a group record carries a push line (the rules refuse one
         // on a personal record).
         if (notice != null && record.groupId != null) {
-            mapOf("notice" to mapOf("text" to notice.text, "expense" to notice.expense))
+            mapOf("notice" to PushNotice.field(notice))
         } else {
             emptyMap()
         }

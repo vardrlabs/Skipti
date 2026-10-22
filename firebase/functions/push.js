@@ -2,22 +2,62 @@
 // without touching Firebase, so firebase/tests/push.test.mjs runs every rule
 // here directly. index.js only reads the documents and hands them over.
 //
-// A group expense record carries `notice` {text, expense}: the line its
-// author's phone wrote ("Rahul added Dinner · ₹1,200"), and the expense a
-// tap opens. It goes to every OTHER member's phones, titled with the group's
-// name. Nothing else about the record leaves the cloud in a push.
+// D-257 (G-18): a group expense record carries `notice` {expense, kind,
+// title, amount?}: what happened (added, changed, deleted), the expense's
+// note as one short line ("an expense" without one), core's amount (none for
+// a delete), and the expense a tap opens. The line is built HERE, with the
+// author's name as the server knows it (users/{authorUid}.name), so no phone
+// chooses whose line it reads as. A 0.5.0 phone still writes the old
+// {text, expense}; its text is not trusted: that push reads "{name} changed
+// an expense". It goes to every OTHER member's phones, titled with the
+// group's name. Nothing else about the record leaves the cloud in a push.
 
 export const MAX_TOKENS = 500; // FCM's limit for one multicast
 const EXPENSE = /^[0-9]{1,20}:[0-9]{1,10}:[0-9a-f]{32}$/;
 const HEX32 = /^[0-9a-f]{32}$/;
 
-/** The notice, checked again (the rules already did), or null. */
+export const KINDS = ['added', 'changed', 'deleted'];
+// Lengths as the rules' size() counts them: UTF-16 code units (measured in the emulator: 30 emoji are 60, 31 are
+// refused at 61), as JavaScript's length does.
+export const MAX_TITLE = 61; // the phones cut a note to at most 60 units with their ellipsis (the rules' bound)
+export const MAX_AMOUNT = 40;
+export const MAX_NAME = 60;
+// One line: no control character (C0, DEL, C1) and no line or paragraph separator (the rules' LINE).
+const LINE = /^[^\u0000-\u001f\u007f-\u009f\u2028\u2029]+$/u;
+const line = (v, max) => typeof v === 'string' && v.length >= 1 && v.length <= max && LINE.test(v);
+
+/** The notice, checked again (the rules already did), or null: the new
+ *  shape {expense, kind, title, amount?}, or `legacy` for the old {text,
+ *  expense} (its text checked as before and never kept). */
 export function notice(record) {
   const n = record?.notice;
   if (!n || typeof n !== 'object') return null;
-  if (typeof n.text !== 'string' || !n.text.trim() || n.text.length > 200) return null;
   if (typeof n.expense !== 'string' || !EXPENSE.test(n.expense)) return null;
-  return { text: n.text.trim(), expense: n.expense };
+  if ('text' in n) {
+    if (Object.keys(n).length !== 2) return null;
+    if (typeof n.text !== 'string' || !n.text.trim() || n.text.length > 200) return null;
+    return { expense: n.expense, legacy: true };
+  }
+  if (Object.keys(n).some((k) => !['expense', 'kind', 'title', 'amount'].includes(k))) return null;
+  if (!KINDS.includes(n.kind) || !line(n.title, MAX_TITLE) || !n.title.trim()) return null;
+  if ('amount' in n && (n.kind === 'deleted' || !line(n.amount, MAX_AMOUNT) || !n.amount.trim())) return null;
+  const out = { expense: n.expense, kind: n.kind, title: n.title.trim() };
+  if ('amount' in n) out.amount = n.amount.trim();
+  return out;
+}
+
+/** Whose line it is: the author's own profile name (users/{uid}.name, as
+ *  the server holds it), trimmed, 1 to 60 characters; else "Someone". */
+export function authorName(profile) {
+  const name = typeof profile?.name === 'string' ? profile.name.trim() : '';
+  return name && name.length <= MAX_NAME ? name : 'Someone';
+}
+
+/** The push's body: "{name} added Dinner · ₹1,200.00", "{name} deleted an
+ *  expense"; for an old phone's notice "{name} changed an expense". */
+export function body(n, name) {
+  if (n.legacy) return `${name} changed an expense`;
+  return `${name} ${n.kind} ${n.title}${n.amount ? ` · ${n.amount}` : ''}`;
 }
 
 /** Who is told: the group's members except the author; nobody when the
@@ -53,13 +93,14 @@ export function tokens(devices) {
 }
 
 /** The message, without its tokens. Title: the group's name; body: the
- *  notice; data: where a tap goes. iOS threads a group's pushes together,
- *  Android posts them on the "Group activity" channel. */
-export function message(n, groupId, groupName) {
+ *  line built from the notice and the author's server name (body); data:
+ *  where a tap goes. iOS threads a group's pushes together, Android posts
+ *  them on the "Group activity" channel. */
+export function message(n, groupId, groupName, name) {
   const title = typeof groupName === 'string' && groupName.trim() ? groupName.trim().slice(0, 80) : 'SKIPTI';
   if (!HEX32.test(groupId)) throw new Error('groupId is not 32 hex');
   return {
-    notification: { title, body: n.text },
+    notification: { title, body: body(n, name) },
     data: { kind: 'record', groupId, expense: n.expense },
     apns: { payload: { aps: { 'thread-id': groupId, sound: 'default' } } },
     android: { priority: 'high', notification: { channelId: 'group-activity', tag: n.expense } },

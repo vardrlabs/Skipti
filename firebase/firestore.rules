@@ -49,17 +49,34 @@ service cloud.firestore {
     function formerAt(groupId) {
       return get(/databases/$(database)/documents/groups/$(groupId)).data.get('former', {}).get(request.auth.uid, null);
     }
-    // D-196: the push line a group expense record carries, written on its
-    // author's phone ("Rahul added Dinner · ₹1,200"), and the expense a tap
+    // D-196: the push a group expense record asks for, and the expense a tap
     // opens (core's id, millis:counter:device). onGroupRecord sends it to the
     // group's other members.
+    // D-257 (G-18): the fields the Function builds the line from, with the
+    // author's name as the server holds it: `kind` (added, changed, deleted),
+    // `title` (the note as one line, cut to 60 with the phone's ellipsis, or
+    // "an expense"; 61 here) and `amount` (core's money string; never on a
+    // delete). size() counts UTF-16 code units (an emoji is 2), and so do the
+    // phones' cuts. The old {text, expense} of a 0.5.0 phone is still taken; its
+    // text is never sent ("{name} changed an expense").
+    function oneLine(v, max) {
+      return shortText(v, max) && v.matches('^[^\\x00-\\x1f\\x7f-\\x9f\\x{2028}\\x{2029}]+$');
+    }
+    function validExpenseId(v) {
+      return v is string && v.matches('^[0-9]{1,20}:[0-9]{1,10}:[0-9a-f]{32}$');
+    }
     function validNotice(n) {
-      return n is map
-        && n.keys().hasOnly(['text', 'expense'])
-        && n.keys().hasAll(['text', 'expense'])
-        && shortText(n.text, 200)
-        && n.expense is string
-        && n.expense.matches('^[0-9]{1,20}:[0-9]{1,10}:[0-9a-f]{32}$');
+      return n is map && (
+        (n.keys().hasOnly(['expense', 'kind', 'title', 'amount'])
+          && n.keys().hasAll(['expense', 'kind', 'title'])
+          && validExpenseId(n.expense)
+          && n.kind in ['added', 'changed', 'deleted']
+          && oneLine(n.title, 61)
+          && (!('amount' in n) || (n.kind != 'deleted' && oneLine(n.amount, 40))))
+        || (n.keys().hasOnly(['text', 'expense'])
+          && n.keys().hasAll(['text', 'expense'])
+          && shortText(n.text, 200)
+          && validExpenseId(n.expense)));
     }
     // D-196: a phone's push address (FCM registration token), absent while
     // the phone is signed out or has sync off.

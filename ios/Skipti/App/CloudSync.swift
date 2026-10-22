@@ -1009,7 +1009,7 @@ enum CloudRecords {
         // D-196: only a group record carries a push line (the rules refuse
         // one on a personal record).
         if let notice, record.groupId != nil {
-            document["notice"] = ["text": notice.text, "expense": notice.expense]
+            document["notice"] = PushNotice.field(notice)
         }
         return document
     }

@@ -28,17 +28,23 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import uniffi.skipti_core.LocaleTag
-import uniffi.skipti_core.NamedGroupWire
 import uniffi.skipti_core.ProjectedExpenseOut
 import uniffi.skipti_core.RecordWire
 import uniffi.skipti_core.ffiDecodeExpenseRevision
 
 /**
  * D-196 (the Firebase plan's unit 6): push notifications. When you add,
- * change or delete an expense in a shared group, your phone writes the line
- * the others will see ("Rahul added Dinner · ₹1,200.00") into the record's
- * `notice`, and the `onGroupRecord` Function sends it to their phones, titled
- * with the group's name. A tap opens the expense. iOS's twin is Push.swift.
+ * change or delete an expense in a shared group, your phone writes what the
+ * push is about into the record's `notice`, and the `onGroupRecord` Function
+ * sends it to the others' phones, titled with the group's name. A tap opens
+ * the expense. iOS's twin is Push.swift.
+ *
+ * D-257 (G-18): the phone writes only checked fields, `kind` (added,
+ * changed, deleted), `title` (the expense's note as one line, cut to 60 with
+ * an ellipsis, or "an expense") and `amount` (core's string, never on a
+ * delete); the Function builds the line ("Rahul added Dinner · ₹1,200.00")
+ * with the author's name as the server holds it, so no phone chooses whose
+ * line it reads as. Lengths are UTF-16 code units, as the rules count them.
  *
  * GUARANTEES #5: nothing here reaches Google without an account. Firebase
  * Messaging's automatic start is off (the manifest), so no token exists and
@@ -46,20 +52,21 @@ import uniffi.skipti_core.ffiDecodeExpenseRevision
  * or turning sync off deletes the token.
  */
 object PushNotice {
-    data class Notice(val text: String, val expense: String)
+    data class Notice(val expense: String, val kind: ActivityFeed.Kind, val title: String, val amount: String?)
 
+    /** UTF-16 code units, as the rules' size() counts (they take 61 and 40). */
     const val MAX_TITLE = 60
-    const val MAX_TEXT = 180
+    const val MAX_AMOUNT = 40
     private const val EXPENSE_TYPE: UByte = 1u
+    private val BREAKS = Regex("[\\p{Cc}\\u2028\\u2029]+")
 
-    /** The push line for [record], when it is this phone's own change to an
-     *  expense in a group: a new expense, an edit, a delete. Null for anything
-     *  else. The amount is core's string. */
+    /** What the push for [record] is about, when it is this phone's own
+     *  change to an expense in a group: a new expense, an edit, a delete.
+     *  Null for anything else. The amount is core's string. */
     fun notice(
         record: RecordWire,
         thisDevice: String,
         expenses: Map<String, ProjectedExpenseOut>,
-        groups: Map<String, NamedGroupWire>,
         locale: LocaleTag,
     ): Notice? {
         val groupId = record.groupId ?: return null
@@ -75,23 +82,42 @@ object PushNotice {
         if (!PushRoute.isExpenseId(expenseId)) return null
         val expense = expenses[expenseId] ?: return null
         if (expense.expense.group != groupId) return null
-        val named = groups[groupId]
-        val who = named?.members?.firstOrNull { it.id == named.selfId }?.name ?: ActivityFeed.SOMEONE
-        val note = expense.note?.trim().orEmpty()
-        val title = when {
-            note.isEmpty() -> ActivityFeed.AN_EXPENSE
-            note.length > MAX_TITLE -> note.take(MAX_TITLE - 1) + "…"
-            else -> note
-        }
-        var text = ActivityFeed.line(kind, who, title)
-        if (kind != ActivityFeed.Kind.DELETED) {
+        val amount = if (kind == ActivityFeed.Kind.DELETED) {
+            null
+        } else {
             runCatching {
                 uniffi.skipti_core.ffiMoneyFormat(expense.expense.paidMinor, expense.expense.currencyCode, locale)
-            }.getOrNull()?.let { text += " · $it" }
+            }.getOrNull()?.takeIf { it.isNotBlank() && it.length <= MAX_AMOUNT && oneLine(it) == it }
         }
-        if (text.length > MAX_TEXT) text = text.take(MAX_TEXT - 1) + "…"
-        return Notice(text, expenseId)
+        return Notice(expenseId, kind, title(expense.note), amount)
     }
+
+    /** [text] with each run of control characters and line or paragraph
+     *  separators made one space (the rules refuse them in a notice). */
+    fun oneLine(text: String): String = BREAKS.replace(text, " ")
+
+    /** The note as one line, trimmed; "an expense" without one; past 60 units
+     *  cut at a whole code point to 59 or fewer, then the ellipsis. */
+    fun title(note: String?): String {
+        val line = oneLine(note.orEmpty()).trim()
+        if (line.isEmpty()) return ActivityFeed.AN_EXPENSE
+        if (line.length <= MAX_TITLE) return line
+        var end = MAX_TITLE - 1
+        if (Character.isHighSurrogate(line[end - 1])) end -= 1
+        return line.substring(0, end) + "…"
+    }
+
+    /** The kinds as the rules take them. */
+    fun wire(kind: ActivityFeed.Kind): String = when (kind) {
+        ActivityFeed.Kind.ADDED -> "added"
+        ActivityFeed.Kind.CHANGED -> "changed"
+        ActivityFeed.Kind.DELETED -> "deleted"
+    }
+
+    /** The `notice` field as the rules take it (D-257's shape). */
+    fun field(n: Notice): Map<String, String> =
+        mapOf("expense" to n.expense, "kind" to wire(n.kind), "title" to n.title) +
+            (n.amount?.let { mapOf("amount" to it) } ?: emptyMap())
 
     /** The notices for the records about to go up, by document id. Reads the
      *  ledger only when one of them could carry a notice. */
@@ -104,11 +130,9 @@ object PushNotice {
         if (candidates.isEmpty()) return emptyMap()
         val projected = runCatching { store.projectedExpenses() }.getOrNull() ?: return emptyMap()
         val expenses = projected.expenses.associateBy { it.id }
-        // A group waiting for your name still gets a notice, from "Someone".
-        val groups = runCatching { store.namedGroups() }.getOrDefault(emptyList()).associateBy { it.group.id }
         val out = mutableMapOf<String, Notice>()
         for (record in candidates) {
-            notice(record, device, expenses, groups, AppLocale.current)?.let { out[CloudRecords.documentId(record)] = it }
+            notice(record, device, expenses, AppLocale.current)?.let { out[CloudRecords.documentId(record)] = it }
         }
         return out
     }

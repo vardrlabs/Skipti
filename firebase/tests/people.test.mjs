@@ -142,3 +142,51 @@ test('D-235 decision 121: an invitation names inviter and group from the server 
   assert.equal(nameless.link.inviterName, null);
   for (const v of [n, nameless]) assert.ok(!JSON.stringify(v).includes('SKIPTI Support') && !JSON.stringify(v).includes('locked'));
 });
+
+// D-257 (G-04, G-17): the per-group kinds and the per-author push cap. The numbers are written here by hand (the
+// brief's), never read from LIMITS, so a changed limit fails this test.
+test('D-257: a group\'s day: 100 invites, 50 joins, 100 removals, each refused past its limit, again the next UTC day', () => {
+  assert.equal(people.groupLimitId('a'.repeat(32)), `group-${'a'.repeat(32)}`);
+  assert.ok(!/^[A-Za-z0-9]{1,128}$/.test(people.groupLimitId('a'.repeat(32))), 'never an account uid');
+  for (const [kind, limit] of [['groupInvites', 100], ['groupJoins', 50], ['groupRemovals', 100]]) {
+    let s = null;
+    for (let i = 0; i < limit; i++) {
+      s = people.charge(s, '2026-10-22', kind);
+      assert.ok(s, `${kind}: the ${i + 1}th of the day is taken`);
+    }
+    assert.equal(s[kind], limit, kind);
+    assert.equal(people.charge(s, '2026-10-22', kind), null, `${kind}: the ${limit + 1}th of the day is refused`);
+    assert.equal(people.charge(s, '2026-10-23', kind)[kind], 1, `${kind}: a new UTC day starts again`);
+    // One kind full leaves the others of the same group open.
+    for (const other of ['groupInvites', 'groupJoins', 'groupRemovals'].filter((k) => k !== kind)) {
+      assert.equal(people.charge(s, '2026-10-22', other)[other], 1, `${kind} full, ${other} open`);
+    }
+  }
+  // An honest group well under the limits: 10 invites, 8 joins and 2 removals in a day.
+  let h = null;
+  for (let i = 0; i < 10; i++) h = people.charge(h, '2026-10-22', 'groupInvites');
+  for (let i = 0; i < 8; i++) h = people.charge(h, '2026-10-22', 'groupJoins');
+  for (let i = 0; i < 2; i++) h = people.charge(h, '2026-10-22', 'groupRemovals');
+  assert.deepEqual([h.groupInvites, h.groupJoins, h.groupRemovals], [10, 8, 2]);
+});
+
+test('D-257: an author\'s pushes: 300 a day, the 301st held back and logged once, again the next UTC day', () => {
+  let s = null;
+  for (let i = 0; i < 300; i++) {
+    const v = people.chargePush(s, '2026-10-22');
+    assert.deepEqual([v.send, v.log], [true, false], `push ${i + 1}`);
+    s = v.write;
+  }
+  assert.equal(s.pushes, 300);
+  const over = people.chargePush(s, '2026-10-22');
+  assert.deepEqual([over.send, over.log], [false, true], 'the 301st is held back and logged');
+  assert.deepEqual(over.write, { ...s, pushesCapped: true }, 'the day is marked, the count unchanged');
+  const again = people.chargePush(over.write, '2026-10-22');
+  assert.deepEqual(again, { send: false, write: null, log: false }, 'the 302nd: held back, nothing written, not logged');
+  const tomorrow = people.chargePush(over.write, '2026-10-23');
+  assert.deepEqual([tomorrow.send, tomorrow.log, tomorrow.write.pushes, tomorrow.write.pushesCapped], [true, false, 1, undefined],
+    'a new UTC day: sent, the mark gone');
+  // The account's other counters share the document: a full push day leaves them open, and theirs leaves pushes open.
+  assert.equal(people.charge(over.write, '2026-10-22', 'searches').searches, 1);
+  assert.equal(people.chargePush({ day: '2026-10-22', searches: 40, invites: 50 }, '2026-10-22').send, true);
+});
