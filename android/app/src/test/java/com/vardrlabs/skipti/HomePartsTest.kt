@@ -155,6 +155,51 @@ class HomePartsTest {
         assertNull(LedgerLine.Settled.currency)
     }
 
+    /** D-259: a group core marked `overflowed` says "Amounts too large to add up." in place of its balance (whatever
+     *  its nets), seen and heard, and draws no meter; any other group's line is unchanged. iOS's twin is
+     *  `testATooLargeGroupSaysSoInPlaceOfItsBalance`. */
+    @Test
+    fun a_too_large_group_says_so_in_place_of_its_balance() {
+        val nets = listOf(CurrencyAmountOut("USD", -4_500))
+        assertEquals(LedgerLine.TooLarge, LedgerCards.line(nets, tooLarge = true))
+        assertEquals(LedgerLine.TooLarge, LedgerCards.line(emptyList(), tooLarge = true))
+        assertEquals(LedgerLine.YouOwe(4_500, "USD"), LedgerCards.line(nets, tooLarge = false))
+        assertEquals(LedgerLine.Settled, LedgerCards.line(emptyList(), tooLarge = false))
+        assertNull(LedgerLine.TooLarge.currency)
+        assertEquals(0L, LedgerLine.TooLarge.amountMinor)
+        assertEquals("Amounts too large to add up.", LedgerCopy.TOO_LARGE)
+        assertEquals("Trip, Amounts too large to add up.", LedgerCards.spoken("Trip", LedgerLine.TooLarge, null))
+        val overview = uniffi.skipti_core.OverviewOut(
+            emptyList(),
+            listOf(
+                uniffi.skipti_core.GroupNetOut("trip", emptyList(), true),
+                uniffi.skipti_core.GroupNetOut("flat", nets, false),
+            ),
+            emptyList(),
+        )
+        assertTrue(HomeOverview.tooLarge(overview, "trip"))
+        assertFalse(HomeOverview.tooLarge(overview, "flat"))
+        assertFalse("a group core did not list", HomeOverview.tooLarge(overview, "gone"))
+        assertFalse("before the first read", HomeOverview.tooLarge(null, "trip"))
+        // The drawn line is the copy in the dim, nothing else.
+        val line = fn("HomeParts.kt", "private fun ledgerLineText(")
+        assertTrue("LedgerLine.TooLarge -> withStyle(dim) { append(LedgerCopy.TOO_LARGE) }" in line)
+    }
+
+    /** D-259: Home's settled read for one group: core's `Overflow` is that group's missing meter, never Home's error;
+     *  any other error still fails the read, and a good read is passed through. iOS's twin is
+     *  `testASettledMeterOutOfRangeIsNoMeterNotAnError`. */
+    @Test
+    fun a_settled_meter_out_of_range_is_no_meter_not_an_error() {
+        val good = listOf(block("USD", 5_000))
+        assertEquals(good, HomeOverview.settledOrNone { good })
+        assertEquals(emptyList<SettledProgressOut>(), HomeOverview.settledOrNone { throw uniffi.skipti_core.CoreException.Overflow() })
+        val bad = runCatching { HomeOverview.settledOrNone { throw uniffi.skipti_core.CoreException.InvalidInput("bad group") } }
+        assertTrue(bad.exceptionOrNull() is uniffi.skipti_core.CoreException.InvalidInput)
+        val currency = runCatching { HomeOverview.settledOrNone { throw uniffi.skipti_core.CoreException.UnknownCurrency("XYZ") } }
+        assertTrue(currency.exceptionOrNull() is uniffi.skipti_core.CoreException.UnknownCurrency)
+    }
+
     private fun block(code: String, bps: Int) = SettledProgressOut(code, 0, 0, bps.toUInt(), false)
 
     @Test

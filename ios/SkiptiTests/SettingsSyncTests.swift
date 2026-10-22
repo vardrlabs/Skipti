@@ -38,12 +38,15 @@ final class SettingsSyncTests: XCTestCase {
     }
 
     /// A setting record written by another phone of the account.
-    private func theirs(_ key: String, _ value: String, millis: UInt64, device: String? = nil) throws -> RecordWire {
+    /// D-259: `raw` writes the setting's JSON by hand, as a modified client would (core's encode refuses a per-phone key).
+    private func theirs(_ key: String, _ value: String, millis: UInt64, device: String? = nil, raw: Bool = false) throws -> RecordWire {
         let d = device ?? other
+        let blob = raw ? Data(#"{"op":"setting","key":"\#(key)","value":"\#(value)"}"#.utf8)
+            : try ffiEncodeGroupOp(op: .setting(key: key, value: value))
         return RecordWire(
             version: 1, recordType: LedgerStore.Sync.groupOpType, groupId: nil, epoch: 0, hlcMillis: millis,
             hlcCounter: 0, hlcDeviceId: d, authorDeviceId: d, nonceSession: Data([0x47, 0x52, 0x50, 0x01]), flags: 0,
-            blob: try ffiEncodeGroupOp(op: .setting(key: key, value: value)))
+            blob: blob)
     }
 
     private func settingRecords(_ store: LedgerStore) throws -> [(key: String, value: String)] {
@@ -261,10 +264,13 @@ final class SettingsSyncTests: XCTestCase {
         let defaults = tempDefaults()
         defaults.set("1m", forKey: LockTimeout.storageKey)
         defaults.set(true, forKey: ScreenPrivacy.storageKey)
-        _ = try CloudRecords.apply([try theirs("applock.timeout", "never", millis: 1_000),
-                                    try theirs("privacy.hide-when-captured", "false", millis: 1_001)], store: store)
-        XCTAssertEqual(try LedgerStore.Sync.projectGroups(store).settings.map(\.key),
-                       ["applock.timeout", "privacy.hide-when-captured"], "core holds them (any valid key)")
+        // D-259: core refuses a per-phone key (encode and decode), so these come as a modified client would write them.
+        XCTAssertThrowsError(try ffiEncodeGroupOp(op: .setting(key: "applock.timeout", value: "never")))
+        _ = try CloudRecords.apply([try theirs("applock.timeout", "never", millis: 1_000, raw: true),
+                                    try theirs("privacy.hide-when-captured", "false", millis: 1_001, raw: true)], store: store)
+        let projected = try LedgerStore.Sync.projectGroups(store)
+        XCTAssertEqual(projected.settings.map(\.key), [], "core refuses them (D-259)")
+        XCTAssertEqual(projected.rejected.count, 2, "listed as rejected")
         let outcome = try SettingsSync.afterReceive(store: store, defaults: defaults, uid: uid, fresh: true, fromCache: false, shown: nil)
         XCTAssertEqual(outcome.applied, [])
         XCTAssertEqual(defaults.string(forKey: LockTimeout.storageKey), "1m", "the lock's timeout is this phone's")

@@ -56,10 +56,12 @@ class SettingsSyncTest {
     }
 
     /** A setting record written by another phone of the account. */
-    private fun theirs(key: String, value: String, millis: Long, device: String = other): RecordWire = RecordWire(
+    /** D-259: [raw] writes the setting's JSON by hand, as a modified client would (core's encode refuses a per-phone key). */
+    private fun theirs(key: String, value: String, millis: Long, device: String = other, raw: Boolean = false): RecordWire = RecordWire(
         version = 1u, recordType = LedgerStore.GROUP_OP_TYPE, groupId = null, epoch = 0u, hlcMillis = millis.toULong(),
         hlcCounter = 0u, hlcDeviceId = device, authorDeviceId = device, nonceSession = byteArrayOf(0x47, 0x52, 0x50, 0x01),
-        flags = 0u, blob = ffiEncodeGroupOp(GroupOpIn.Setting(key, value)),
+        flags = 0u,
+        blob = if (raw) "{\"op\":\"setting\",\"key\":\"$key\",\"value\":\"$value\"}".toByteArray() else ffiEncodeGroupOp(GroupOpIn.Setting(key, value)),
     )
 
     private fun settingRecords(store: LedgerStore): List<Pair<String, String>> = store.allRecords().mapNotNull { record ->
@@ -347,11 +349,14 @@ class SettingsSyncTest {
         val phone = Phone()
         phone.prefs("skipti-applock").edit().putString("timeout", "1m").apply()
         phone.prefs("skipti-privacy").edit().putBoolean("block-capture", true).apply()
-        store.applyRecords(listOf(theirs("applock.timeout", "never", 1_000), theirs("privacy.hide-when-captured", "false", 1_001)))
-        assertEquals(
-            "core holds them (any valid key)",
-            listOf("applock.timeout", "privacy.hide-when-captured"), store.projectGroups().settings.map { it.key },
+        // D-259: core refuses a per-phone key (encode and decode), so these come as a modified client would write them.
+        assertTrue(runCatching { ffiEncodeGroupOp(GroupOpIn.Setting("applock.timeout", "never")) }.isFailure)
+        store.applyRecords(
+            listOf(theirs("applock.timeout", "never", 1_000, raw = true), theirs("privacy.hide-when-captured", "false", 1_001, raw = true)),
         )
+        val projected = store.projectGroups()
+        assertEquals("core refuses them (D-259)", emptyList<String>(), projected.settings.map { it.key })
+        assertEquals("listed as rejected", 2, projected.rejected.size)
         val outcome = SettingsSync.afterReceive(store, phone.prefs, uid, fresh = true, fromCache = false, shown = null)
         assertEquals(emptyList<String>(), outcome.applied)
         assertEquals("the lock's timeout is this phone's", "1m", phone.prefs("skipti-applock").getString("timeout", null))

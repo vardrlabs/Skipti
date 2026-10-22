@@ -112,6 +112,9 @@ private func money(_ minor: Int64, _ code: String) -> String {
 /// D-223: it also returns each group's settled blocks (E4's `ffiSettledProgress`, settlement currency first), read
 /// from the same records, for the ledger cards' meters. Every expense goes to core, which scopes by the group's id (one
 /// rule, core's, as Android's twin and the group page's blocks).
+/// D-259: one member can write records whose sums are past i64. Such a group never blanks Home: core marks it
+/// `overflowed` (its card says so, it has no meter), a group whose settled meter alone is out of range has no meter,
+/// and any other error still fails the read.
 enum HomeOverview {
     static func load(_ store: LedgerStore) throws
         -> (named: [NamedGroupWire], overview: OverviewOut, progress: [String: [SettledProgressOut]]) {
@@ -130,14 +133,32 @@ enum HomeOverview {
             redistributions: redistributions
         )
         var progress: [String: [SettledProgressOut]] = [:]
-        for n in named {
+        let overflowed = Set(overview.groups.filter(\.overflowed).map(\.groupId))
+        for n in named where !overflowed.contains(n.group.id) {
             let id = n.group.id
             progress[id] = SettledSummary.blocks(
-                try ffiSettledProgress(expenses: expenses.map(\.asInput),
-                                       settlements: settlements, redistributions: redistributions, group: id),
+                try settledOrNone {
+                    try ffiSettledProgress(expenses: expenses.map(\.asInput),
+                                           settlements: settlements, redistributions: redistributions, group: id)
+                },
                 settlementCurrency: n.group.settlementCurrency)
         }
         return (named, overview, progress)
+    }
+
+    /// D-259: one group's settled blocks, or none (no meter) when core says its sums are out of range (`Overflow`);
+    /// any other error is thrown, as before. Android's twin is `HomeOverview.settledOrNone`.
+    static func settledOrNone(_ read: () throws -> [SettledProgressOut]) throws -> [SettledProgressOut] {
+        do {
+            return try read()
+        } catch CoreError.Overflow {
+            return []
+        }
+    }
+
+    /// D-259: whether core marked the group's amounts too large to add up.
+    static func tooLarge(_ overview: OverviewOut?, group id: String) -> Bool {
+        overview?.groups.first { $0.groupId == id }?.overflowed ?? false
     }
 }
 
@@ -544,7 +565,8 @@ struct OverviewScreen: View {
         } label: {
             LedgerCard(name: named.group.name,
                        nets: overview?.groups.first { $0.groupId == named.group.id }?.nets ?? [],
-                       blocks: progress[named.group.id] ?? []) { size in
+                       blocks: progress[named.group.id] ?? [],
+                       tooLarge: HomeOverview.tooLarge(overview, group: named.group.id)) { size in
                 GroupTile(group: named.group, size: size)
             }
         }

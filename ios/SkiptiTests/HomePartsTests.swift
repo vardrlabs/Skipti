@@ -72,6 +72,43 @@ final class HomePartsTests: XCTestCase {
         XCTAssertNil(LedgerLine.settled.currency)
     }
 
+    /// D-259: a group core marked `overflowed` says "Amounts too large to add up." in place of its balance (whatever its
+    /// nets), seen and heard, and draws no meter; any other group's line is unchanged. Android's twin is
+    /// `HomePartsTest.a_too_large_group_says_so_in_place_of_its_balance`.
+    func testATooLargeGroupSaysSoInPlaceOfItsBalance() {
+        let nets = [CurrencyAmountOut(currencyCode: "USD", amountMinor: -4_500)]
+        XCTAssertEqual(LedgerCards.line(nets, tooLarge: true), .tooLarge)
+        XCTAssertEqual(LedgerCards.line([], tooLarge: true), .tooLarge)
+        XCTAssertEqual(LedgerCards.line(nets, tooLarge: false), .youOwe(4_500, "USD"))
+        XCTAssertEqual(LedgerCards.line([], tooLarge: false), .settled)
+        XCTAssertNil(LedgerLine.tooLarge.currency)
+        XCTAssertEqual(LedgerCopy.tooLarge, "Amounts too large to add up.")
+        XCTAssertEqual(String(LedgerCard<EmptyView>.words(.tooLarge).characters), "Amounts too large to add up.")
+        XCTAssertEqual(LedgerCard<EmptyView>.spoken(name: "Trip", line: .tooLarge, basisPoints: nil),
+                       "Trip, Amounts too large to add up.")
+        let overview = OverviewOut(totals: [], groups: [
+            GroupNetOut(groupId: "trip", nets: [], overflowed: true),
+            GroupNetOut(groupId: "flat", nets: nets, overflowed: false),
+        ], people: [])
+        XCTAssertTrue(HomeOverview.tooLarge(overview, group: "trip"))
+        XCTAssertFalse(HomeOverview.tooLarge(overview, group: "flat"))
+        XCTAssertFalse(HomeOverview.tooLarge(overview, group: "gone"), "a group core did not list")
+        XCTAssertFalse(HomeOverview.tooLarge(nil, group: "trip"), "before the first read")
+    }
+
+    /// D-259: Home's settled read for one group: core's `Overflow` is that group's missing meter, never Home's error;
+    /// any other error still fails the read, and a good read is passed through.
+    func testASettledMeterOutOfRangeIsNoMeterNotAnError() throws {
+        let block = SettledProgressOut(currencyCode: "USD", settledMinor: 1, outstandingMinor: 1, basisPoints: 5_000,
+                                       settled: false)
+        XCTAssertEqual(try HomeOverview.settledOrNone { [block] }, [block])
+        XCTAssertEqual(try HomeOverview.settledOrNone { throw CoreError.Overflow }, [])
+        XCTAssertThrowsError(try HomeOverview.settledOrNone { throw CoreError.InvalidInput("bad group") }) { error in
+            XCTAssertEqual(error as? CoreError, .InvalidInput("bad group"))
+        }
+        XCTAssertThrowsError(try HomeOverview.settledOrNone { throw CoreError.UnknownCurrency("XYZ") })
+    }
+
     func testLedgerMeterBlock() {
         let blocks = [
             SettledProgressOut(currencyCode: "INR", settledMinor: 72, outstandingMinor: 28, basisPoints: 7200, settled: false),

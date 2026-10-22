@@ -73,16 +73,18 @@ enum RelativeWhen: Equatable {
 }
 
 /// A ledger card's line (L54): "Owed ₹X", "You owe ₹X" or "Settled". The amount is a magnitude in minor units.
+/// D-259: or "Amounts too large to add up." for a group whose sums are past what core adds up.
 enum LedgerLine: Equatable {
     case owed(Int64, String)
     case youOwe(Int64, String)
     case settled
+    case tooLarge
 
     /// The line's currency, which picks the meter's block; nil when settled.
     var currency: String? {
         switch self {
         case .owed(_, let code), .youOwe(_, let code): return code
-        case .settled: return nil
+        case .settled, .tooLarge: return nil
         }
     }
 }
@@ -94,6 +96,12 @@ enum LedgerCards {
         if first.amountMinor > 0 { return .owed(first.amountMinor, first.currencyCode) }
         if first.amountMinor < 0 { return .youOwe(abs(first.amountMinor), first.currencyCode) }
         return .settled
+    }
+
+    /// D-259: a group core marked `overflowed` (one member can write records whose sums are past i64) says so in place
+    /// of its balance; every other group's line is `line(_:)`'s. Android's twin is `LedgerCards.line(nets, tooLarge)`.
+    static func line(_ nets: [CurrencyAmountOut], tooLarge: Bool) -> LedgerLine {
+        tooLarge ? .tooLarge : line(nets)
     }
 
     /// The meter's basis points: the block in the line's currency, else the first block (the settlement currency's,
@@ -118,6 +126,8 @@ enum LedgerCopy {
     /// The card's spoken percent, n = basis points / 100, floored.
     static func settledPercent(_ n: Int) -> String { "\(n)% settled" }
     static let loadError = "Could not load the ledger"
+    /// D-259: a group whose amounts core cannot add up (its card's line, in place of the balance).
+    static let tooLarge = "Amounts too large to add up."
 }
 
 enum LatelyCopy {
@@ -189,11 +199,13 @@ struct LedgerCard<Tile: View>: View {
     let nets: [CurrencyAmountOut]
     /// E4's settled blocks for the group, settlement currency first.
     let blocks: [SettledProgressOut]
+    /// D-259: core marked the group's amounts too large to add up (`HomeOverview.tooLarge`).
+    var tooLarge = false
     /// The tile at the size it is given.
     @ViewBuilder let tile: (CGFloat) -> Tile
 
     var body: some View {
-        let line = LedgerCards.line(nets)
+        let line = LedgerCards.line(nets, tooLarge: tooLarge)
         let basisPoints = LedgerCards.basisPoints(blocks, currency: line.currency)
         VStack(alignment: .leading, spacing: ThemeArt.m("ledgerCardGap")) {
             HStack(spacing: ThemeArt.m("ledgerTileGap")) {
@@ -237,6 +249,7 @@ struct LedgerCard<Tile: View>: View {
         case .owed(let minor, let code): return AttributedString(LedgerCopy.owed + " ") + amount(minor, code, Tokens.owing)
         case .youOwe(let minor, let code): return AttributedString(LedgerCopy.youOwe + " ") + amount(minor, code, Tokens.owed)
         case .settled: return AttributedString(OverviewCopy.settledShort)
+        case .tooLarge: return AttributedString(LedgerCopy.tooLarge)
         }
     }
 
@@ -247,6 +260,7 @@ struct LedgerCard<Tile: View>: View {
         case .owed(let minor, let code): parts.append(LedgerCopy.owed + " " + RolesMoney.spoken(minor, code))
         case .youOwe(let minor, let code): parts.append(LedgerCopy.youOwe + " " + RolesMoney.spoken(minor, code))
         case .settled: parts.append(OverviewCopy.settledShort)
+        case .tooLarge: parts.append(LedgerCopy.tooLarge)
         }
         if let basisPoints { parts.append(LedgerCopy.settledPercent(SettledSummary.percent(basisPoints))) }
         return parts.joined(separator: ", ")

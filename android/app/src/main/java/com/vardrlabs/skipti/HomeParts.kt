@@ -113,7 +113,8 @@ sealed class RelativeWhen {
     }
 }
 
-/** A ledger card's line (L54): what the group's first net says, as a magnitude in its currency. */
+/** A ledger card's line (L54): what the group's first net says, as a magnitude in its currency. D-259: or "Amounts too
+ *  large to add up." for a group whose sums are past what core adds up. */
 sealed class LedgerLine {
     abstract val currency: String?
 
@@ -122,7 +123,7 @@ sealed class LedgerLine {
         get() = when (this) {
             is Owed -> minor
             is YouOwe -> -minor
-            Settled -> 0L
+            Settled, TooLarge -> 0L
         }
 
     /** Money coming to you ("Owed", in owing). */
@@ -133,6 +134,11 @@ sealed class LedgerLine {
 
     /** Nothing open ("Settled"). */
     data object Settled : LedgerLine() {
+        override val currency: String? = null
+    }
+
+    /** D-259: core could not add the group's amounts up ("Amounts too large to add up."). */
+    data object TooLarge : LedgerLine() {
         override val currency: String? = null
     }
 }
@@ -148,6 +154,10 @@ object LedgerCards {
         }
     }
 
+    /** D-259: a group core marked `overflowed` (one member can write records whose sums are past i64) says so in place
+     *  of its balance; every other group's line is [line]'s. iOS's twin is `LedgerCards.line(_:tooLarge:)`. */
+    fun line(nets: List<CurrencyAmountOut>, tooLarge: Boolean): LedgerLine = if (tooLarge) LedgerLine.TooLarge else line(nets)
+
     /** The card's meter: the block in the line's currency, else the first block (the settlement currency's, E4); none
      *  for a group with no blocks (no meter is drawn). */
     fun basisPoints(blocks: List<SettledProgressOut>, currency: String?): UInt? =
@@ -161,6 +171,7 @@ object LedgerCards {
             is LedgerLine.Owed -> LedgerCopy.OWED + " " + RolesMoney.spoken(line.minor, line.currency)
             is LedgerLine.YouOwe -> LedgerCopy.YOU_OWE + " " + RolesMoney.spoken(line.minor, line.currency)
             LedgerLine.Settled -> OverviewCopy.SETTLED_SHORT
+            LedgerLine.TooLarge -> LedgerCopy.TOO_LARGE
         }
         if (basisPoints != null) parts += LedgerCopy.settledPercent(SettledSummary.percent(basisPoints))
         return parts.joinToString(", ")
@@ -190,6 +201,8 @@ object LedgerCopy {
     /** The card's spoken percent, n = basis points / 100, floored. */
     fun settledPercent(n: Int) = "$n% settled"
     const val LOAD_ERROR = "Could not load the ledger"
+    /** D-259: a group whose amounts core cannot add up (its card's line, in place of the balance). */
+    const val TOO_LARGE = "Amounts too large to add up."
 }
 
 /** Lately's words; iOS's twin is `LatelyCopy`. */
@@ -243,11 +256,12 @@ fun GroupLedgerCard(
     named: NamedGroupWire,
     nets: List<CurrencyAmountOut>,
     blocks: List<SettledProgressOut>,
+    tooLarge: Boolean,
     dark: Boolean,
     onOpen: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val line = LedgerCards.line(nets)
+    val line = LedgerCards.line(nets, tooLarge)
     LedgerCard(named.group.name, line, LedgerCards.basisPoints(blocks, line.currency), dark, onOpen, modifier) {
         GroupTile(named.group, dark, ThemeArt.m("ledgerTile").toInt())
     }
@@ -315,6 +329,7 @@ private fun ledgerLineText(line: LedgerLine, dark: Boolean): AnnotatedString = b
             amount(line.minor, line.currency, Tok.owed(dark))
         }
         LedgerLine.Settled -> withStyle(dim) { append(OverviewCopy.SETTLED_SHORT) }
+        LedgerLine.TooLarge -> withStyle(dim) { append(LedgerCopy.TOO_LARGE) }
     }
 }
 
