@@ -113,7 +113,7 @@
   <section class="view" id="view-list" aria-labelledby="list-title" hidden>
     <h2 id="list-title" class="kicker" tabindex="-1">Accounts</h2>
     <div class="migrate" id="migrate" hidden>
-      <p><strong>Once, on deploy day:</strong> <span id="migrate-text"></span></p>
+      <p><strong>On deploy day:</strong> <span id="migrate-text"></span></p>
       <button class="b1" id="migrate-go" type="button"></button>
     </div>
     <div class="sect">
@@ -400,7 +400,7 @@
     const approved = Array.isArray(r.approved) ? r.approved : [];
     const denied = Array.isArray(r.denied) ? r.denied : [];
     const n = Number(r.toMigrate) || 0;
-    $("migrate").hidden = !!r.migrated;
+    $("migrate").hidden = n === 0; // fix wave M1: while any profile has no decision
     $("migrate-text").textContent = (n === 1 ? "1 account" : n + " accounts")
       + " already had a profile before the gate. Approve " + (n === 1 ? "it" : "them")
       + " so nobody already testing is locked out.";

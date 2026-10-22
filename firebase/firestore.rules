@@ -67,6 +67,14 @@ service cloud.firestore {
       return !('fcmToken' in request.resource.data)
         || shortText(request.resource.data.fcmToken, 4096);
     }
+    // D-254 fix wave (M3): an update that only removes the push address
+    // (and stamps lastSeen, as both shells' tokenUpdate(nil) does). It needs
+    // no approval: a denied account can still clear its token, because
+    // removing what is yours never waits. Adding or changing one does.
+    function tokenRemovalOnly() {
+      return changesOnly(['fcmToken', 'lastSeen'])
+        && !('fcmToken' in request.resource.data);
+    }
     function intIn(v, lo, hi) {
       return v is int && v >= lo && v <= hi;
     }
@@ -147,7 +155,7 @@ service cloud.firestore {
           && shortText(request.resource.data.appVersion, 20)
           && request.resource.data.lastSeen == request.time
           && validToken();
-        allow update: if isUser(uid) && approved()
+        allow update: if isUser(uid) && (approved() || tokenRemovalOnly())
           && changesOnly(['name', 'appVersion', 'lastSeen', 'fcmToken'])
           && shortText(request.resource.data.name, 60)
           && shortText(request.resource.data.appVersion, 20)

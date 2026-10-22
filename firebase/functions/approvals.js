@@ -110,8 +110,9 @@ export function newestFirst(rows, max = 500) {
   return [...rows].sort((a, b) => b.requestedAt - a.requestedAt || (a.uid < b.uid ? -1 : 1)).slice(0, max);
 }
 
-/** Whether the one-time migration approves a profile whose approvals
- *  document is `data` (or null): no document or no decision yet (its profile
+/** Whether the migration (fix wave M1: it runs again whenever asked)
+ *  approves a profile whose approvals document is `data` (or null): no
+ *  document or no decision yet (its profile
  *  predates the gate: the rules refuse a profile to an unapproved account);
  *  a denied or approved one is left alone. */
 export function migrates(data) {
@@ -130,7 +131,8 @@ export function decision(data, uidPattern) {
 /** Batches of at most 400 writes (Firestore allows 500; migrate keeps room). */
 export const BATCH = 400;
 
-/** The admin list reads at most this many documents a state. The query is an
- *  equality alone (no composite index to declare) and is sorted here, so past
- *  500 in one state the rows shown are 500 of them, not the newest 500. */
+/** The admin list reads at most this many documents a state: the newest
+ *  requests, ordered in the query (fix wave M4: the composite index
+ *  approvals (state ASC, requestedAt DESC) in firestore.indexes.json, which
+ *  must be READY before the Functions deploy). */
 export const LIST_MAX = 500;

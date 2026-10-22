@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import * as approvals from '../functions/approvals.js';
-import { purgeAccount, purgeDue } from '../functions/account-store.js';
+import { approveFromBeforeGate, purgeAccount, purgeDue } from '../functions/account-store.js';
 import { initializeApp } from '../functions/node_modules/firebase-admin/lib/esm/app/index.js';
 import { getFirestore, Timestamp } from '../functions/node_modules/firebase-admin/lib/esm/firestore/index.js';
 import { getAuth } from '../functions/node_modules/firebase-admin/lib/esm/auth/index.js';
@@ -50,6 +50,7 @@ async function call(name, uid, data, claims) {
 
 // ---- Firestore and Storage through the rules (rules.test.mjs's helpers) ----
 const SERVER_TIME = Symbol('serverTime');
+const DROP = Symbol('drop'); // in an 'update': the field is in the mask and absent, so it is removed
 function value(v) {
   if (v === null) return { nullValue: null };
   if (typeof v === 'string') return { stringValue: v };
@@ -61,7 +62,7 @@ function value(v) {
   return { mapValue: { fields: fields(v) } };
 }
 function fields(o) {
-  return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== SERVER_TIME).map(([k, v]) => [k, value(v)]));
+  return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== SERVER_TIME && v !== DROP).map(([k, v]) => [k, value(v)]));
 }
 const auth = (uid, claims) => (uid === 'owner' ? 'Bearer owner' : uid ? `Bearer ${idToken(uid, claims)}` : undefined);
 async function write(uid, path, data, mode = 'create', claims = {}) {
@@ -71,7 +72,8 @@ async function write(uid, path, data, mode = 'create', claims = {}) {
     w = { delete: name };
   } else {
     const plain = Object.fromEntries(Object.entries(data).filter(([, v]) => v !== SERVER_TIME));
-    w = { update: { name, fields: fields(plain) } };
+    const kept = Object.fromEntries(Object.entries(plain).filter(([, v]) => v !== DROP));
+    w = { update: { name, fields: fields(kept) } };
     const stamps = Object.entries(data).filter(([, v]) => v === SERVER_TIME).map(([k]) => k);
     if (stamps.length) w.updateTransforms = stamps.map((f) => ({ fieldPath: f, setToServerValue: 'REQUEST_TIME' }));
     if (mode === 'create') w.currentDocument = { exists: false };
@@ -267,6 +269,35 @@ for (const state of UNAPPROVED) {
   });
 }
 
+test('D-254 rules: an approval holding only a deletion marker is no approval (every gated write refused)', async () => {
+  await db.doc('approvals/al').set({ deleteAt: Timestamp.fromMillis(Date.now() + 86400000), deletionRequestedAt: Timestamp.fromMillis(Date.now()) });
+  const results = await gatedWrites('al');
+  assert.equal(results.length, 9);
+  for (const [label, status] of results) assert.equal(status, DENIED, `${label} (marker only)`);
+});
+
+// Fix wave M3: removing the push address never waits (a denied account clears
+// its token, as both shells' tokenUpdate(nil) writes it); adding or changing
+// one, or anything else beside the removal, still needs approval.
+test('D-254 rules: an unapproved account removes its push token, and nothing more', async () => {
+  for (const state of UNAPPROVED) {
+    await setState('al', state);
+    const path = `users/al/devices/${D}`;
+    const seed = () => write('owner', path, { name: 'Pixel 8', platform: 'android', appVersion: '0.5.0', lastSeen: new Date(), fcmToken: 't1' }, 'set');
+    await seed();
+    assert.equal(await write('al', path, { fcmToken: DROP, lastSeen: SERVER_TIME }, 'update'), OK, `${state}: the token is removed`);
+    assert.equal((await stored(path)).fcmToken, undefined, `${state}: gone`);
+    assert.equal(await write('al', path, { fcmToken: 't2', lastSeen: SERVER_TIME }, 'update'), DENIED, `${state}: adding one waits`);
+    await seed();
+    assert.equal(await write('al', path, { fcmToken: 't2', lastSeen: SERVER_TIME }, 'update'), DENIED, `${state}: changing one waits`);
+    assert.equal(await write('al', path, { fcmToken: DROP, lastSeen: SERVER_TIME, name: 'Pixel 9' }, 'update'), DENIED, `${state}: a name beside it waits`);
+    assert.equal(await write('al', path, { fcmToken: DROP, lastSeen: SERVER_TIME, appVersion: '0.5.1' }, 'update'), DENIED, `${state}: a version beside it waits`);
+    assert.equal(await write('al', path, { fcmToken: DROP, lastSeen: new Date(Date.now() - 60000) }, 'update'), DENIED, `${state}: lastSeen is the server's time`);
+    assert.equal((await stored(path)).fcmToken, 't1', `${state}: unchanged by the refusals`);
+    assert.equal(await write('bo', path, { fcmToken: DROP, lastSeen: SERVER_TIME }, 'update'), DENIED, `${state}: only the account itself`);
+  }
+});
+
 test('D-254 rules: the same writes of an approved account are allowed', async () => {
   await setState('al', 'approved');
   for (const [label, status] of await gatedWrites('al')) assert.equal(status, OK, label);
@@ -427,6 +458,20 @@ test('D-254 requestApproval: a pending request is refreshed, never its time; a d
   }
 });
 
+test('D-254 requestApproval: fields smuggled into the request never reach the document', async () => {
+  const smuggled = { platform: 'ios', name: 'Al', state: 'approved', decidedBy: 'admin', decidedAt: 1, requestedAt: 0, email: 'x@example.com', provider: 'apple.com', deleteAt: 1 };
+  assert.deepEqual((await call('requestApproval', 'al', smuggled)).result, { state: 'pending' });
+  const a = await stored('approvals/al');
+  assert.deepEqual(Object.keys(a).sort(), ['name', 'platform', 'provider', 'requestedAt', 'state'], 'only what requestApproval writes');
+  assert.equal(a.state, 'pending');
+  assert.equal(a.provider, 'google.com', 'the token\'s provider, not the request\'s');
+  assert.ok(Math.abs(a.requestedAt.toMillis() - Date.now()) < 60000, 'the server\'s time, not 0');
+  assert.equal((await call('suggestUsernames', 'al', { name: 'Al' })).details?.approval, 'pending', 'and the gate still refuses');
+  // A pending request refreshed with the same smuggling: still only the refresh.
+  assert.deepEqual((await call('requestApproval', 'al', smuggled)).result, { state: 'pending' });
+  assert.deepEqual(await stored('approvals/al'), a, 'nothing changed');
+});
+
 test('D-254 requestApproval: bad input is refused and writes nothing; signing in comes first', async () => {
   for (const bad of [{}, { platform: 'web' }, { platform: 'ios', name: 'x'.repeat(61) }, { platform: 'ios', name: 7 }]) {
     assert.equal((await call('requestApproval', 'al', bad)).error, 'INVALID_ARGUMENT', JSON.stringify(bad));
@@ -493,14 +538,31 @@ test('D-254 adminApprovals list: three lists newest first, the rows\' fields, an
     migrated: false,
     toMigrate: 2,
   });
+  // Fix wave M1: the banner's number is counted with the marker too (the
+  // banner shows while it is above 0, not until the marker exists).
   await db.doc('meta/approvalsMigration').set({ count: 0 });
   const after = (await call('adminApprovals', ADMIN, { action: 'list' })).result;
   assert.equal(after.migrated, true);
-  assert.equal(after.toMigrate, 0);
+  assert.equal(after.toMigrate, 2, 'still two profiles without a decision');
+});
+
+// Fix wave M4: past LIST_MAX in one state, the newest requests are listed,
+// never the first ones by document id.
+test('D-254 adminApprovals list: past 500 in one state, the newest 500 are listed', async () => {
+  const batch = db.batch();
+  for (let i = 0; i <= 500; i += 1) {
+    batch.set(db.doc(`approvals/p${String(i).padStart(3, '0')}`), { state: 'pending', requestedAt: Timestamp.fromMillis(1000 + i), platform: 'ios' });
+  }
+  await batch.commit();
+  const { pending } = (await call('adminApprovals', ADMIN, { action: 'list' })).result;
+  assert.equal(pending.length, 500);
+  assert.equal(pending[0].uid, 'p500', 'the newest request, last by document id, is listed first');
+  assert.equal(pending[499].uid, 'p001');
+  assert.ok(!pending.some((r) => r.uid === 'p000'), 'the oldest is the one left out');
 });
 
 test('D-254 adminApprovals decide: approves, denies, takes approval away and gives it back; the document must exist', async () => {
-  await call('requestApproval', 'al', { name: 'Al', platform: 'ios' });
+  await call('requestApproval', 'al', { name: 'Al', platform: 'ios' }, { email: 'al@example.com', email_verified: true });
   assert.equal((await call('suggestUsernames', 'al', { name: 'Al' })).details?.approval, 'pending');
   assert.deepEqual((await call('adminApprovals', ADMIN, { action: 'decide', uid: 'al', state: 'approved' })).result, { ok: true });
   let a = await stored('approvals/al');
@@ -508,15 +570,25 @@ test('D-254 adminApprovals decide: approves, denies, takes approval away and giv
   assert.equal(a.decidedBy, 'admin');
   assert.ok(Math.abs(a.decidedAt.toMillis() - Date.now()) < 60000);
   assert.equal(a.name, 'Al', 'the request is kept');
+  assert.equal(a.email, 'al@example.com', 'approved: the email is kept');
   assert.ok((await call('suggestUsernames', 'al', { name: 'Al' })).result, 'approved: the gate opens');
   assert.equal(await write('al', 'groups/g1', group('al')), OK, 'and the rules');
   assert.deepEqual((await call('adminApprovals', ADMIN, { action: 'decide', uid: 'al', state: 'denied' })).result, { ok: true });
   a = await stored('approvals/al');
   assert.equal(a.state, 'denied');
+  // Fix wave M5: a denial keeps no name or email; the provider, platform and times stay.
+  assert.equal(a.name, undefined, 'denied: the name is dropped');
+  assert.equal(a.email, undefined, 'denied: the email is dropped');
+  assert.deepEqual([a.platform, a.provider, a.decidedBy], ['ios', 'google.com', 'admin']);
+  assert.ok(a.requestedAt && a.decidedAt);
   assert.equal((await call('suggestUsernames', 'al', { name: 'Al' })).details?.approval, 'denied');
   assert.equal(await write('al', 'groups/g1', { name: 'Mine' }, 'update'), DENIED);
   assert.deepEqual((await call('adminApprovals', ADMIN, { action: 'decide', uid: 'al', state: 'approved' })).result, { ok: true });
   assert.equal((await stored('approvals/al')).state, 'approved');
+  // A pending request denied straight away drops them too.
+  await call('requestApproval', 'cy', { name: 'Cy', platform: 'android' }, { email: 'cy@example.com', email_verified: true });
+  await call('adminApprovals', ADMIN, { action: 'decide', uid: 'cy', state: 'denied' });
+  assert.deepEqual(Object.keys(await stored('approvals/cy')).sort(), ['decidedAt', 'decidedBy', 'platform', 'provider', 'requestedAt', 'state']);
   assert.equal((await call('adminApprovals', ADMIN, { action: 'decide', uid: 'nobody', state: 'approved' })).error, 'NOT_FOUND');
   assert.equal(await stored('approvals/nobody'), null, 'never made');
   for (const bad of [{ uid: 'al', state: 'pending' }, { uid: 'al' }, { uid: 'a/b', state: 'approved' }, { state: 'approved' }]) {
@@ -524,7 +596,7 @@ test('D-254 adminApprovals decide: approves, denies, takes approval away and giv
   }
 });
 
-test('D-254 adminApprovals migrate: once; profiles with no decision approved, denied left alone, accounts without a profile untouched', async () => {
+test('D-254 adminApprovals migrate: profiles with no decision approved, denied left alone, accounts without a profile untouched; it runs again', async () => {
   await db.doc('users/old').set({ participantId: P, createdAt: Timestamp.fromMillis(1234) });
   await db.doc('users/waiting').set({ participantId: P });
   await db.doc('approvals/waiting').set({ state: 'pending', requestedAt: Timestamp.fromMillis(5000), name: 'Wai', platform: 'ios' });
@@ -544,10 +616,44 @@ test('D-254 adminApprovals migrate: once; profiles with no decision approved, de
   assert.deepEqual([(await stored('approvals/refused')).state, (await stored('approvals/refused')).decidedBy], ['denied', 'admin']);
   assert.equal((await stored('approvals/fine')).decidedBy, 'admin', 'an approved one is not rewritten');
   assert.equal((await stored('approvals/new')).state, 'pending', 'no profile: a request made after the gate waits');
-  assert.equal((await stored('meta/approvalsMigration')).count, 2);
-  assert.equal((await call('adminApprovals', ADMIN, { action: 'migrate' })).error, 'FAILED_PRECONDITION', 'once');
-  const listed = (await call('adminApprovals', ADMIN, { action: 'list' })).result;
+  const first = await stored('meta/approvalsMigration');
+  assert.deepEqual([first.count, first.runs], [2, 1]);
+  assert.ok(first.at);
+  let listed = (await call('adminApprovals', ADMIN, { action: 'list' })).result;
   assert.deepEqual([listed.migrated, listed.toMigrate], [true, 0]);
+  // Fix wave M1: it runs again. With nothing left it changes nothing (idempotent).
+  const before = (await db.collection('approvals').get()).docs.map((d) => [d.id, d.data()]);
+  assert.deepEqual((await call('adminApprovals', ADMIN, { action: 'migrate' })).result, { approved: 0 }, 'a second run is allowed');
+  assert.deepEqual((await db.collection('approvals').get()).docs.map((d) => [d.id, d.data()]), before, 'and changes no approval');
+  // A 0.5.0 sign-up in the deploy window (a profile, no request): the banner
+  // shows it, and a second press approves it; the marker keeps the first run.
+  await db.doc('users/window').set({ participantId: P, createdAt: Timestamp.fromMillis(7777) });
+  listed = (await call('adminApprovals', ADMIN, { action: 'list' })).result;
+  assert.deepEqual([listed.migrated, listed.toMigrate], [true, 1]);
+  assert.deepEqual((await call('adminApprovals', ADMIN, { action: 'migrate' })).result, { approved: 1 });
+  assert.deepEqual([(await stored('approvals/window')).state, (await stored('approvals/window')).decidedBy], ['approved', 'migration']);
+  const marker = await stored('meta/approvalsMigration');
+  assert.deepEqual([marker.count, marker.runs, marker.at.toMillis()], [2, 3, first.at.toMillis()], 'the first run recorded, the runs counted');
+  assert.equal((await call('adminApprovals', ADMIN, { action: 'list' })).result.toMigrate, 0);
+});
+
+// Fix wave M2: the page's write reads every profile and approval again in its
+// transaction. Candidates read before a denial or a purge are passed in here
+// directly, as a run that raced one would hold them.
+test('D-254 migrate\'s write: a denial or a purge since the page was read wins', async () => {
+  await db.doc('users/ok').set({ participantId: P, createdAt: Timestamp.fromMillis(4321) });
+  await db.doc('users/refused').set({ participantId: P });
+  await db.doc('approvals/refused').set({ state: 'denied', requestedAt: Timestamp.fromMillis(10), decidedBy: 'admin' });
+  await db.doc('users/fine').set({ participantId: P });
+  await db.doc('approvals/fine').set({ state: 'approved', requestedAt: Timestamp.fromMillis(10), decidedBy: 'admin' });
+  // 'gone' was purged: no profile, no approval left.
+  assert.equal(await approveFromBeforeGate(db, ['ok', 'refused', 'gone', 'fine']), 1, 'only what this call wrote');
+  assert.deepEqual([(await stored('approvals/ok')).state, (await stored('approvals/ok')).requestedAt.toMillis()], ['approved', 4321]);
+  const refused = await stored('approvals/refused');
+  assert.deepEqual([refused.state, refused.decidedBy], ['denied', 'admin'], 'a denial is never overwritten');
+  assert.equal(await stored('approvals/gone'), null, 'a purged account\'s approval is never made again');
+  assert.equal((await stored('approvals/fine')).decidedBy, 'admin', 'an approval is not rewritten');
+  assert.equal(await approveFromBeforeGate(db, []), 0);
 });
 
 test('D-254 adminApprovals migrate: more profiles than one batch of 400 are all approved', async () => {

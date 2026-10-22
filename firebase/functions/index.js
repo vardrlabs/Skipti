@@ -1920,9 +1920,13 @@ export const requestApproval = onCall(CALLABLE, async (request) => {
   });
 });
 
-/** The approvals documents in state `state`, as admin rows, newest first. */
+/** The approvals documents in state `state`, as admin rows, newest first:
+ *  the newest LIST_MAX requests (fix wave M4: ordered by requestedAt in the
+ *  query, on the approvals (state, requestedAt desc) index declared in
+ *  firestore.indexes.json, so a flood of requests cannot hide the newest). */
 async function rowsIn(state) {
-  const found = await db.collection('approvals').where('state', '==', state).limit(approvals.LIST_MAX).get();
+  const found = await db.collection('approvals').where('state', '==', state).orderBy('requestedAt', 'desc')
+    .limit(approvals.LIST_MAX).get();
   return approvals.newestFirst(found.docs.map((d) => approvals.row(d.id, d.data())), approvals.LIST_MAX);
 }
 
@@ -1956,10 +1960,10 @@ export const adminApprovals = onCall({ ...CALLABLE, cors: approvals.ADMIN_ORIGIN
   if (action === 'list') {
     const [pending, approved, denied] = await Promise.all(approvals.STATES.map(rowsIn));
     const migrated = (await marker.get()).exists;
+    // Fix wave M1: counted every time, marker or not: the banner shows while
+    // any profile has no decision (a 0.5.0 sign-up in the deploy window).
     let toMigrate = 0;
-    if (!migrated) {
-      await eachProfilePage(async (rows) => { toMigrate += rows.filter((r) => approvals.migrates(r.approval)).length; });
-    }
+    await eachProfilePage(async (rows) => { toMigrate += rows.filter((r) => approvals.migrates(r.approval)).length; });
     return { pending, approved, denied, migrated, toMigrate };
   }
   if (action === 'decide') {
@@ -1969,32 +1973,33 @@ export const adminApprovals = onCall({ ...CALLABLE, cors: approvals.ADMIN_ORIGIN
     await db.runTransaction(async (tx) => {
       const snapshot = await tx.get(ref);
       if (!snapshot.exists) throw new HttpsError('not-found', 'No such account.');
-      tx.update(ref, { state: d.state, decidedAt: FieldValue.serverTimestamp(), decidedBy: 'admin' });
+      // Fix wave M5 (data minimisation): a denial keeps no name or email
+      // (provider, platform and the times stay); an approval keeps them.
+      const drop = d.state === 'denied' ? { name: FieldValue.delete(), email: FieldValue.delete() } : {};
+      tx.update(ref, { state: d.state, decidedAt: FieldValue.serverTimestamp(), decidedBy: 'admin', ...drop });
     });
     return { ok: true };
   }
   if (action === 'migrate') {
-    // Once: every profile made before the gate is approved, so nobody already
+    // Every profile made before the gate is approved, so nobody already
     // testing is locked out; a pending one too (its profile predates the
-    // gate); a denied one is left alone. Batches of at most 400 writes.
-    if ((await marker.get()).exists) throw new HttpsError('failed-precondition', 'The migration has already run.');
+    // gate); a denied one is left alone. Fix wave M1: it runs again whenever
+    // asked, and is idempotent once the gate is live (no path after it makes
+    // a profile without a decision), so a 0.5.0 sign-up between this and the
+    // rules deploy is approved by a second press. The marker records the
+    // first run (count, at) and counts the runs. Fix wave M2: each page is
+    // written in a transaction that reads the profiles and approvals again
+    // (store.approveFromBeforeGate), so a denial or a purge in between wins.
     let count = 0;
     await eachProfilePage(async (rows) => {
-      const batch = db.batch();
-      let n = 0;
-      for (const r of rows) {
-        if (!approvals.migrates(r.approval)) continue;
-        const requestedAt = r.approval?.requestedAt
-          ?? (typeof r.profile.createdAt?.toMillis === 'function' ? r.profile.createdAt : FieldValue.serverTimestamp());
-        batch.set(db.collection('approvals').doc(r.uid), {
-          state: 'approved', requestedAt, decidedAt: FieldValue.serverTimestamp(), decidedBy: 'migration',
-        }, { merge: true });
-        n += 1;
-      }
-      if (n) await batch.commit();
-      count += n;
+      const uids = rows.filter((r) => approvals.migrates(r.approval)).map((r) => r.uid);
+      if (uids.length) count += await store.approveFromBeforeGate(db, uids);
     });
-    await marker.set({ count, at: FieldValue.serverTimestamp() });
+    await db.runTransaction(async (tx) => {
+      const first = await tx.get(marker);
+      if (first.exists) tx.update(marker, { runs: FieldValue.increment(1) });
+      else tx.set(marker, { count, at: FieldValue.serverTimestamp(), runs: 1 });
+    });
     return { approved: count };
   }
   throw new HttpsError('invalid-argument', 'action is not valid');

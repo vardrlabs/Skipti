@@ -224,3 +224,11 @@ test("the admin page signs in with the apps' own public values, and checks the r
 test('the admin pages are public text: no em or en dash', () => {
   for (const html of [adminPage, adminMissing]) assert.doesNotMatch(html, /[\u2013\u2014]|\\u201[34]/);
 });
+
+// D-254 fix wave M1: the migration runs again whenever asked, so its banner
+// shows while any profile has no decision (the list's toMigrate), never only
+// until the first run's marker exists.
+test('the migration banner shows while profiles wait for it, not until the first run', () => {
+  assert.match(adminScript, /\$\("migrate"\)\.hidden = n === 0;/);
+  assert.doesNotMatch(adminScript, /r\.migrated/, 'the marker decides nothing on the page');
+});
