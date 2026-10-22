@@ -1591,6 +1591,10 @@ Mock-up https://claude.ai/artifact/4ULGr42bEn7YUhSu7pQaTx (v1); README pick http
   upscaling past the clips' native size. No AI upscaling or sharpening (it invents detail; 224: no edited pixels).
   Done in D-255 (`.drafts/d255/brief.md` section 5).
 
+- **252 (yours, chat with a screenshot, 2026-10-21):** You > Profile and account: "Signed in with Google" and Sign out
+  (with its line) become ONE card at the top; Find me (the username) moves right below it; then Sync, Notifications
+  and the rest. Both phones. Built in D-254's branch (the same screen), after the look.
+
 ### Siri and Gemini, 210 to 213: your answers (pop-up, 2026-10-21)
 
 - **210 (U15, U16):** Siri and Gemini come in **0.5.2**, not 0.5.1.
