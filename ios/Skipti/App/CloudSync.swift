@@ -25,12 +25,25 @@ final class CloudSync {
         if active {
             // D-235 round 4 (I1): a token delete that could not finish is tried again when no one is signed in.
             if LaunchWork.startsCloud(), Account.shared.uid == nil { Push.shared.settleOwed() }
+            // D-254: the account's approval is listened for, and asked for while it is not approved; the cloud work
+            // below runs only once it is (`ready`, `registerPhone`).
+            Approval.shared.front(uid: Account.shared.uid)
             registerPhone()
             push()
             listen()
         } else {
             stopListening()
+            Approval.shared.stopListening()
         }
+    }
+
+    /// D-254: approval taken away (approved to denied): the cloud stops as sync off stops it (the listeners down,
+    /// nothing pushed, push off at FCM; the device document is not written, the rules refuse it now). Local data is
+    /// untouched; approval given back starts it all again (`Approval.heard`).
+    func approvalWithdrawn() {
+        registered = nil
+        stopListening()
+        Task { await Push.shared.stop(inCloud: false) }
     }
 
     /// The sync switch changed (Settings). D-196: pushes come with sync.
@@ -63,11 +76,13 @@ final class CloudSync {
     private func ready() -> (uid: String, store: LedgerStore)? { ready(uid: Account.shared.uid) }
 
     /// `ready()` with the signed-in account given (tests). D-235 (C2, decision 107): and only when that account is
-    /// the vault's owner, so a session this vault was never signed in to syncs nothing.
+    /// the vault's owner, so a session this vault was never signed in to syncs nothing. D-254: and only when it is
+    /// approved (the vault's copy of the last state heard), so a waiting account pushes and listens to nothing.
     func ready(uid: String?) -> (uid: String, store: LedgerStore)? {
         let store = self.store
         guard let uid = LaunchWork.signedInAccount(uid: uid, syncOn: Self.syncEnabled(store),
-                                                   owner: Account.storedOwner(store)) else { return nil }
+                                                   owner: Account.storedOwner(store),
+                                                   approval: Approval.cached(store, uid: uid)) else { return nil }
         return (uid, store)
     }
 
@@ -82,7 +97,9 @@ final class CloudSync {
     /// After a sign-in, and each time SKIPTI comes to the front.
     func registerPhone() {
         // D-211: a test host registers nothing (see LaunchWork). D-235 (C2): nor does a session this vault does not own.
-        guard LaunchWork.startsCloud(), let uid = Account.shared.uid, Account.storedOwner(store) == uid,
+        // D-254: nor an account not approved (the rules refuse its profile and devices); push's restart below waits too.
+        guard LaunchWork.startsCloud(), let uid = Account.shared.uid,
+              Approval.gate(uid: uid, owner: Account.storedOwner(store), approval: Approval.cached(store, uid: uid)) != nil,
               !registrations.isRunning(uid) else { return }
         if registered == uid {
             if Self.syncEnabled(store) { Push.shared.start() }
@@ -98,6 +115,11 @@ final class CloudSync {
         let store = self.store
         guard LaunchWork.startsCloud(), Account.storedOwner(store) == uid else {
             return .failed("This phone's ledger belongs to another account.")
+        }
+        // D-254: the sign-in screen's and the username step's registration too (they call this, not `registerPhone`).
+        let approval = Approval.cached(store, uid: uid)
+        guard Approval.allowsCloud(approval) else {
+            return .failed(approval == .denied ? ApprovalCopy.callDenied : ApprovalCopy.callWaiting)
         }
         if registered == uid { return .registered }
         return await registrations.run(uid) {

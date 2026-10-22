@@ -213,7 +213,8 @@ enum ProfileShare {
     /// The signed-in account when sync is on, else nil (the share waits).
     @MainActor static let realAccount: (LedgerStore) -> String? = { store in
         LaunchWork.signedInAccount(uid: Account.shared.uid, syncOn: CloudSync.syncEnabled(store),
-                                   owner: Account.storedOwner(store))
+                                   owner: Account.storedOwner(store),
+                                   approval: Approval.cached(store, uid: Account.shared.uid))
     }
     /// Tests only; production never reassigns.
     @MainActor static var account = realAccount

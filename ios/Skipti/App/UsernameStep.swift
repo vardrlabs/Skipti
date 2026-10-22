@@ -92,6 +92,9 @@ enum UsernameSaveFailure: Equatable {
         case .refused("INVALID_ARGUMENT")?: return .notAvailable
         case .refused("FAILED_PRECONDITION")?: return .used
         case .refused("RESOURCE_EXHAUSTED")?: return .message(PeopleCopy.limit)
+        // D-254: the account is not approved yet (or was not): its words, never the offline line.
+        case .awaitingApproval?: return .message(ApprovalCopy.callWaiting)
+        case .notApproved?: return .message(ApprovalCopy.callDenied)
         default: return .message(UsernameCopy.offline)
         }
     }

@@ -177,7 +177,20 @@ enum Phones {
         guard let uid = Account.shared.uid,
               let profile = try? await Cloud.db.collection("users").document(uid).getDocument(source: .server)
         else { return nil }
-        return (profile.data()?["deleteAt"] as? Timestamp)?.dateValue()
+        guard !profile.exists else { return deletionDate(profile: profile.data(), approval: nil) }
+        // D-254: an account with no profile (waiting for approval, or not approved: the rules refuse it one) carries the
+        // marker on its own `approvals/{uid}`, which it may read; Keep my account clears it there. Without this read
+        // the next sign-in within 7 days offered no Keep my account, and the purge deleted the account unannounced.
+        let approval = try? await Cloud.db.collection("approvals").document(uid).getDocument(source: .server)
+        return deletionDate(profile: nil, approval: approval?.data())
+    }
+
+    /// D-254: where the deletion marker is: the profile's `deleteAt` when there is a profile (`profile` non-nil),
+    /// else the approval document's (`requestDeletion` puts it there for an account with no profile). Android's twin is
+    /// `Phones.deletionDate`.
+    static func deletionDate(profile: [String: Any]?, approval: [String: Any]?) -> Date? {
+        if let profile { return (profile["deleteAt"] as? Timestamp)?.dateValue() }
+        return (approval?["deleteAt"] as? Timestamp)?.dateValue()
     }
 
     @MainActor static func requestDeletion() async throws -> Date {

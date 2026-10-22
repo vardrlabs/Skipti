@@ -256,7 +256,13 @@ struct PeopleScreen: View {
                             CardCaption(MemberCopy.stays)
                         }
                     }
-                    if !invitable.isEmpty && !isCopy {
+                    if !invitable.isEmpty && !isCopy, let line = ApprovalCopy.invite(Approval.shared.state) {
+                        // D-254: one line instead of the invite rows while the account is not approved.
+                        VStack(alignment: .leading, spacing: 8) {
+                            header(InviteCopy.section)
+                            CardCaption(line)
+                        }
+                    } else if !invitable.isEmpty && !isCopy {
                         VStack(alignment: .leading, spacing: 8) {
                             header(InviteCopy.section)
                             ListCard {

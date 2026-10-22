@@ -61,6 +61,8 @@ enum InviteCopy {
     static let notMember = "This group is not in SKIPTI's cloud with your account, so you cannot invite to it."
 
     static func failure(_ error: Error) -> String {
+        // D-254: a refusal for approval says so, never "not a member".
+        if let approval = ApprovalCopy.failure(error) { return approval }
         switch error as? CloudFunctions.Failure {
         case .signedOut?: return needsAccount
         case .alreadyMember?: return alreadyMember
@@ -83,6 +85,8 @@ enum InviteCopy {
     static func canRetry(_ error: Error) -> Bool {
         switch error as? CloudFunctions.Failure {
         case .refused("ALREADY_EXISTS")?, .alreadyMember?: return false
+        // D-254: the same call says the same until the account is approved.
+        case .awaitingApproval?, .notApproved?: return false
         default: return true
         }
     }
@@ -117,6 +121,11 @@ enum CloudFunctions {
         /// account already holds a place in the invite's group.
         case alreadyMember
         case offline
+        /// D-254: the account is not approved yet (refused on this phone, or the server's `details.approval` pending or
+        /// none). Never "not a member".
+        case awaitingApproval
+        /// D-254: the account was not approved (`details.approval` denied).
+        case notApproved
     }
 
     @MainActor
@@ -134,6 +143,10 @@ enum CloudFunctions {
         }
         if let error = json["error"] as? [String: Any] {
             let status = error["status"] as? String ?? "UNKNOWN"
+            // D-254: the approval gate's refusal (permission-denied with `details.approval`) is its own failure.
+            if let details = error["details"] as? [String: Any], let approval = details["approval"] as? String {
+                throw ApprovalState.server(approval) == .denied ? Failure.notApproved : Failure.awaitingApproval
+            }
             if status == "ALREADY_EXISTS", let details = error["details"] as? [String: Any],
                let member = details["member"] as? Bool, member {
                 throw Failure.alreadyMember
@@ -147,6 +160,11 @@ enum CloudFunctions {
     @MainActor
     static func call(_ name: String, _ data: [String: Any]) async throws -> [String: Any] {
         guard let user = FirebaseGate.auth?.currentUser else { throw Failure.signedOut }
+        // D-254: a call the server would refuse for approval is refused here first, with no network call (every call
+        // but the exempt ones: leaving, and asking for approval).
+        if let refusal = Approval.localRefusal(name, approval: Approval.cached(.defaultStore(), uid: user.uid)) {
+            throw refusal
+        }
         let token: String
         do { token = try await user.getIDToken() } catch { throw Failure.offline }
         var request = URLRequest(url: url(name))
@@ -156,7 +174,14 @@ enum CloudFunctions {
         request.httpBody = try JSONSerialization.data(withJSONObject: ["data": data])
         let body: Data
         do { (body, _) = try await URLSession.shared.data(for: request) } catch { throw Failure.offline }
-        return try decode(body)
+        do {
+            return try decode(body)
+        } catch let failure as Failure where failure == .awaitingApproval || failure == .notApproved {
+            // D-254: the server refused for approval (pending, denied, or `none`: this account never asked): ask now, so
+            // the request exists and this phone hears the state the server holds.
+            if !Approval.exempt.contains(name) { Task { await Approval.shared.ask(uid: user.uid) } }
+            throw failure
+        }
     }
 }
 
@@ -186,6 +211,8 @@ enum Invites {
     @MainActor
     static func create(store: LedgerStore, group: NamedGroupWire, member: MemberWire) async throws -> String {
         guard let uid = Account.shared.uid else { throw CloudFunctions.Failure.signedOut }
+        // D-254: before the group is put in the cloud (a write the rules refuse an account not approved).
+        if let refusal = Approval.localRefusal("createInvite", approval: Approval.cached(store, uid: uid)) { throw refusal }
         switch await CloudSync.ensureGroup(group.group.id, name: group.group.name, uid: uid) {
         case .member: break
         case .notMember: throw CloudFunctions.Failure.refused("PERMISSION_DENIED")
@@ -426,6 +453,7 @@ struct InviteScreen: View {
 struct JoinPasteScreen: View {
     let store: LedgerStore
     var onJoined: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
     @State private var text = ""
     @State private var link: String?
     /// D-172: read on every appearance, so returning from Sign in shows the
@@ -435,7 +463,14 @@ struct JoinPasteScreen: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                if hasAccount { pasteField } else { needsAccount }
+                if !hasAccount {
+                    needsAccount
+                } else if let blocked = ApprovalCopy.join(Approval.shared.state, group: nil) {
+                    // D-254: no link can be opened yet; the same words as an opened invite.
+                    ApprovalJoinBlock(title: blocked.title, words: blocked.body) { dismiss() }
+                } else {
+                    pasteField
+                }
             }
             .padding(20)
         }
@@ -497,13 +532,15 @@ struct JoinScreen: View {
 
     private enum Phase: Equatable {
         case opening, offer(Invites.Offer), joining(Invites.Offer), joined(String, name: String), failed(String)
+        /// D-254: the account cannot join yet (waiting) or at all (not approved): the title and the words, one Done.
+        case waiting(title: String, body: String)
 
         /// D-217 final fix: once a join has started there is no Cancel and no back: Done (onJoined) is the way out,
         /// so the caller's dismissal and reload always run.
         var locked: Bool {
             switch self {
             case .joining, .joined: true
-            case .opening, .offer, .failed: false
+            case .opening, .offer, .failed, .waiting: false
             }
         }
     }
@@ -541,6 +578,8 @@ struct JoinScreen: View {
                     Text(verbatim: message).font(TypeRole.body()).foregroundStyle(Tokens.owed)
                     Button { dismiss() } label: { Text(verbatim: InviteCopy.done) }
                         .buttonStyle(SecondaryButtonStyle())
+                case .waiting(let title, let words):
+                    ApprovalJoinBlock(title: title, words: words) { dismiss() }
                 }
             }
             .padding(20)
@@ -566,10 +605,15 @@ struct JoinScreen: View {
             phase = .failed(InviteCopy.needsAccount)
             return
         }
+        // D-254: no peek while the account is not approved (the group's name is not known, so "this group").
+        if let blocked = ApprovalCopy.join(Approval.shared.state, group: nil) {
+            phase = .waiting(title: blocked.title, body: blocked.body)
+            return
+        }
         do {
             phase = .offer(try await Invites.peek(link: link))
         } catch {
-            phase = .failed(InviteCopy.failure(error))
+            phase = Self.failed(error, group: nil)
         }
     }
 
@@ -582,7 +626,33 @@ struct JoinScreen: View {
             // D-196: and now this group's news can reach you.
             await Push.shared.askPermission()
         } catch {
-            phase = .failed(InviteCopy.failure(error))
+            phase = Self.failed(error, group: offer.groupName)
+        }
+    }
+
+    /// D-254: a call refused for approval shows the invite page's waiting (or not approved) words, with the group's name
+    /// when the offer gave it; any other failure, its own words.
+    private static func failed(_ error: Error, group: String?) -> Phase {
+        if let state = ApprovalCopy.state(of: error), let blocked = ApprovalCopy.join(state, group: group) {
+            return .waiting(title: blocked.title, body: blocked.body)
+        }
+        return .failed(InviteCopy.failure(error))
+    }
+}
+
+/// D-254: the invite page while the account is not approved: the title, the words, one Done. Android's twin is
+/// `ApprovalJoinBlock` in Invites.kt.
+struct ApprovalJoinBlock: View {
+    let title: String
+    let words: String
+    let onDone: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(verbatim: title).font(TypeRole.display(28)).foregroundStyle(Tokens.text)
+            Text(verbatim: words).font(TypeRole.body()).foregroundStyle(Tokens.textDim)
+            Button { onDone() } label: { Text(verbatim: ApprovalCopy.done) }
+                .buttonStyle(PrimaryButtonStyle())
         }
     }
 }
