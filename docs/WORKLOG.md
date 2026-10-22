@@ -10,7 +10,77 @@ Newest session log entries go at the bottom.
 
 ---
 
-## NOW: 2026-10-20 (session 11, Opus; opener `.drafts/stop/opus-opener-6.md`): 0.5.1 U9+U17, U29-U31, U10, U32/U33
+## NOW: 2026-10-21 (session 12, Opus as controller; opener opus-opener-8)
+
+- Session 12 order: (1) D-254 approval gate, (2) U33 film, (3) README photos (his pick), (4) merge release-051-prep with
+  a full gate, (5) STOP with the Fable opener (`.drafts/stop/fable-opener-4.md` updated).
+- D-254 IN PROGRESS on branch `d254-approval-gate`: spec committed 1891b36
+  (`docs/superpowers/specs/2026-10-21-approval-gate-design.md`); mock-up https://claude.ai/artifact/4ULGr42bEn7YUhSu7pQaTx;
+  stage 1 (rules + Functions + tests) and stage 2 (admin page + Hosting targets) dispatched in parallel (Opus);
+  pop-up to the founder pending (words, guarantee 5, privacy line, README pick
+  https://claude.ai/artifact/J3EFygb5CUdhrU4wBa6ArU). Next: shells (stages 3 iOS, 4 Android) after his words.
+- NEW (the founder, chat, decision 232): public sample data American + USD only. D-255 = seed change both shells +
+  store re-capture + clips re-record, after D-254, BEFORE the film and README photos (they use the new shots).
+- His pop-ups answered (decisions 233 to 237, all recommended): build as shown; G5 "is on once your account is
+  approved" (committed 69ddcb4 with an Amendments entry); privacy line Version 3 as drafted (edit after stage 2
+  commits: it owns hosting.test); README = shots 01 04 05 07 08 09 (re-shot); caption 2 "Trips, roommates, dinners."
+- DONE: stage 1 server 5d27923 (307/307 emulator tests; 8 sabotage rows exact; 'none' = no approvals doc), stage 2
+  admin page d6e4078 (12/12 hosting), privacy v3 + dash scope a6c41b3, decision 238 d8d50dc (full-detail pictures,
+  D-255 brief section 5). RUNNING: stage 3 iOS, stage 4 Android (waits for xcodebuild before Gradle), server-side Opus
+  review -> `.drafts/d254/review-server.md` (no Critical/Important; 8 Minor, triage `.drafts/d254/triage-server.md`).
+  iOS stage 3 DONE 4c089f1 (1035 tests 0 failures; 10 sabotage rows exact). Server fix wave RUNNING (M1-M5 + formal
+  server sabotage S1-S17+). Android stage 4 DONE d3c201b1 (1238 JVM 0 failed, fresh XML 22:13; 6 sabotage rows exact; twin diffs: no auth
+  listener (cache cleared at next front, invisible), Join block 12 dp vs iOS 16 (judge in the look)). Shell review
+  DONE (0 Critical, I1 username ring, I2 unknown says waiting; triage `.drafts/d254/triage-shells.md`). Fix waves
+  DONE: server 846b0c7 (314 tests; 29-row matrix, 0 survived), Android 1ddc9806 (1247 JVM; 11 rows), iOS 5909f2dd
+  (1044 tests; FW1-FW9). LOOK DONE (gate works; twins match; 2 Important + 3 Minor, triage
+  `.drafts/d254/triage-look.md`; devices deleted). LOOK FIXES DONE: server/admin 77a2b25d (317 tests; L4a-L5b), Android
+  514f8152 (1251 JVM; L1-L7), iOS 14623891 (1049; LF1-LF7), incl. decision 252 layout. RE-LOOK PASSED (both phones, `.drafts/d254/relook/`).
+  FULL GATE 23/23 0 skipped (5m37s, a73877ca); recorded (record_unit.py exit 0); decisions 239-251 + his 253-257
+  (film: two 25 s cuts, App Store 9:16 iPhone + Play 16:9 Android, score, end card "Even up. Cheers all round.";
+  README 3x2; New York data). MERGED b4a61da3, pushed, no Actions run.
+- D-255 STARTED on branch `d255-american-shots` (brief `.drafts/d255/brief.md`: seed both shells, then re-capture at
+  full detail, then clips). Then U33 film (decisions 254-256), README (236, 257), release-051-prep merge, Fable opener.
+  Seed DONE 847af05a + 896b0bae (New York, USD; Sam owes Ben $65 in Brooklyn dinners; Trains; both shells green,
+  6 sabotage rows exact). RE-CAPTURE RUNNING (brief `.drafts/d255/capture-brief.md`; report will be
+  `.drafts/d255/capture-report.md`). README insert script ready: `.drafts/readme/apply.py`. Film settled (decisions
+  254-256, 258: two 25 s cuts, Runestone glow, Norse colours, score, "Even up. Cheers all round.").
+  Capture DONE (`.drafts/d255/capture-report.md`); wrap fix 253321e3 (his 261); README section + 6 native images;
+  FULL GATE 23/23 (454c3977, 5m34s); recorded (JVM carried forward: Gradle cache from 05:38Z fresh run). Merging.
+  FILM agent RUNNING (brief `.drafts/u33/film-brief.md`). Then: full gate, records (decisions 239-251 drafted), record_unit.py, merge. Decisions drafted
+  `.drafts/d254/decisions-draft.md` (239-251). Next: whole-branch review after shells, fix wave, formal sabotage, look
+  (throwaway sim + AVD, emulators, admin page served locally), full gate, records, merge.
+- D-255 brief ready: `.drafts/d255/brief.md` (Miami trip / Apartment 4B / Ski weekend, USD; full detail section 5).
+
+## (previous) NOW: 2026-10-21 (session 11 CLOSING; next session = session 12, opener `.drafts/stop/opus-opener-8.md`)
+
+**RESUME (session 11 close; READ THIS FIRST):**
+- main is pushed with D-245 to D-253 merged (the welcome, rune glyph glow, Settle up's other amount and Undo, small
+  fixes, Just me, the fluidity sweep, the store-shots seed, a deleted group ending on every phone, store-shot polish).
+  No Actions runs. Decisions recorded through 231 (DECISIONS-TAKEN).
+- Branch `release-051-prep` (pushed, NOT merged): 6e8e74d bumps iOS 0.5.1 Build 8 / Android 0.5.1 5001 (decision
+  138). Merge it after D-254 with a full gate.
+- NOT deployed (the founder's yes on 0.5.1's deploy day, after Fable): the privacy page (decision 158) and D-252's
+  `deleteGroup` Function change (decision 219), and D-254's rules/Functions/admin page.
+- Drafts ready: `.drafts/release-051/notes.md` (What to Test + Play, 376 chars), `.drafts/release-051/u35-checklist.md`
+  (public repo: dash sweep 2,705 hits mostly BUILD-LOG/WORKLOG; 7 files with /Users/prithvi paths; retired Oracle
+  files: his call), `.drafts/stop/fable-opener-4.md` (the Fable pass: run AFTER session 12's D-254), `.drafts/fable/
+  notes-for-the-pass.md`, `.drafts/u32/out/` (store shots; a re-capture of 4, 6, 7, 9 and Aurora shots plus U33 clips
+  `.drafts/u33/clips/`: DONE at close), `.drafts/u32/plan.md` (U33 film plan).
+- Re-capture DONE: `.drafts/u32/out/` final set (App Store 10 at 1320x2868, Play 8 at 1080x1920, feature graphic,
+  contact sheet; all hasAlpha no; v1 backed up in `raw-v1/`, `out-v1/`); shot 4 Aurora Exact with names, 6 the You
+  ring, 7 "Lunch with Luna", 9 clean Aurora Home; 01/09 read "Good evening, Sam" (captured ~20:00: consider a
+  re-shoot in daytime light of the greeting if he prefers "afternoon"); shot 6's pill reads "2 of 4 done" on Android
+  (the AVD has no lock: D-247's ring) vs "3 of 5" on iPhone: harmless, or re-shoot with matching counts. U33 clips
+  `.drafts/u33/clips/a..i` (portrait 1320x2868, 6.7-10 s each, stills beside; untrimmed c and h in `clips/full/`); the
+  iPhone was driven by a throwaway UI-test target kept only in `.drafts/u32/uitest/` (never committed).
+- Session 12 order (the founder, 2026-10-21): (1) D-254 the approval gate (decisions 228, 229): plan and build, Fable
+  reviews it; (2) U33 the film (Motion artifact, decision 172) from the clips; (3) README photos: HE picks from the
+  store shots (decision 231): show him the set in a private Artifact and ask; (4) merge release-051-prep with a full
+  gate; (5) stop and hand him the Fable opener (updated with D-254). 0.5.2: Siri/Gemini (210-213), themed refresh
+  (214, U36), App Check (230), firebase-tools bump. Machine: CLAUDE.md 4 item 6 (memory rule).
+
+## SESSION 11 (closed): 2026-10-20/21 (Opus; opener `.drafts/stop/opus-opener-6.md`): 0.5.1 U9+U17, U29-U31, U10, U32/U33
 
 **RESUME (session 11, start):** main = 80c7a2d (vardrlabs/Skipti's starting commit), tree clean. Step now: the
 founder's up-front round. Three Opus research agents write `.drafts/u9/brief.md` (onboarding + name/picture),

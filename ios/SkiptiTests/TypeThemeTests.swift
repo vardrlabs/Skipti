@@ -473,8 +473,8 @@ final class TypeThemeTests: XCTestCase {
             // D-222: 8 = You's row summary (SettingsRow) + sign in, sign out, erase, export, import and sync's two lines;
             // D-224: 9 with the Haptics row's summary. D-225: 7, You's rows and the Haptics row draw through ListRow,
             // whose summary and CardCaption are ListRows.swift's 2. D-225 Task 4: 4, the erase, export and import lines
-            // became ListRow summaries (Security, Your data).
-            ("AccountHubScreen.swift", ".font(TypeRole.body(TypeScale.detail))", 4),
+            // became ListRow summaries (Security, Your data). D-254: 5, the Sync card's words while not approved.
+            ("AccountHubScreen.swift", ".font(TypeRole.body(TypeScale.detail))", 5),
             ("ListRows.swift", ".font(TypeRole.body(TypeScale.detail))", 2),
             ("Profile.swift", "size * TypeScale.avatarInitial", 1), // D-221: the display face at 700 in every theme
             // D-225 Task 6: the seven share fields are FieldRows that take `font: shareFont`, the one share face.
@@ -631,7 +631,8 @@ final class TypeThemeTests: XCTestCase {
             ("Invites.swift", "if let onCancel, !phase.locked {", 1),
             ("Invites.swift", "Button(\"Cancel\") { onCancel() }.barButtonText().barTint()", 1),
             ("Invites.swift", "case .joining, .joined: true", 1),
-            ("Invites.swift", "case .opening, .offer, .failed: false", 1),
+            // D-254: the waiting page (an account not approved) keeps the bar's Cancel too.
+            ("Invites.swift", "case .opening, .offer, .failed, .waiting: false", 1),
             ("Invites.swift", ".navigationBarBackButtonHidden(phase.locked)", 1),
             ("Invites.swift", ".interactiveDismissDisabled(phase.locked)", 1),
             // Join paste pushes JoinScreen with no Cancel (its back is the system's, hidden once locked).

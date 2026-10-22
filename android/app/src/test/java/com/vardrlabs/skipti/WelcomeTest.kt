@@ -451,7 +451,7 @@ class WelcomeTest {
         val s = store()
         var shares = 0
         var changes = 0
-        val spy = ProfileSave.Effects(changed = { changes++ }, share = { shares++ })
+        val spy = ProfileSave.Effects(changed = { changes++ }, share = { shares++ }, ask = {})
         assertEquals(ProfileSave.NameOutcome.Refused("Names can be up to 60 characters."), ProfileSave.name("a".repeat(61), s, spy))
         assertEquals(ProfileSave.NameOutcome.Refused("Add a name first."), ProfileSave.name("   ", s, spy))
         assertEquals(ProfileSave.NameOutcome.Refused("That name has a character SKIPTI can't use."), ProfileSave.name("Sam\u0007", s, spy))
@@ -497,7 +497,7 @@ class WelcomeTest {
         val vault = { opened++; s }
         var shares = 0
         var changes = 0
-        val spy = ProfileSave.Effects(changed = { changes++ }, share = { shares++ })
+        val spy = ProfileSave.Effects(changed = { changes++ }, share = { shares++ }, ask = {})
         var stage = PictureStage().choose(Avatar.Emoji("🦊")).choose(Avatar.Emoji("🐼"))
         assertEquals(Avatar.Emoji("🐼"), stage.staged)
         val notNow = ProfileSave.answer(PictureAnswer.NOT_NOW, stage, vault, spy)
@@ -671,7 +671,7 @@ class WelcomeTest {
         val s = store()
         var shares = 0
         var changes = 0
-        val spy = ProfileSave.Effects(changed = { changes++ }, share = { shares++ })
+        val spy = ProfileSave.Effects(changed = { changes++ }, share = { shares++ }, ask = {})
         assertEquals(ProfileSave.NameOutcome.Saved("Sam"), ProfileSave.returned("Sam", null, s, spy))
         assertEquals(1, youRecords(s))
         // Negative: the same name (trimmed) on Done writes nothing.

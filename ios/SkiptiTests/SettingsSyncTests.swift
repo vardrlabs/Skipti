@@ -29,7 +29,11 @@ final class SettingsSyncTests: XCTestCase {
             .appendingPathComponent("settingssync-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let store = LedgerStore(path: dir.appendingPathComponent("vault.db").path)
-        if let owner { try store.kvSet(key: Account.ownerKey, value: Data(owner.utf8)) }
+        if let owner {
+            try store.kvSet(key: Account.ownerKey, value: Data(owner.utf8))
+            // D-254: an owner here is an approved account (ApprovalTests covers the waiting one).
+            Approval.setCached(store, uid: owner, .approved)
+        }
         return store
     }
 
@@ -116,9 +120,13 @@ final class SettingsSyncTests: XCTestCase {
             XCTAssertEqual(defaults.string(forKey: AppTheme.storageKey), "norse", "stored on the phone as before")
             XCTAssertEqual(try store.allRecords().count, 0, "no record (owner \(owner ?? "none"), signed in \(signedIn ?? "no"))")
         }
-        XCTAssertFalse(SettingsSync.writesRecord(uid: nil, owner: uid))
-        XCTAssertFalse(SettingsSync.writesRecord(uid: uid, owner: nil))
-        XCTAssertTrue(SettingsSync.writesRecord(uid: uid, owner: uid))
+        XCTAssertFalse(SettingsSync.writesRecord(uid: nil, owner: uid, approval: .approved))
+        XCTAssertFalse(SettingsSync.writesRecord(uid: uid, owner: nil, approval: .approved))
+        XCTAssertTrue(SettingsSync.writesRecord(uid: uid, owner: uid, approval: .approved))
+        // D-254: the third condition: an account not approved (or not heard yet) writes no record.
+        for state in [ApprovalState.unknown, .pending, .denied] {
+            XCTAssertFalse(SettingsSync.writesRecord(uid: uid, owner: uid, approval: state), "\(state)")
+        }
     }
 
     /// Signed in with sync off: the record is written (it waits), and nothing is pushed: the push's gate answers no
@@ -134,10 +142,12 @@ final class SettingsSyncTests: XCTestCase {
         XCTAssertEqual(records.map { $0.key }, ["appearance.haptics"])
         XCTAssertEqual(records.map { $0.value }, ["false"])
         XCTAssertNil(LaunchWork.signedInAccount(uid: uid, syncOn: CloudSync.syncEnabled(store), owner: Account.storedOwner(store),
-                                                environment: [:]), "sync off: push() finds no account")
+                                                approval: Approval.cached(store, uid: uid), environment: [:]),
+                     "sync off: push() finds no account")
         try CloudSync.setSyncEnabled(store, true)
         XCTAssertEqual(LaunchWork.signedInAccount(uid: uid, syncOn: CloudSync.syncEnabled(store), owner: Account.storedOwner(store),
-                                                  environment: [:]), uid, "the same gate with sync on (not vacuous)")
+                                                  approval: Approval.cached(store, uid: uid), environment: [:]), uid,
+                       "the same gate with sync on (not vacuous)")
         XCTAssertNil(CloudSync.shared.ready(uid: uid), "and never in a test host")
     }
 

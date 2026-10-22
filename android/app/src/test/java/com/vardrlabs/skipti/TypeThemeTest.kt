@@ -476,7 +476,8 @@ class TypeThemeTest {
                 // D-224: the Haptics row's summary is the tenth. D-225: You's rows and the Haptics row draw through the shared
                 // ListRow (its summary and the card caption are ListRows.kt's two).
                 // D-225 T5: 5, Security's erase card, Your data's export and import lines are list rows (ListRows.kt).
-                Triple("AccountHubScreen.kt", "fontSize = TypeScale.detail.sp", 5),
+                // D-254: 6, the Sync card's words while the account is not approved (ApprovalSyncCard).
+                Triple("AccountHubScreen.kt", "fontSize = TypeScale.detail.sp", 6),
                 Triple("ListRows.kt", "fontSize = TypeScale.detail.sp", 2),
                 // D-221: You's name, the progress pill.
                 Triple("AccountHubScreen.kt", "fontSize = TypeScale.displayName.sp", 1),
@@ -491,7 +492,8 @@ class TypeThemeTest {
                 // D-225 T7 (Design 12): New group's three captions and Your name's are card captions (ListRows.kt), with
                 // People's two (T5).
                 Triple("GroupScreens.kt", "Type.bodyDim(dark).copy(fontSize = TypeScale.detail.sp)", 0),
-                Triple("GroupScreens.kt", "CardCaption(", 6),
+                // D-254: 7, People's one line in place of the invite rows while the account is not approved.
+                Triple("GroupScreens.kt", "CardCaption(", 7),
                 Triple("Profile.kt", "in your groups.\", style = Type.bodyDim(dark).copy(fontSize = TypeScale.detail.sp)", 1),
                 // D-225 T5: AppLock.kt 1 (the rooted warning; the privacy detail is the row's summary), CurrencyChoice.kt 1
                 // (the old Currency settings went); the lock title, About's prose, wordmark and licence text from the scale.
@@ -729,7 +731,8 @@ class TypeThemeTest {
             listOf(
                 // D-223: the By group card's went with it; the ledger card's name is one line with an ellipsis.
                 Triple("OverviewTab.kt", "Type.name(dark, 15), maxLines = 1, overflow = TextOverflow.Ellipsis", 1),
-                Triple("HomeParts.kt", "Type.name(dark, TypeScale.ledgerName.toInt()),\n                maxLines = 1, overflow = TextOverflow.Ellipsis", 1),
+                // Decision 261 (D-255): the ledger card's name takes two lines before its ellipsis.
+                Triple("HomeParts.kt", "Type.name(dark, TypeScale.ledgerName.toInt()),\n                maxLines = 2, overflow = TextOverflow.Ellipsis", 1),
                 Triple("ExpenseListScreen.kt", "Type.name(dark, 15), maxLines = 2, overflow = TextOverflow.Ellipsis", 1),
             ),
             "a row title",

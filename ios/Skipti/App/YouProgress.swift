@@ -27,20 +27,25 @@ struct SetupFacts: Equatable {
     var hasUsername = false
     /// Notifications are authorised, provisional or ephemeral (signed in only).
     var notificationsOn = false
+    /// D-254 fix wave (review I1): the account is approved. The two account steps come with approval: until then a
+    /// username cannot be picked (the cloud refuses it) and no push arrives.
+    var approved = true
 }
 
 enum SetupSteps {
     /// The steps in their order: five without an account, seven signed in. D-247 (decision 169, D-221 h): a phone that
     /// cannot lock (no passcode, no Face ID or Touch ID: `lockAvailable`, read again whenever SKIPTI comes to the front)
     /// has no app lock step, so its ring can complete ("4 of 4"); it comes back once the phone has a lock.
-    static func steps(signedIn: Bool, lockAvailable: Bool) -> [SetupStep] {
+    /// D-254 fix wave (review I1): signed in but not approved (waiting, not approved, or not heard yet), the five local
+    /// steps only.
+    static func steps(signedIn: Bool, lockAvailable: Bool, approved: Bool = true) -> [SetupStep] {
         let local: [SetupStep] = [.name, .picture, .currency, .appLock, .firstGroup].filter { $0 != .appLock || lockAvailable }
-        return signedIn ? local + [.username, .notifications] : local
+        return signedIn && approved ? local + [.username, .notifications] : local
     }
 
     /// The facts' own steps.
     static func steps(_ facts: SetupFacts) -> [SetupStep] {
-        steps(signedIn: facts.signedIn, lockAvailable: facts.lockAvailable)
+        steps(signedIn: facts.signedIn, lockAvailable: facts.lockAvailable, approved: facts.approved)
     }
 
     /// Whether one step is done by these facts.
@@ -164,6 +169,7 @@ extension SetupFacts {
     static func read(store: LedgerStore, account: Account, hasUsername: Bool) async -> SetupFacts {
         var facts = SetupFacts()
         facts.signedIn = account.isSignedIn
+        facts.approved = Approval.allowsCloud(Approval.shared.state)
         let vault = await Task.detached(priority: .userInitiated) { VaultFacts.read(store) }.value
         facts.hasName = vault.hasName
         facts.hasPicture = vault.hasPicture

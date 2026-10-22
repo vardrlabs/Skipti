@@ -16,6 +16,17 @@ service cloud.firestore {
     function isUser(uid) {
       return signedIn() && request.auth.uid == uid;
     }
+    // D-254 (decisions 228, 229): the approval gate. Anyone can sign in, but
+    // until the founder approves the account (approvals/{uid}, written only by
+    // Functions) the cloud takes nothing from it: every client create and
+    // update below requires this. Reads and deletes never do: reading what is
+    // yours and removing it never waits for anyone. A decision takes effect
+    // on the next write, both ways.
+    function approved() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/approvals/$(request.auth.uid))
+        && get(/databases/$(database)/documents/approvals/$(request.auth.uid)).data.get('state', null) == 'approved';
+    }
     function hasOnly(keys) {
       return request.resource.data.keys().hasOnly(keys);
     }
@@ -55,6 +66,14 @@ service cloud.firestore {
     function validToken() {
       return !('fcmToken' in request.resource.data)
         || shortText(request.resource.data.fcmToken, 4096);
+    }
+    // D-254 fix wave (M3): an update that only removes the push address
+    // (and stamps lastSeen, as both shells' tokenUpdate(nil) does). It needs
+    // no approval: a denied account can still clear its token, because
+    // removing what is yours never waits. Adding or changing one does.
+    function tokenRemovalOnly() {
+      return changesOnly(['fcmToken', 'lastSeen'])
+        && !('fcmToken' in request.resource.data);
     }
     function intIn(v, lo, hi) {
       return v is int && v >= lo && v <= hi;
@@ -113,13 +132,13 @@ service cloud.firestore {
     }
     match /users/{uid} {
       allow get: if isUser(uid);
-      allow create: if isUser(uid)
+      allow create: if isUser(uid) && approved()
         && hasOnly(['participantId', 'createdAt', 'updatedAt', 'name'])
         && hex32(request.resource.data.participantId)
         && request.resource.data.createdAt == request.time
         && request.resource.data.updatedAt == request.time
         && validName();
-      allow update: if isUser(uid)
+      allow update: if isUser(uid) && approved()
         && changesOnly(['updatedAt', 'name'])
         && request.resource.data.updatedAt == request.time
         && validName();
@@ -128,7 +147,7 @@ service cloud.firestore {
       // can neither set nor clear it.
       match /devices/{deviceId} {
         allow get, list: if isUser(uid);
-        allow create: if isUser(uid)
+        allow create: if isUser(uid) && approved()
           && hex32(deviceId)
           && hasOnly(['name', 'platform', 'appVersion', 'lastSeen', 'fcmToken'])
           && shortText(request.resource.data.name, 60)
@@ -136,7 +155,7 @@ service cloud.firestore {
           && shortText(request.resource.data.appVersion, 20)
           && request.resource.data.lastSeen == request.time
           && validToken();
-        allow update: if isUser(uid)
+        allow update: if isUser(uid) && (approved() || tokenRemovalOnly())
           && changesOnly(['name', 'appVersion', 'lastSeen', 'fcmToken'])
           && shortText(request.resource.data.name, 60)
           && shortText(request.resource.data.appVersion, 20)
@@ -148,7 +167,7 @@ service cloud.firestore {
       // The personal ledger (unit 4). No push line: nobody else is told.
       match /records/{recordId} {
         allow get, list: if isUser(uid);
-        allow create: if isUser(uid) && validRecord() && !('notice' in request.resource.data);
+        allow create: if isUser(uid) && approved() && validRecord() && !('notice' in request.resource.data);
       }
 
       // Invitations sent to this account (unit 7): written by a Function,
@@ -163,8 +182,9 @@ service cloud.firestore {
       }
     }
 
-    // A group: its members read it; anyone signed in may start one with
-    // themselves as its only member; membership changes only in Functions.
+    // A group: its members read it; anyone signed in and approved (D-254) may
+    // start one with themselves as its only member; membership changes only
+    // in Functions.
     // D-210: so do `owner`, `admins` and `former` (create's hasOnly and
     // update's changesOnly refuse them); a removed person still reads the
     // group's document, but never finds it by listing.
@@ -172,14 +192,14 @@ service cloud.firestore {
       allow get: if signedIn()
         && (request.auth.uid in resource.data.memberUids || request.auth.uid in resource.data.get('former', {}));
       allow list: if signedIn() && request.auth.uid in resource.data.memberUids;
-      allow create: if signedIn()
+      allow create: if approved()
         && hasOnly(['name', 'memberUids', 'createdBy', 'createdAt', 'emoji'])
         && request.resource.data.memberUids == [request.auth.uid]
         && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.createdAt == request.time
         && shortText(request.resource.data.name, 80)
         && (!('emoji' in request.resource.data) || shortText(request.resource.data.emoji, 16));
-      allow update: if signedIn()
+      allow update: if approved()
         && request.auth.uid in resource.data.memberUids
         && changesOnly(['name', 'emoji'])
         && shortText(request.resource.data.name, 80)
@@ -191,12 +211,20 @@ service cloud.firestore {
       match /records/{recordId} {
         allow get, list: if isMember(groupId)
           || (signedIn() && formerAt(groupId) != null && resource.data.createdAt <= formerAt(groupId).at);
-        allow create: if isMember(groupId) && validRecord();
+        allow create: if isMember(groupId) && approved() && validRecord();
       }
     }
 
+    // D-254: an account reads its own approval (the phone listens to it and
+    // starts sync the moment it is approved); nobody lists them, and no
+    // client writes one, the admin's account included: requestApproval and
+    // adminApprovals alone do.
+    match /approvals/{uid} {
+      allow get: if isUser(uid);
+    }
+
     // usernames/{handle}, invites/{hash}, limits/{uid} (D-197's daily
-    // counters) and groups/{g}/requests (D-210's removal requests) have no
-    // rule: Functions only.
+    // counters), groups/{g}/requests (D-210's removal requests) and meta/**
+    // (D-254's migration marker) have no rule: Functions only.
   }
 }

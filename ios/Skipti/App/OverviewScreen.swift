@@ -269,7 +269,8 @@ struct OverviewScreen: View {
                         // D-206 (the founder's item 5): a greeting by name and time of day.
                         HomeGreeting(store: store)
                         // C2: an account signed in before usernames were asked.
-                        if usernameState == UsernameState.none {
+                        // D-254 look fix (item 1): only once the account is approved.
+                        if UsernameCard.shows(usernameState, approval: Approval.shared.state) {
                             UsernameCard { pickingUsername = true }
                         }
                         // D-249 (decision 165): with no group yet the hero asks; it replaces the old empty state.

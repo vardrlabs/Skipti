@@ -304,6 +304,8 @@ surface; 0026 the WebAuthn relying-party ID, superseded by 0027: the RP ID is `s
 | D-251 | **A store-shots seed for real screens (the founder's U32 store pages; decisions 173, 175 his; 216, 217 mine).** `--store-shots` (iOS DEBUG builds; Android debug builds, the code in the debug source set with a release no-op stub) fills a throwaway device with a deterministic sample ledger: you are Sam; Goa trip (Meera, Kiran, Rahul; INR; twelve expenses, a payment, the year milestone due), Flat 4B (Meera), Paris (Ana; EUR), and this month's Just me spending; through the normal checked store paths, with record times placed in this month (a `nowMs` parameter defaulting to now); no account, no cloud, no app lock written; the theme from `--store-theme`. It never deletes a ledger it did not make: the first run sets the vault aside (its key kept), a later run deletes only a vault marked `storeshots/seeded`, a vault with an account owner or an unmarked vault beside an aside is refused in words, moves are all or nothing, and Android uses the launch once. A restore recipe is in `.drafts/u32/plan.md`. | The seed writes the theme and mode for real; restoring the ledger does not restore them (the recipe says so). | `.drafts/u32/plan.md`, `.drafts/d251/` (report, review, look/, sabotage/, fix/, times.py, expected.py, gate.log) |
 | D-252 | **A deleted group ends on every phone (the founder's bug in 0.5.0; his decisions 218, 219; mine 220 to 223).** Root cause: `deleteGroup` told every member but the deleting account, so the owner's other phones never learned and kept the group writable (an Add was saved, refused by the cloud and parked). Now the Function tells every member's account, the caller's quietly (stored, not pushed), with who deleted it; every phone of the deleting account says "You deleted {group}."; each phone checks with the server when a group drops out of its account's listing (server listings only; refused, not found, or found without this account as a member makes the copy read-only: "This group is no longer shared with you."), which also catches the groups 0.5.0 left writable; every write to a read-only copy is refused with words before it is kept; a name change passes read-only copies. Proven with two phones on one account and a third member against the local emulators, both ways and for a 0.5.0 victim. The review fix wave also ended a D-250 Android bug (a reopened read-only group drew as writable: state written while drawing). The Functions change deploys WITH 0.5.1, after Fable's pass (decision 219). | Not deployed (the Functions change ships with 0.5.1); a 0.5.0 deleting phone will read "{own name} deleted this group" after the deploy (cosmetic). | `.drafts/groupdelete/` (rootcause, emulator results), `.drafts/d252/` (plan, review, proof/, fixwave/, sab/, stage1/, stage2/, stage3/, gate.log) |
 | D-253 | **Polish the store shots showed (decisions 224 to 226 mine, 227 the founder's).** Appearance's text-size sample reads "Lunch with Luna · $48.00" (the founder's line, a play on his Runa; no brand in public art); the four split person rows (Exact, Percent, Shares, Adjustment) keep the person's name in front with the amount at the end once a value is typed (`FieldRow` takes a label on both shells; spoken "Amount for {name}"); the store seed gives its groups fixed ids so Aurora's tiles read the same on both phones (the tone function was already identical; core's ids are random). | The iOS look covered Home only (the simulator tool was not granted the throwaway device); Appearance and Exact on iOS are proven by tests. | `.drafts/u32/plan.md` (After the first capture), `.drafts/d253/` (look/, sab/, gate.log) |
+| D-254 | **The approval gate (the founder's decisions 228, 229, 233 to 235, 252; mine 239 to 251).** Anyone can sign in; until the founder approves the account the cloud does nothing for it (no sync, groups, invites, profile, phones, notifications) while the ledger on the phone works fully (guarantee 5, its last sentence reworded by him: "is on once your account is approved"). Truth is `approvals/{uid}`, written only by Functions: the Firestore and Storage rules refuse every client create/update of an unapproved account (reads and deletes untouched; a denied phone may clear its own push token), and every callable but sign-out, deletion, `requestApproval` and `adminApprovals` refuses it first (a structural test gates any new callable). A private admin page (its own Hosting target `skipti-26-admin`, no SDK, Google sign-in, the Function answering only `SKIPTI_ADMIN_UID` signed in with Google) lists Waiting / Approved / Denied with Approve and Deny and a re-runnable migration that approves every account that already had a profile. Both phones show "Waiting for approval" / "Not approved", the Sync card's early-testing words, a one-time toast on approval, waiting lines on invite, join, find and add; a front event re-reads the approval; a saved name re-asks; Profile and account puts sign-in, Sign out and the username first (his 252). Privacy page Version 3 (his 235). Two Opus reviews (server: 8 Minor; shells: 2 Important, 7 Minor), a look and a re-look on throwaway devices (2 Important, 3 Minor found and fixed). Nothing deployed. | Not deployed: the index, `adminApprovals`, the migration, the other Functions, the rules, Hosting (admin + privacy v3), then the apps, in that order (design section 9), on 0.5.1's deploy day after Fable's pass. | `docs/superpowers/specs/2026-10-21-approval-gate-design.md`, `.drafts/d254/` (mockup.html, shell-brief.md, review-server.md, review-shells.md, triage-*.md, look/, relook/, sab-server/, ios-sabotage/, android-sabotage/, stage1/, gate.log) |
+| D-255 | **Every public picture in New York and US dollars, at full real detail (the founder's decisions 232, 236 to 238, 253, 257, 261; mine 259, 260).** The founder had asked in session 11 for American names and dollars in the store pictures; it was never written down, and the re-capture kept Goa trip, Meera and the rupee. The store-shots seed (D-251, both shells, DEBUG only) becomes Hamptons weekend, Apartment 4B and Brooklyn dinners, Sam with Emma, Jake, Olivia and Ben, all USD (one group owes, so both directions show); pinned values re-derived independently from the brief. Home's ledger cards wrap a long name to two lines instead of cutting it (his 261: "Hamptons wee..."). Then the whole set again on throwaway devices: App Store 10 at 1320 x 2868, Play 8 at 1440 x 2560 (was 1080 x 1920; a throwaway phone at 560 dpi keeps the 411 dp layout), README composites with the screen at its native 1320 x 2868 pixels (checked pixel for pixel against the raw frames), film clips from both phones; afternoon greeting; every frame read by eye. Caption 2 becomes "Trips, roommates, dinners." (237). The README gains "What it looks like" (shots 01, 04, 05, 07, 08, 09). THREAT_MODEL's notification example went American in D-254. | The store pictures and films are his to upload; the README images add 11 MB to the repository (full detail, decision 238). | `.drafts/d255/` (brief.md, derive.py, derive.out, capture-brief.md, capture-report.md, capture-inputs.md, sabotage/, name2/, gate.log), `.drafts/u32/out/` (App Store, Play, README, contact sheet; v2 in out-v2/), `.drafts/u33/clips/` (v2 in clips-v2/) |
 | D-55 | **The networking boundary + OTP sign-in, end to end against the real relay.** The largest architectural gap closed: the relay is complete (auth, passkeys, subject-owned authz, restart-proven persistence — 163 tests) and the iOS app contained ZERO networking code. Boundary: `RelayTransport` protocol — URLSessionRelayTransport (real, localhost:8080) and a stub both satisfy it; screens talk to IdentityService, never to URLSession (ADR-0025's rule applied to networking). **D-27's contract is structural in the error type:** the 401 rejection maps to ONE `.rejected` case covering unknown accounts and wrong codes — the app cannot distinguish them and the UI copy never suggests which. OTP is the first leg landed (simpler transport — no entitlements); §4.2 makes passkeys the primary path and they follow over the SAME transport, recorded plainly. Tests: stub suite (uniform rejection across unknown/wrong-code shapes, 429/5xx mapping, malformed body → badResponse, session decode with explicit snake_case keys per D-18's wire format) + an E2E against a REAL running relay that SKIPS honestly when the relay is down (D-23: a skip is recorded, never mistaken for a pass). The E2E proved the request path + uniform rejection against the real axum handlers; a SUCCESSFUL verify is not provable from the test host (the relay never exposes the code — it goes out-of-band), covered server-side by the relay's own suite. ATS: NSAllowsLocalNetworking for the simulator's localhost; production rides the TLS deployment story | §4.2 makes passkeys primary; §5.8's deep-link hand-off and the D-41 subject-owned sync both need a signed-in subject, which this delivers | `ios/Skipti/Relay/IdentityService.swift`, `ios/Skipti/App/SignInScreen.swift`, `ios/SkiptiTests/RelayClientTests.swift` |
 | D-56 | **SyncService — the transport between the vault and the relay.** Pushes and pulls OPAQUE sealed blobs (hex-encoded) to/from the subject-owned bucket. D-18's cursor semantics respected (exclusive, 409 = normal); D-41's namespace (bucket = subject_id); §10.3 offline = default (.offline returned, local ledger stays authoritative). The E2E tests prove the transport against a real relay: unauthenticated push rejected by the auth gate, unauthenticated pull returns empty, request well-formed enough to route. The full push→pull round trip with a valid session is NOT provable here (the relay never exposes the OTP code — it goes out-of-band); covered server-side by the relay's own suite and locally by the vault tests. **The mnemonic golden flake (§5.6 recurrence):** the ffi.rs mnemonic golden called ffi_mnemonic_generate for a RANDOM kit, tampered word 0, and asserted validation fails — BIP-39's 4-bit checksum survives that ~1/16 of draws. Fixed by pinning the negative to entropy [0x42; 16] (the same fix mnemonic.rs got in D-49); the generate path is tested POSITIVELY only. AGENTS.md §7 gains the rule so it lives where sessions read | §6.4: the relay parses nothing; §10.3: offline is the default; D-18/D-41 respected, not reimplemented | `ios/Skipti/App/SyncService.swift`, `core/src/ffi.rs` (mnemonic golden), `AGENTS.md` (§7), `ios/SkiptiTests/SyncE2ETests.swift` |
 | D-57 | **Passkeys on iOS — §4.2's primary path over the same transport as D-55's OTP leg.** `PasskeyAuthService` is transport-only: register/authenticate start parse `challenge_id` + `publicKeyOptions` through webauthn-rs 0.5's REAL serde shape — options sit one level down under `publicKey` (the browser CredentialCreationOptions shape), camelCase inside (`pubKeyCredParams`), base64url unpadded; finish bodies match `RegisterPublicKeyCredential`/`PublicKeyCredential` field renames exactly (`rawId`/`clientDataJSON`/`attestationObject`/`authenticatorData`/`userHandle`), verified against the vendored crate source and pinned by capture-the-request tests on fixed bytes. Assertion finish carries optional `device_label` (D-34 parity: labels optional on both sign-in paths). D-27 stays structural: every 401 maps to ONE `.rejected` case across all four routes — the app cannot decompose it. `PasskeyCeremony` builds `ASAuthorizationPlatformPublicKeyCredential` requests from parsed options (provider keyed by RP ID; challenge/userID decoded; `excludeCredentials` gated to iOS 17.4 where the platform API exists) and maps results back into wire shapes. **Honest limit:** the controller ceremony cannot run until the associated-domains entitlement (`webcredentials:skipti.vardrlabs.com`), an AASA file served from https://skipti.vardrlabs.com, and TLS exist (ADR-0027) — no test claims otherwise; recorded in §4.4. E2E drives all four routes against a REAL relay: register/start returns parseable options whose RP ID is the dev default `localhost`; fabricated attestation / unknown account / garbage assertion reject uniformly. ALSO fixed here, found while wiring: the Xcode project file had `A10026` defined twice — committed HEAD failed `make ios-app` outright (SyncE2ETests compiled into the app target, XCTest unresolvable there) and in no resolution did SyncE2ETests ever run; unique IDs plus the missing test-phase entry brought its three tests to life against the live relay (incident §5.9). Full suite: **27 passed / 0 failed / 0 skipped** with the relay up | §4.2 makes passkeys primary; D-55 landed OTP first deliberately — same transport, same rejection contract | `ios/Skipti/Relay/{PasskeyAuthService,PasskeyCeremony}.swift`, `ios/SkiptiTests/PasskeyServiceTests.swift`, `ios/Skipti.xcodeproj/project.pbxproj` |
@@ -23645,6 +23647,143 @@ row focuses on both shells, G14 reads "Lunch with Luna, $48.00". The welcome's W
 **Sabotage.** 7 rows, all EXACT, 0 compile errors (`.drafts/d253/sab/`); fix wave 4 rows (iOS alignment and focus,
 Android focus and name), each red on exactly its test (`.drafts/d253/fix/`).
 
+### D-254: the approval gate, 2026-10-22
+
+The full gate on the tree committed with this record (branch `d254-approval-gate`; `.drafts/d254/gate.log`):
+
+```
+GATE PASSED: 23 passed, 0 skipped
+
+Evidence (paste into docs/BUILD-LOG.md §3 when claiming progress):
+
+  gate: full  ·  2026-10-22T04:33:12Z  ·  branch d254-approval-gate  ·  commit a73877ca
+  cargo fmt --all -- --check                                 exit 0
+  cargo clippy --workspace --all-targets -- -D warnings      exit 0
+  float audit (ADR-0002: no f32/f64 in core/src)             exit 0
+  buildlog structure (D-number contiguity, fences)           exit 0
+  swift interpolation (no literal backslash-paren in UI strings) exit 0
+  swift autolink (no email/URL in string-literal UI titles)  exit 0
+  swift list rows (no styled button as a clear list row)     exit 0
+  em dashes (D-228: no U+2014 or U+2013 on the public surface) exit 0
+  gate self-test (D-137 heavy-leg proof and hook routing)    exit 0
+  cargo test --workspace                                     418 passed, 0 failed
+  cargo build -p skipti-core --target wasm32-unknown-unknown exit 0
+  cargo test --workspace --release -- --ignored              exit 0 (~40s sweeps)
+  bindings freshness (regenerate == committed)               exit 0 (byte-identical)
+  kotlin bindings compile standalone (bytes != buildable)    KOTLIN BINDINGS COMPILE OK
+  cargo audit                                                exit 0
+  cargo deny check (ADR-0012 banned SDK scan)                exit 0
+  SBOM generation (cargo cyclonedx)                          exit 0
+  firebase rules (emulators: every refusal tested)           RULES TESTS PASSED
+  npm audit (Cloud Functions' dependencies)                  exit 0 (no high or critical)
+  make ios-app (build + simulator tests)                     TEST SUCCEEDED
+  make android-app (core .so + APK packaging)                BUILD SUCCESSFUL
+  make android-test (JVM goldens against real core)          per-class tally printed; exits non-zero on any failure
+  licence inventory (regenerate == committed)                exit 0 (current)
+```
+
+cargo test 418 passed, 0 failed; iOS Executed 1049 tests, with 0 failures (0 unexpected); JVM 1251 tests, 0 failed, one variant (play debug; XML written 00:33:11). On the way: rules suite 307 (stage 1), 314 (server fix wave), 317 (look
+fixes); iOS 1035, 1044, 1049; JVM 1238, 1247, 1251; hosting + deploy 20/20.
+
+**Design** (`docs/superpowers/specs/2026-10-21-approval-gate-design.md`; mock-up https://claude.ai/artifact/4ULGr42bEn7YUhSu7pQaTx,
+approved by the founder: decision 233). A document, not a custom claim: it takes effect on the next write both ways,
+the phone listens to its own, the admin list is a query (decision 239). Rules gate writes only (240). Exempt callables
+and the structural test (241). Admin = deploy-time param AND Google (242). The admin page without an SDK (243).
+
+**Reviews.** Server (Opus, `.drafts/d254/review-server.md`): no Critical or Important; M1 to M5 fixed (re-runnable
+transactional migration, token-only device update ungated, newest-500 list on a new index, denial drops name and
+email), M6 records, M7 known, M8 a deploy-day check. Shells (Opus, `.drafts/d254/review-shells.md`): I1 (a username step
+a waiting account could not finish) and I2 (an unknown state told approved testers they were waiting) fixed, with M1
+to M5, M8 and the token nit; M6, M7 accepted (section 4).
+
+**Look and re-look** (throwaway `d254-look` / `d254-relook` sim and AVD, local emulators, the admin page served locally
+in emulator mode; screenshots `.drafts/d254/look/`, `.drafts/d254/relook/`): waiting, denied, approved and taken-away
+on both phones, words and order identical; nothing reached the cloud for an unapproved account (only its approval
+document); approve and deny live from the admin page; the migration banner; Norse. Found and fixed: the username card
+while not approved (Important), a missed listener event on iOS after the emulator's GOAWAY (Important: a front event
+now re-reads), a name set after sign-in reaching the page late, nameless approved rows, frozen times. The re-look
+passed all four checks on both phones, including the founder's layout (252).
+
+**Sabotage** (each row: anchor once, zero compile or rules errors, exactly the intended tests red, restored, `cmp`):
+
+| Lane | Rows | Verdict |
+|---|---|---|
+| Server, stage 1 (`.drafts/d254/stage1/sab/`) | S1 to S8 | 8 EXACT |
+| Server, full matrix after the fix wave (`.drafts/d254/sab-server/results.md`) | S1 to S4, S6 to S17, M1a to M5a, N1, N2 (29) | 28 EXACT, 1 BROADER (S15: an approved seed also catches an always-delete cancel), 0 survived |
+| Server + admin page, look fixes | L4a to L4e, L5a, L5b | 7 EXACT (page rows also turn the CSP hash test red, expected) |
+| Hosting, stage 2 | 5 rows (headers, hash, origins, emulator guard, shells' key) | 5 EXACT |
+| iOS (`.drafts/d254/ios-sabotage/results.txt`) | S1 to S10, FW1 to FW9, LF1 to LF7 (26) | 26 EXACT (FW4, FW9, LF5 two intended reds each) |
+| Android (`.drafts/d254/android-sabotage/results.txt`) | S1 to S17, L1 to L7 (24; S6 retired for S16) | 24 EXACT (S10, L7 two intended reds) |
+| Em dash scope (controller) | admin pages dropped from the public scope | 1 EXACT (the two admin subtests) |
+
+### D-255: every public picture in New York and US dollars, at full real detail, 2026-10-22
+
+The full gate on the tree committed with this record (branch `d255-american-shots`; `.drafts/d255/gate.log`):
+
+```
+GATE PASSED: 23 passed, 0 skipped
+
+Evidence (paste into docs/BUILD-LOG.md §3 when claiming progress):
+
+  gate: full  ·  2026-10-22T06:26:07Z  ·  branch d255-american-shots  ·  commit 454c3977
+  cargo fmt --all -- --check                                 exit 0
+  cargo clippy --workspace --all-targets -- -D warnings      exit 0
+  float audit (ADR-0002: no f32/f64 in core/src)             exit 0
+  buildlog structure (D-number contiguity, fences)           exit 0
+  swift interpolation (no literal backslash-paren in UI strings) exit 0
+  swift autolink (no email/URL in string-literal UI titles)  exit 0
+  swift list rows (no styled button as a clear list row)     exit 0
+  em dashes (D-228: no U+2014 or U+2013 on the public surface) exit 0
+  gate self-test (D-137 heavy-leg proof and hook routing)    exit 0
+  cargo test --workspace                                     418 passed, 0 failed
+  cargo build -p skipti-core --target wasm32-unknown-unknown exit 0
+  cargo test --workspace --release -- --ignored              exit 0 (~40s sweeps)
+  bindings freshness (regenerate == committed)               exit 0 (byte-identical)
+  kotlin bindings compile standalone (bytes != buildable)    KOTLIN BINDINGS COMPILE OK
+  cargo audit                                                exit 0
+  cargo deny check (ADR-0012 banned SDK scan)                exit 0
+  SBOM generation (cargo cyclonedx)                          exit 0
+  firebase rules (emulators: every refusal tested)           RULES TESTS PASSED
+  npm audit (Cloud Functions' dependencies)                  exit 0 (no high or critical)
+  make ios-app (build + simulator tests)                     TEST SUCCEEDED
+  make android-app (core .so + APK packaging)                BUILD SUCCESSFUL
+  make android-test (JVM goldens against real core)          per-class tally printed; exits non-zero on any failure
+  licence inventory (regenerate == committed)                exit 0 (current)
+```
+
+cargo test 418 passed, 0 failed; iOS Executed 1051 tests, with 0 failures (0 unexpected); JVM 1252 tests, 0 failed, one variant (play debug), **CARRIED FORWARD**: no Android input changed, so Gradle reused the JUnit XML written 2026-10-22T05:38:32Z instead of rerunning. On the way: iOS 1049 (seed), StoreShotsTests 14/14, HomePartsTests +
+TypeThemeTests 66/66 (wrap); JVM 1251 (seed), 1252 (wrap).
+
+**Seed** (847af05a, 896b0bae): both tables as `.drafts/d255/brief.md` section 1 (group ids, times, categories kept;
+"Train tickets" under Travel/Trains; Brooklyn dinners: Sam owes Ben $65.00). `.drafts/d255/derive.py` re-derives every
+pinned value from the brief, never from the code: Home $2,516.75 (251675), Hamptons weekend 55275, Apartment 4B 202900,
+Brooklyn dinners -6500, Just me 52550 over 5 categories; the tests on both shells pin exactly these.
+
+**Wrap** (253321e3): a ledger card's name takes two lines (iOS `.lineLimit(2)` growing the card; Android `maxLines =
+2`), the tile centred on it; iOS measures the real layout at 375 pt in all three themes (a two-line card and a one-line
+card in one grid row have the same height); Android's heights rest on the grid code and the capture's Home frames
+(`.drafts/u32/raw/android/extra/01b`, `09b`).
+
+**Capture** (`.drafts/d255/capture-report.md`): throwaway `d255-shots` iPhone 17 Pro Max (iOS 27) and AVD 1440 x 2560 at
+560 dpi, both deleted; device time zone Asia/Shanghai so the greeting reads "Good afternoon, Sam" (status bar pinned
+9:41); App Store 10, Play 8, README 6 (compose.swift refuses to write unless every pixel inside the outline equals the
+raw frame: 3,561,096 a picture, all six passed), contact sheet; iPhone clips a to i, Android a, b, c, d, f, g (1440 x
+2560). Re-shot: 03 (keyboard prediction), 04 (fill order), 08 and clip g (a tap on the tab bar), 01, 09, a, b (after the
+wrap), h (the app lock), c (four takes). Every output frame read by eye: no rupee, Indian name, brand or account.
+
+**Sabotage** (anchor once, zero compile errors, exactly the intended test red, restored, `cmp`):
+
+| Row | Sabotage | Red |
+|---|---|---|
+| S1 | Swift's Tacos 4_600 -> 4_601 (Android run) | `the_seed_table_is_ios_own` only |
+| S2 | iOS Just me left INR | `testTheSeededVaultGivesHomeItsNumbers` only |
+| S3 | Kotlin's Electricity and Groceries swapped (nets unchanged) | `the_seed_table_is_ios_own` only |
+| S4 | Just me INR in both tables (parity blind) | `the_seeded_vault_gives_home_its_numbers` only |
+| S5 | "Pizza night" back to Ben in both tables | `the_seeded_vault_gives_home_its_numbers` only |
+| S6 | "Pizza night" back to Ben in Swift | `testTheSeededVaultGivesHomeItsNumbers` only |
+| W1 | iOS ledger name back to one line | the two new HomePartsTests (8 assertions, three themes) |
+| W2 | Android ledger name back to `maxLines = 1` | `a_ledger_cards_name_takes_two_lines`, `row_titles_end_in_an_ellipsis` |
+
 ## 4. Gap register (open, honest)
 
 ### 4.1 Blocking store-policy compliance later
@@ -26974,6 +27113,39 @@ Android focus and name), each red on exactly its test (`.drafts/d253/fix/`).
   pass (`.drafts/fable/notes-for-the-pass.md`).
 - **D-253's residue, stated not implied:** the iOS look covered Home only (Appearance's sample and the Exact rows on
   iOS are proven by tests, and shown on Android); not on a real phone.
+- **D-254's residue, stated not implied:**
+  (a) Not deployed. Deploy-day order (design section 9): create the Hosting site `skipti-26-admin`, the OAuth redirect
+  URI and the Auth authorized domain (console, the founder's); the index `approvals (state, requestedAt desc)` READY;
+  `adminApprovals` alone with `SKIPTI_ADMIN_UID`; Approve the N on the page; the other Functions; the rules and Storage
+  rules; Hosting (admin, then main with privacy Version 3); then the apps. A tester is refused between a gated
+  Functions deploy and the migration.
+  (b) A 0.5.0 phone signed in after the gate gets refusals and no waiting words (it never asks for approval, and the
+  rules refuse it a profile, so neither the page's Waiting list nor the migration ever shows it); 0.5.0 was internal
+  testing only, and such an account appears once its phone takes 0.5.1.
+  (c) The admin page's sign-in is unproven against production Google and Firebase (emulator mode only); the raw nonce is
+  not passed to signInWithIdp (review M8): one real sign-in on deploy day. It uses the Android API key (unrestricted
+  today, G-01); restricting the keys needs a browser key for the admin site.
+  (d) No push when someone asks (to the founder) or when approved (to the person); no appeal; no expiry of abandoned
+  requests (a pending document is a name and an email at most, deleted with the account). Two phones of one account
+  flip the row's platform.
+  (e) Android has no Firebase auth listener: a session ended elsewhere clears the approval cache at the next front event,
+  not at once (invisible). The waiting Join block keeps each shell's existing join-page spacing (12 dp / 16 pt).
+  (f) iOS after a dropped Firestore stream (seen with the emulator's GOAWAY): the username read can come back empty for
+  about a minute and the username card hides meanwhile (older `People.accountUsername` behaviour, not D-254's); the
+  approval itself recovers at the next front event.
+  (g) An account denied after it was approved keeps its profile; its phone hides the username card and the call is
+  refused anyway; its phone-count read still runs (a read, harmless).
+- **D-255's residue, stated not implied:**
+  (a) Uploading the store pictures and films is the founder's (App Store Connect, Play Console, YouTube for Play's
+  video); App Store preview pixel size is checked at upload.
+  (b) The README's six images add 11 MB to the repository's history (native detail, decision 238).
+  (c) Android's equal card heights with a two-line name are proven by the capture's frames, not by a layout test (the
+  JVM suite has no layout measurement).
+  (d) The currency picker's promoted list still puts INR first (decision 260); no public picture shows it.
+  (e) Legacy proof fixtures (`--groups-proof`, the `--balance` fallback, `loadGroupsOrSeed`) still use Goa trip / INR;
+  they never reach a public picture.
+  (f) iPhone clip c keeps a brief keyboard dip per field (the app drops focus for a moment as the sum line appears);
+  You's ring reads "3 of 5" on iPhone and "2 of 4" on Android in the shots (the AVD has no screen lock: device setup).
 - **No local profile name.** The no-account path has nothing a user can open
   and later attach an account to. When an account is added its name should
   seed the profile and stay editable.
@@ -29808,3 +29980,7 @@ t and import (D-119): GUARANTEES #4 is now true
 2026-10-21 (D-252): a group deleted on one of your phones now ends on your other phones too, and on every member's: it stays as a read-only copy with its history, says who deleted it, and refuses anything new instead of keeping a change that can never sync. A phone that missed the news catches up the next time it opens. Ships with 0.5.1, together with the server change.
 
 2026-10-21 (D-253): split rows keep each person's name beside their amount while you type, and Appearance's text-size sample reads "Lunch with Luna".
+
+2026-10-22 (D-254): new accounts wait for approval before anything is kept in the cloud. Anyone can sign in, and the ledger on the phone works fully meanwhile; the phone says so plainly and starts syncing the moment the account is approved. The founder approves on a small private page. Profile and account now puts your sign-in, Sign out and your username first. Ships with 0.5.1; nothing is deployed yet.
+
+2026-10-22 (D-255): the store pictures, the film clips and the README now show a New York ledger in US dollars, at the full detail the phones draw, and a long group name on Home wraps to a second line instead of being cut off.

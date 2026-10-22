@@ -2424,9 +2424,10 @@ final class GroupEndTests: XCTestCase {
         for forbidden in ["forgetGroup", "forgetInVault", "kvSet(", "removeItem"] {
             XCTAssertFalse(check.contains(forbidden), "the check never deletes local data: \(forbidden)")
         }
-        // D-235/D-244 style count: the group read is the removal's (`groupRead`); D-252 adds no new server read.
-        XCTAssertEqual(cloud.components(separatedBy: "getDocument(source: .server)").count - 1, 3,
-                       "ensureGroup's existence read, the record existence read, groupRead (removal and D-252 share it)")
+        // D-235/D-244 style count: the group read is the removal's (`groupRead`); D-252 adds no new server read. D-254
+        // fix wave (M1) adds one: `serverApproval`, the account's approval read before a permission refusal is parked.
+        XCTAssertEqual(cloud.components(separatedBy: "getDocument(source: .server)").count - 1, 4,
+                       "ensureGroup's existence read, the record existence read, groupRead (removal and D-252 share it), serverApproval")
         XCTAssertTrue(cloud.contains("vanishAsked = []\n        listedNow = []\n        vanishListing = nil"), "a new session sweeps again")
         let handle = try XCTUnwrap(cloud.components(separatedBy: "                case .deleted:").dropFirst().first?
             .components(separatedBy: "                case .role, .declined:").first)

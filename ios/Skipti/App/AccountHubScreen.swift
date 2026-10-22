@@ -78,6 +78,8 @@ struct YouRowFacts: Equatable {
     var lockTimeout: LockTimeout
     var lockAvailable: Bool
     var version: String
+    /// D-254: the account's approval; waiting or not approved stands in for the method and phones.
+    var approval: ApprovalState = .unknown
 }
 
 /// D-222 (L58): each of You's rows' summary as parts, joined on screen by the theme's separator
@@ -92,6 +94,8 @@ enum YouRows {
         switch section {
         case .profileAccount:
             guard facts.signedIn else { return [YouCopy.noAccount] }
+            // D-254: "Waiting for approval" or "Not approved" in place of "Google · 1 phone".
+            if let approval = ApprovalCopy.accountSummary(facts.approval) { return [approval] }
             // A failed or unread count (nil) and a count of 0 are left out: never "0 phones".
             let count = facts.phoneCount.flatMap { $0 >= 1 ? PhonesCopy.count($0) : nil }
             return [facts.methodLabel ?? YouCopy.signedIn] + (count.map { [$0] } ?? [])
@@ -602,7 +606,9 @@ enum SettingsMap {
     static func items(_ section: SettingsSection, signedIn: Bool) -> [SettingItem] {
         switch section {
         case .profileAccount:
-            return signedIn ? [.signedInAs, .signOut, .sync, .notifications, .findMe] : [.signIn]
+            // Decision 252 (the founder, 2026-10-21): how you are signed in and Sign out first (one card, `cards`), then
+            // Find me (your username), then Sync and Notifications.
+            return signedIn ? [.signedInAs, .signOut, .findMe, .sync, .notifications] : [.signIn]
         case .appearance:
             return [.theme, .appearanceMode, .textSize]
         case .security:
@@ -616,6 +622,36 @@ enum SettingsMap {
 
     /// Above the sections: the deletion notice, when there is an account.
     static func hubItems(signedIn: Bool) -> [SettingItem] { signedIn ? [.deletionPending] : [] }
+
+    /// D-254 fix wave (review M3): the account controls that do nothing until the account is approved (no push reaches
+    /// it, and no one can find it): away while it waits or was not approved. Sign out and Delete account stay.
+    static let waitsForApproval: Set<SettingItem> = [.notifications, .findMe]
+
+    /// Decision 252: the one card that holds how you are signed in, the sign-out line and Sign out.
+    static let accountCard: [SettingItem] = [.signedInAs, .signOut]
+
+    /// Decision 252: the page's cards, in order. `accountCard`'s two items share one card when both are shown (they are
+    /// next to each other in `items`); every other item is its own card.
+    static func cards(_ items: [SettingItem]) -> [[SettingItem]] {
+        var cards: [[SettingItem]] = []
+        for item in items {
+            if let last = cards.last, last == [accountCard[0]], item == accountCard[1] {
+                cards[cards.count - 1].append(item)
+            } else {
+                cards.append([item])
+            }
+        }
+        return cards
+    }
+
+    /// A section's items as the page shows them for `model`'s account state.
+    static func shown(_ section: SettingsSection, model: AccountHubModel) -> [SettingItem] {
+        let all = items(section, signedIn: model.showsAccountControls)
+        switch model.state {
+        case .waiting, .notApproved: return all.filter { !waitsForApproval.contains($0) }
+        case .noAccount, .active: return all
+        }
+    }
 }
 
 /// D-206: Home's greeting, from the phone's clock and the name on this
@@ -628,11 +664,14 @@ enum Greeting {
     }
 }
 
-/// Which account state the screen is in (D-192: no "waiting for approval";
-/// a signed-in phone simply has the account).
+/// Which account state the screen is in. D-192 had no "waiting for approval" (a signed-in phone simply had the
+/// account); D-254 brought it back with the approval gate: a signed-in account waits until the founder approves it
+/// (`waiting`), or was not approved (`notApproved`). `active` is approved, or not heard yet (the screens as before).
 enum AccountState: Equatable {
     case noAccount
     case active
+    case waiting
+    case notApproved
 }
 
 /// Everything the hub renders, resolved.
@@ -643,11 +682,17 @@ struct AccountHubModel: Equatable {
     var showsAccountControls: Bool
 }
 
-/// The pure part, testable without SwiftUI.
-func accountHubModel(signedIn: Bool, syncOn: Bool) -> AccountHubModel {
-    signedIn
-        ? AccountHubModel(state: .active, syncOn: syncOn, showsAccountControls: true)
-        : AccountHubModel(state: .noAccount, syncOn: syncOn, showsAccountControls: false)
+/// The pure part, testable without SwiftUI. D-254: a signed-in account's state follows its approval; Sign out and
+/// Delete account are there in every signed-in state (leaving never waits).
+func accountHubModel(signedIn: Bool, syncOn: Bool, approval: ApprovalState) -> AccountHubModel {
+    guard signedIn else { return AccountHubModel(state: .noAccount, syncOn: syncOn, showsAccountControls: false) }
+    let state: AccountState
+    switch approval {
+    case .pending: state = .waiting
+    case .denied: state = .notApproved
+    case .unknown, .approved: state = .active
+    }
+    return AccountHubModel(state: state, syncOn: syncOn, showsAccountControls: true)
 }
 
 struct AccountHubScreen: View {
@@ -693,7 +738,8 @@ struct AccountHubScreen: View {
                 YouHero(store: LedgerStore(path: vaultPath), signedIn: signedIn, username: username,
                         progress: facts.map(SetupSteps.progress))
                 // C2: an account signed in before usernames were asked.
-                if usernameState == UsernameState.none {
+                // D-254 look fix (item 1): only once the account is approved.
+                if UsernameCard.shows(usernameState, approval: Approval.shared.state) {
                     UsernameCard { pickingUsername = true }
                 }
                 // D-221 (L41): the first undone step; while the username card shows, it already asks.
@@ -745,7 +791,7 @@ struct AccountHubScreen: View {
 
     /// D-221: what the facts depend on that the phone tells us about: the profile, sync, the two preferences.
     private var factsKey: String {
-        "\(profileRevision)|\(SyncStatus.shared.revision)|\(currencyRaw ?? "")|\(lockRaw ?? "")|\(signedIn)|\(username ?? "")"
+        "\(profileRevision)|\(SyncStatus.shared.revision)|\(currencyRaw ?? "")|\(lockRaw ?? "")|\(signedIn)|\(username ?? "")|\(Approval.shared.state)"
     }
 
     private func readFacts() async {
@@ -794,7 +840,7 @@ struct AccountHubScreen: View {
         YouRowFacts(signedIn: signedIn, methodLabel: method?.rowLabel, phoneCount: phoneCount,
                     theme: AppTheme.parse(themeRaw), mode: AppearanceMode.parse(appearanceRaw),
                     lockTimeout: LockTimeout.parse(lockRaw), lockAvailable: lockAvailable,
-                    version: AboutInfo.current().app)
+                    version: AboutInfo.current().app, approval: Approval.shared.state)
     }
 
     private func reload() async {
@@ -824,7 +870,7 @@ struct SettingsSectionScreen: View {
 
     /// D-225 fix wave: the account state on the first frame (the rows it decides are there from the start, never
     /// sliding in under a finger once `reload()` reads it again).
-    @State private var model = accountHubModel(signedIn: Account.shared.isSignedIn, syncOn: true)
+    @State private var model = accountHubModel(signedIn: Account.shared.isSignedIn, syncOn: true, approval: Approval.shared.state)
     @State private var busy = false
     /// D-172: how this phone signed in; nil for a sign-in from before D-172.
     @State private var method: SignInMethod?
@@ -856,8 +902,19 @@ struct SettingsSectionScreen: View {
                 case .data:
                     yourDataPage
                 default:
-                    ForEach(SettingsMap.items(section, signedIn: model.state == .active), id: \.self) { item in
-                        view(for: item)
+                    // Decision 252: drawn card by card (`SettingsMap.cards`): Profile and account's first card holds how you
+                    // are signed in and Sign out together.
+                    ForEach(SettingsMap.cards(SettingsMap.shown(section, model: model)), id: \.self) { items in
+                        if items == SettingsMap.accountCard {
+                            // The method row, 10 below it the sign-out line, 10 below that Sign out (the card's spacing;
+                            // Android's twin).
+                            card {
+                                signedInLine
+                                signOutLine
+                            }
+                        } else if let item = items.first {
+                            view(for: item)
+                        }
                     }
                 }
             }
@@ -869,6 +926,8 @@ struct SettingsSectionScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .task { await reload() }
         .onChange(of: remote.signOuts) { Task { await reload() } }
+        // D-254: approval arriving (or taken away) while this page is open redraws the Sync card at once.
+        .onChange(of: Approval.shared.state) { Task { await reload() } }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { lockAvailable = AppLock.available }
         }
@@ -892,7 +951,7 @@ struct SettingsSectionScreen: View {
     /// twin is `SecurityPage` in AccountHubScreen.kt.
     @ViewBuilder
     private var securityPage: some View {
-        let cards = SecurityRows.partition(SettingsMap.items(.security, signedIn: model.state == .active))
+        let cards = SecurityRows.partition(SettingsMap.items(.security, signedIn: model.showsAccountControls))
         if DeviceIntegrity.looksJailbroken {
             ModifiedPhoneWarning()
         }
@@ -953,7 +1012,7 @@ struct SettingsSectionScreen: View {
     private var yourDataPage: some View {
         VStack(alignment: .leading, spacing: 8) {
             ListCard {
-                ForEach(SettingsMap.items(.data, signedIn: model.state == .active), id: \.self) { item in dataRow(item) }
+                ForEach(SettingsMap.items(.data, signedIn: model.showsAccountControls), id: \.self) { item in dataRow(item) }
             }
             CardCaption(CurrencyCopy.detail)
         }
@@ -1012,27 +1071,9 @@ struct SettingsSectionScreen: View {
                 .buttonStyle(SecondaryButtonStyle())
             }
         case .signedInAs:
-            card {
-                if let method {
-                    methodRow(method)
-                } else {
-                    Text("Signed in")
-                        .font(TypeRole.body())
-                        .foregroundStyle(Color(Tokens.text))
-                }
-            }
+            card { signedInLine }
         case .signOut:
-            // D-155: a plain sign-out.
-            card {
-                Text(AccountSignOut.note)
-                    .font(TypeRole.body(TypeScale.detail))
-                    .foregroundStyle(Color(Tokens.textDim))
-                Button("Sign out") {
-                    Task { await signOut() }
-                }
-                .buttonStyle(SecondaryButtonStyle())
-                .disabled(busy)
-            }
+            card { signOutLine }
         case .sync:
             syncCard
         case .notifications:
@@ -1120,8 +1161,39 @@ struct SettingsSectionScreen: View {
 
     /// ADR-0034 §3 / GUARANTEES #5 as amended (D-125): sync is on once an
     /// account exists and off in one tap. The copy refuses to overclaim.
+    /// D-254: while the account waits for approval, or was not approved, the card says so and has no switch.
     @ViewBuilder
     private var syncCard: some View {
+        switch model.state {
+        case .waiting:
+            approvalSyncCard(value: ApprovalCopy.syncWaitingValue, body: ApprovalCopy.syncWaitingBody, valueColor: Tokens.accent)
+        case .notApproved:
+            approvalSyncCard(value: ApprovalCopy.syncDeniedValue, body: ApprovalCopy.syncDeniedBody, valueColor: Tokens.textDim)
+        case .noAccount, .active:
+            switchSyncCard
+        }
+    }
+
+    /// D-254: the Sync card while the account is not approved: the value and the words, no switch.
+    private func approvalSyncCard(value: String, body: String, valueColor: Color) -> some View {
+        card {
+            HStack {
+                Text("Sync")
+                    .sectionLabel()
+                    .foregroundStyle(Color(Tokens.textDim))
+                Spacer()
+                Text(verbatim: value)
+                    .microLabelFont()
+                    .foregroundStyle(valueColor)
+            }
+            Text(verbatim: body)
+                .font(TypeRole.body(TypeScale.detail))
+                .foregroundStyle(Color(Tokens.text))
+        }
+    }
+
+    @ViewBuilder
+    private var switchSyncCard: some View {
         card {
             HStack {
                 Text("Sync")
@@ -1163,6 +1235,31 @@ struct SettingsSectionScreen: View {
             .glassCard()
     }
 
+    /// How this phone signed in (D-172), or "Signed in" for a sign-in from before it.
+    @ViewBuilder
+    private var signedInLine: some View {
+        if let method {
+            methodRow(method)
+        } else {
+            Text("Signed in")
+                .font(TypeRole.body())
+                .foregroundStyle(Color(Tokens.text))
+        }
+    }
+
+    /// D-155: a plain sign-out, its line above the button.
+    @ViewBuilder
+    private var signOutLine: some View {
+        Text(AccountSignOut.note)
+            .font(TypeRole.body(TypeScale.detail))
+            .foregroundStyle(Color(Tokens.textDim))
+        Button("Sign out") {
+            Task { await signOut() }
+        }
+        .buttonStyle(SecondaryButtonStyle())
+        .disabled(busy)
+    }
+
     /// D-172: Apple's logo, Google's G, or the address, with the words.
     private func methodRow(_ method: SignInMethod) -> some View {
         HStack(spacing: 10) {
@@ -1177,7 +1274,8 @@ struct SettingsSectionScreen: View {
     private func reload() async {
         let store = LedgerStore(path: vaultPath)
         method = Account.shared.method(store)
-        model = accountHubModel(signedIn: Account.shared.isSignedIn, syncOn: CloudSync.syncEnabled(store))
+        model = accountHubModel(signedIn: Account.shared.isSignedIn, syncOn: CloudSync.syncEnabled(store),
+                                approval: Approval.shared.state)
         lockAvailable = AppLock.available
         // D-225 (Design 4): last, a server read that can take many seconds offline.
         phonesLine = section == .security && model.state == .active ? await Phones.summary() : nil

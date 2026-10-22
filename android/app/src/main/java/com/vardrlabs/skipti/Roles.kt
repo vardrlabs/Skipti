@@ -361,6 +361,8 @@ object RolesCopy {
      *  call was about one person (requestRemoval, removeMember, declineRemoval,
      *  setAdmin, makeOwner), so NOT_FOUND means that person. */
     fun failure(error: Throwable, person: Boolean = false): String {
+        // D-254: a refusal for approval says so (never "not allowed" or the offline line).
+        ApprovalCopy.failure(error)?.let { return it }
         val refused = error as? CloudFunctions.Failure.Refused ?: return InviteCopy.OFFLINE
         return when (refused.status) {
             "PERMISSION_DENIED" -> NOT_ALLOWED

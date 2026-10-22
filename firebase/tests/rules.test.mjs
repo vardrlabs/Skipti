@@ -43,7 +43,19 @@ function fields(o) {
 // One write through :commit, so server timestamps and preconditions work.
 // mode: 'create' (must not exist), 'set' (no precondition: what the apps'
 // setData sends), 'update' (merge the given fields), 'delete'.
+// D-254: every account these tests act as is approved (approvals/{uid},
+// written as the owner, once a test, before its first request), so each
+// refusal here is refused for the reason it names, never for the approval
+// gate. The gate's own refusals are in approvals.test.mjs.
+let approvedUids = new Set();
+async function approve(uid) {
+  if (!uid || uid === 'owner' || approvedUids.has(uid)) return;
+  approvedUids.add(uid);
+  assert.equal(await write('owner', `approvals/${uid}`, { state: 'approved' }, 'set'), 200, `approve ${uid}`);
+}
+
 async function write(uid, path, data, mode = 'create') {
+  await approve(uid);
   const name = `${DOCS}/${path}`;
   let w;
   if (mode === 'delete') {
@@ -66,10 +78,12 @@ async function write(uid, path, data, mode = 'create') {
   return r.status;
 }
 async function get(uid, path) {
+  await approve(uid);
   const r = await fetch(`${FS}/v1/${DOCS}/${path}`, { headers: auth(uid) ? { authorization: auth(uid) } : {} });
   return r.status;
 }
 async function list(uid, parent, where) {
+  await approve(uid);
   const [collectionId] = parent.split('/').slice(-1);
   const prefix = parent.split('/').slice(0, -1).join('/');
   const q = { structuredQuery: { from: [{ collectionId }] } };
@@ -83,6 +97,7 @@ async function list(uid, parent, where) {
   return r.status;
 }
 async function upload(uid, path, bytes, contentType = 'image/jpeg') {
+  await approve(uid);
   const r = await fetch(`${ST}/v0/b/${BUCKET}/o?name=${encodeURIComponent(path)}`, {
     method: 'POST', headers: { 'content-type': contentType, ...(uid && { authorization: `Firebase ${token(uid)}` }) },
     body: bytes,
@@ -90,6 +105,7 @@ async function upload(uid, path, bytes, contentType = 'image/jpeg') {
   return r.status;
 }
 async function download(uid, path) {
+  await approve(uid);
   const r = await fetch(`${ST}/v0/b/${BUCKET}/o/${encodeURIComponent(path)}?alt=media`, {
     headers: uid ? { authorization: `Firebase ${token(uid)}` } : {},
   });
@@ -119,6 +135,7 @@ const group = (uid) => ({ name: 'Goa trip', memberUids: [uid], createdBy: uid, c
 beforeEach(async () => {
   const r = await fetch(`${FS}/emulator/v1/${DOCS}`, { method: 'DELETE' });
   assert.equal(r.status, OK, 'the Firestore emulator must be running');
+  approvedUids = new Set(); // D-254: the wipe took the approvals too
 });
 
 // --- users/{uid} ---------------------------------------------------------

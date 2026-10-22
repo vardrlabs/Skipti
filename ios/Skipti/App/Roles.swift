@@ -353,6 +353,8 @@ enum RolesCopy {
     /// `person`: the call was about one person (requestRemoval, removeMember,
     /// declineRemoval, setAdmin, makeOwner), so NOT_FOUND means that person.
     static func failure(_ error: Error, person: Bool = false) -> String {
+        // D-254: a refusal for approval says so (never "not allowed" or the offline line).
+        if let approval = ApprovalCopy.failure(error) { return approval }
         guard case .refused(let status)? = error as? CloudFunctions.Failure else { return InviteCopy.offline }
         switch status {
         case "PERMISSION_DENIED": return notAllowed

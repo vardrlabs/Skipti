@@ -1,0 +1,511 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow">
+<title>SKIPTI approvals</title>
+<!-- D-254 (decisions 228, 229): the founder's approval page, its own Hosting
+     site (target admin). One inline script, pinned by its hash in the admin
+     target's CSP; no library, no font, no image, nothing from elsewhere. Sign-in
+     is Google's OAuth redirect, exchanged for a Firebase ID token held in memory
+     only; the state and nonce of the round trip sit in sessionStorage and are
+     removed on return. Emulator mode only on localhost / 127.0.0.1. -->
+<style>
+  :root { --bg: #0B0F13; --panel: #0E141A; --line: #1D2731; --text: #E9EEF3; --dim: #8FA0AE;
+          --mark: #5AD0F2; --on-mark: #0B0F13; --warn: #E89055;
+          --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+          --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color-scheme: dark; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #EEF1F4; --panel: #FFFFFF; --line: #C3CDD4; --text: #182430; --dim: #46555F;
+            --mark: #0A6D93; --on-mark: #FFFFFF; --warn: #9A4D16; color-scheme: light; }
+  }
+  [hidden] { display: none !important; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 var(--sans); }
+  main { max-width: 52rem; margin: 0 auto; padding: 28px 16px 48px; display: grid; gap: 22px; }
+  h1 { margin: 0; font: 600 20px/1.3 var(--sans); }
+  h2 { margin: 0; font: 600 18px/1.3 var(--sans); }
+  h2:focus, h1:focus { outline: none; }
+  p { margin: 0; }
+  .head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px 16px; flex-wrap: wrap; }
+  .who { display: flex; gap: 8px 12px; align-items: baseline; flex-wrap: wrap; font: 13px/1.5 var(--mono);
+         color: var(--dim); min-width: 0; overflow-wrap: anywhere; }
+  .view { display: grid; gap: 14px; }
+  .dim { color: var(--dim); font-size: 14px; }
+  .note { color: var(--dim); font-size: 14px; max-width: 60ch; }
+  .migrate { border: 1px dashed var(--mark); padding: 14px 16px; display: flex; gap: 12px 16px; align-items: center;
+             justify-content: space-between; flex-wrap: wrap; }
+  .migrate p { font-size: 14px; max-width: 60ch; }
+  .sect { display: grid; gap: 10px; }
+  .kicker { margin: 0; font: 500 12px/1.4 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--dim); }
+  .rows { display: grid; gap: 10px; }
+  .acct { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 16px; align-items: center;
+          padding: 14px 16px; background: var(--panel); border: 1px solid var(--line); }
+  .acct .n { font: 600 16px/1.4 var(--sans); overflow-wrap: anywhere; }
+  .acct .meta { font: 13px/1.5 var(--mono); color: var(--dim); overflow-wrap: anywhere; }
+  .acts { display: flex; gap: 8px; flex-wrap: wrap; }
+  button { font: 600 14px/1.2 var(--sans); min-height: 40px; padding: 8px 14px; border: 1px solid var(--mark);
+           background: transparent; color: var(--mark); cursor: pointer; border-radius: 0; }
+  button.b1 { background: var(--mark); color: var(--on-mark); }
+  button.warn { border-color: var(--warn); color: var(--warn); }
+  button.link { border: 0; min-height: 0; padding: 0; font: 13px/1.5 var(--mono); color: var(--mark);
+                text-decoration: underline; text-underline-offset: 3px; }
+  button:disabled { opacity: .45; cursor: default; }
+  :focus-visible { outline: 2px solid var(--mark); outline-offset: 2px; }
+  details { border: 1px solid var(--line); }
+  summary { cursor: pointer; padding: 10px 16px; font-size: 14px; color: var(--dim); display: flex;
+            justify-content: space-between; gap: 12px; list-style: none; }
+  summary::-webkit-details-marker { display: none; }
+  summary .show::after { content: "Show"; }
+  details[open] summary .show::after { content: "Hide"; }
+  details .rows { padding: 0 10px 10px; }
+  .empty { color: var(--dim); font-size: 14px; padding: 4px 0; }
+  .field { display: grid; gap: 6px; max-width: 24rem; }
+  label { font-size: 14px; color: var(--dim); }
+  input { font: 15px/1.4 var(--mono); padding: 9px 10px; background: var(--panel); color: var(--text);
+          border: 1px solid var(--line); border-radius: 0; }
+  .uid { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  code { font: 14px/1.5 var(--mono); padding: 8px 10px; background: var(--panel); border: 1px solid var(--line);
+         user-select: all; overflow-wrap: anywhere; min-width: 0; }
+  .status { font-size: 14px; color: var(--warn); }
+  .status:empty { display: none; }
+  .local { font: 12px/1.4 var(--mono); color: var(--warn); letter-spacing: .04em; }
+  @media (max-width: 560px) { .acct { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<main>
+  <div class="head">
+    <h1 id="title" tabindex="-1">SKIPTI approvals</h1>
+    <div class="who" id="who" hidden>
+      <span id="who-name"></span>
+      <button class="link" id="refresh" type="button">Refresh</button>
+      <button class="link" id="sign-out" type="button">Sign out</button>
+    </div>
+  </div>
+  <p class="local" id="local" hidden>Emulator mode: this page talks to the local emulators only.</p>
+  <p class="status" id="status" role="status" aria-live="polite"></p>
+
+  <section class="view" id="view-out" aria-labelledby="out-title" hidden>
+    <h2 id="out-title" tabindex="-1">Sign in</h2>
+    <p class="note">Only the admin account can see and decide approvals. Anyone else who signs in sees their own account id and nothing more.</p>
+    <div id="google-sign-in">
+      <button class="b1" id="google" type="button">Sign in with Google</button>
+    </div>
+    <div class="field" id="emulator-sign-in" hidden>
+      <label for="test-uid">Test account id</label>
+      <input id="test-uid" type="text" value="emulator-admin" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <div><button class="b1" id="emulator" type="button">Sign in to the emulators</button></div>
+    </div>
+  </section>
+
+  <section class="view" id="view-not-admin" aria-labelledby="not-admin-title" hidden>
+    <h2 id="not-admin-title" tabindex="-1">This is not the admin account.</h2>
+    <p class="note">Your account id is below. If this account is yours, it is the id the approvals Function needs as its admin setting.</p>
+    <div class="uid">
+      <code id="caller-uid"></code>
+      <button id="copy" type="button">Copy</button>
+    </div>
+  </section>
+
+  <section class="view" id="view-list" aria-labelledby="list-title" hidden>
+    <h2 id="list-title" class="kicker" tabindex="-1">Accounts</h2>
+    <div class="migrate" id="migrate" hidden>
+      <p><strong>On deploy day:</strong> <span id="migrate-text"></span></p>
+      <button class="b1" id="migrate-go" type="button"></button>
+    </div>
+    <div class="sect">
+      <h3 class="kicker" id="waiting-title">Waiting</h3>
+      <div class="rows" id="waiting"></div>
+    </div>
+    <div class="sect">
+      <h3 class="kicker">Decided</h3>
+      <details id="approved-fold">
+        <summary><span id="approved-title">Approved</span><span class="show" aria-hidden="true"></span></summary>
+        <div class="rows" id="approved"></div>
+      </details>
+      <details id="denied-fold">
+        <summary><span id="denied-title">Denied</span><span class="show" aria-hidden="true"></span></summary>
+        <div class="rows" id="denied"></div>
+      </details>
+    </div>
+  </section>
+
+</main>
+<script>
+(function () {
+  "use strict";
+  const LOCAL = location.hostname === "localhost" || location.hostname === "127.0.0.1";
+  // The apps' own public values (a hosting test pins them to FirebaseConfig.kt / .swift).
+  const API_KEY = "AIzaSyBrtSFaigCPgplvpx3gqWfRvhhLmiHdMdQ";
+  const WEB_CLIENT_ID = "403030719865-p4a2s68o0rn18rn37h2v4pq110hih40o.apps.googleusercontent.com";
+  const GOOGLE_AUTH = "https://accounts.google.com/o/oauth2/v2/auth";
+  const PROJECT = "skipti-26";
+  const SIGN_IN = "https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=" + API_KEY;
+  const CALLABLE = LOCAL
+    ? "http://127.0.0.1:5001/skipti-26/us-central1/adminApprovals"
+    : "https://us-central1-skipti-26.cloudfunctions.net/adminApprovals";
+  const ROUND_TRIP = "skipti-admin-sign-in";
+  const OFFLINE = "Could not reach SKIPTI's cloud. Try again.";
+  const NOT_ADMIN = "This is not the admin account.";
+
+  // The Firebase session: memory only. A reload means signing in again.
+  let session = null;
+  let busy = false;
+  // D-254 look fix 5: every row's meta line with its account and list, so the
+  // relative times are worked out again without rebuilding the rows.
+  let stamps = [];
+
+  const $ = (id) => document.getElementById(id);
+
+  function say(text) { $("status").textContent = text || ""; }
+
+  function show(name, focus) {
+    for (const v of ["out", "not-admin", "list"]) $("view-" + v).hidden = v !== name;
+    $("who").hidden = !session;
+    if (session) $("who-name").textContent = "Signed in as " + (session.email || session.uid);
+    if (focus) {
+      const heading = { out: "out-title", "not-admin": "not-admin-title", list: "list-title" }[name];
+      $(heading).focus();
+    }
+  }
+
+  function setBusy(on) {
+    busy = on;
+    for (const b of document.querySelectorAll("button[data-act], #migrate-go, #refresh")) b.disabled = on;
+  }
+
+  function el(tag, cls, text) {
+    const node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  function random() {
+    const bytes = new Uint8Array(32);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  function claimsOf(jwt) {
+    try {
+      const part = jwt.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+      const raw = atob(part + "=".repeat((4 - (part.length % 4)) % 4));
+      return JSON.parse(new TextDecoder().decode(Uint8Array.from(raw, (c) => c.charCodeAt(0))));
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function post(url, payload, token) {
+    const headers = { "content-type": "application/json" };
+    if (token) headers.authorization = "Bearer " + token;
+    return fetch(url, {
+      method: "POST", headers, body: JSON.stringify(payload),
+      cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer",
+    }).then((res) => res.json().then((body) => ({ ok: res.ok, body }), () => ({ ok: res.ok, body: null })));
+  }
+
+  // The callable protocol: {"data": ...} in, {"result": ...} or {"error": {...}} out.
+  function call(data) {
+    return post(CALLABLE, { data }, session.idToken).then((r) => {
+      const body = r.body || {};
+      if (body.error) throw { refusal: body.error };
+      if (!r.ok || !("result" in body)) throw { offline: true };
+      return body.result;
+    });
+  }
+
+  function failed(e) {
+    setBusy(false);
+    if (!session) return;
+    if (e && e.refusal) {
+      const { status, message, details } = e.refusal;
+      if (status === "PERMISSION_DENIED" && message === NOT_ADMIN) {
+        $("caller-uid").textContent = (details && details.uid) || (session && session.uid) || "";
+        $("copy").textContent = "Copy";
+        say("");
+        show("not-admin", true);
+        return;
+      }
+      if (status === "UNAUTHENTICATED") {
+        signOut("Signed out. Sign in again.");
+        return;
+      }
+      say(message || OFFLINE);
+      return;
+    }
+    say(OFFLINE);
+  }
+
+  // ---- Sign-in ----
+
+  function startGoogle() {
+    const state = random();
+    const nonce = random();
+    try {
+      sessionStorage.setItem(ROUND_TRIP, JSON.stringify({ state, nonce }));
+    } catch (e) {
+      say("This browser blocked the sign-in. Allow site data for this page and try again.");
+      return;
+    }
+    const query = new URLSearchParams({
+      client_id: WEB_CLIENT_ID,
+      redirect_uri: location.origin + "/",
+      response_type: "id_token",
+      scope: "openid email",
+      state,
+      nonce,
+      prompt: "select_account",
+    });
+    location.assign(GOOGLE_AUTH + "?" + query.toString());
+  }
+
+  function takeRoundTrip() {
+    let saved = null;
+    try {
+      saved = JSON.parse(sessionStorage.getItem(ROUND_TRIP) || "null");
+      sessionStorage.removeItem(ROUND_TRIP);
+    } catch (e) {
+      saved = null;
+    }
+    return saved;
+  }
+
+  function finishGoogle(params, saved) {
+    const fail = (text) => { say(text); show("out", false); };
+    if (!saved || !saved.state || params.get("state") !== saved.state) {
+      fail("That sign-in did not start on this page. Sign in again.");
+      return;
+    }
+    if (params.get("error") || !params.get("id_token")) {
+      fail("Google sign-in did not finish. Try again.");
+      return;
+    }
+    const idToken = params.get("id_token");
+    const claims = claimsOf(idToken);
+    if (!claims || claims.nonce !== saved.nonce || claims.aud !== WEB_CLIENT_ID) {
+      fail("That sign-in did not start on this page. Sign in again.");
+      return;
+    }
+    exchange("id_token=" + encodeURIComponent(idToken) + "&providerId=google.com");
+  }
+
+  // Emulator mode: the Functions emulator accepts an unsigned token, built as firebase/tests/functions.test.mjs
+  // builds it, so the typed id is the caller's uid (the Auth emulator would give it a random one).
+  function base64url(text) {
+    return btoa(String.fromCharCode(...new TextEncoder().encode(text)))
+      .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+
+  function startEmulator() {
+    if (!LOCAL) return;
+    const uid = $("test-uid").value.trim();
+    if (!uid) { say("Type a test account id."); return; }
+    const now = Math.floor(Date.now() / 1000);
+    const token = base64url(JSON.stringify({ alg: "none", typ: "JWT" })) + "." + base64url(JSON.stringify({
+      iss: "https://securetoken.google.com/" + PROJECT, aud: PROJECT, iat: now, exp: now + 3600, auth_time: now,
+      sub: uid, user_id: uid, firebase: { sign_in_provider: "google.com", identities: {} },
+    })) + ".";
+    session = { idToken: token, uid, email: "" };
+    say("");
+    load("");
+  }
+
+  function exchange(postBody) {
+    say("Signing in.");
+    post(SIGN_IN, { postBody, requestUri: location.origin, returnSecureToken: true, returnIdpCredential: true }, null)
+      .then((r) => {
+        const b = r.body || {};
+        if (!r.ok || !b.idToken) {
+          say("Sign-in failed. Try again.");
+          show("out", false);
+          return;
+        }
+        session = { idToken: b.idToken, uid: b.localId || "", email: b.email || "" };
+        load("");
+      })
+      .catch(() => { say(OFFLINE); show("out", false); });
+  }
+
+  function signOut(note) {
+    session = null;
+    setBusy(false);
+    say(note || "");
+    show("out", true);
+  }
+
+  // ---- The list ----
+
+  function ago(ms) {
+    if (typeof ms !== "number" || !isFinite(ms)) return null;
+    const d = Date.now() - ms;
+    if (d < 60000) return "just now";
+    if (d < 3600000) return Math.floor(d / 60000) + "\u00a0min ago";
+    if (d < 86400000) return Math.floor(d / 3600000) + "\u00a0h ago";
+    return "on " + new Date(ms).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  }
+
+  const PROVIDERS = { "google.com": "Google", "apple.com": "Apple" };
+  const PLATFORMS = { ios: "iPhone", android: "Android" };
+
+  function meta(a, section) {
+    const parts = [];
+    if (a.provider) parts.push(PROVIDERS[a.provider] || a.provider);
+    parts.push(a.email || "no email shared");
+    if (a.platform) parts.push(PLATFORMS[a.platform] || a.platform);
+    if (section === "pending") {
+      const when = ago(a.requestedAt);
+      if (when) parts.push("asked " + when);
+    } else {
+      const when = ago(a.decidedAt);
+      const verb = section === "approved" ? "approved" : "denied";
+      if (a.decidedBy === "migration") parts.push(verb + " by the migration" + (when ? ", " + when : ""));
+      else if (when) parts.push(verb + " " + when);
+    }
+    return parts.join(" · ");
+  }
+
+  // D-254 look fix 4: a label no other row's button shares (two accounts can share a name, or have none): the
+  // name, the phone and the end of the account id.
+  function whoOf(a) {
+    const parts = [a.name || "No name yet"];
+    if (a.platform) parts.push(PLATFORMS[a.platform] || a.platform);
+    parts.push("account ending " + String(a.uid || "").slice(-6));
+    return parts.join(", ");
+  }
+
+  function actionButton(label, cls, who, run) {
+    const b = el("button", cls, label);
+    b.type = "button";
+    b.dataset.act = "1";
+    b.setAttribute("aria-label", label + " " + who);
+    b.disabled = busy;
+    b.addEventListener("click", run);
+    return b;
+  }
+
+  function row(a, section) {
+    const name = a.name || "No name yet";
+    const box = el("div", "acct");
+    const info = el("div");
+    const line = el("div", "meta", meta(a, section));
+    stamps.push({ node: line, a, section });
+    info.append(el("div", "n", name), line);
+    const acts = el("div", "acts");
+    const who = whoOf(a);
+    if (section !== "approved") acts.append(actionButton("Approve", "b1", who, () => decide(a.uid, "approved")));
+    if (section !== "denied") acts.append(actionButton("Deny", "warn", who, () => decide(a.uid, "denied")));
+    box.append(info, acts);
+    return box;
+  }
+
+  function fill(id, list, section, emptyText) {
+    const box = $(id);
+    box.replaceChildren();
+    if (!list.length) { box.append(el("p", "empty", emptyText)); return; }
+    for (const a of list) box.append(row(a, section));
+  }
+
+  function render(r) {
+    const pending = Array.isArray(r.pending) ? r.pending : [];
+    const approved = Array.isArray(r.approved) ? r.approved : [];
+    const denied = Array.isArray(r.denied) ? r.denied : [];
+    const n = Number(r.toMigrate) || 0;
+    $("migrate").hidden = n === 0; // fix wave M1: while any profile has no decision
+    $("migrate-text").textContent = (n === 1 ? "1 account" : n + " accounts")
+      + " already had a profile before the gate. Approve " + (n === 1 ? "it" : "them")
+      + " so nobody already testing is locked out.";
+    $("migrate-go").textContent = "Approve the " + n;
+    $("waiting-title").textContent = "Waiting · " + pending.length;
+    $("approved-title").textContent = "Approved · " + approved.length;
+    $("denied-title").textContent = "Denied · " + denied.length;
+    stamps = [];
+    fill("waiting", pending, "pending", "Nobody is waiting.");
+    fill("approved", approved, "approved", "No approved accounts.");
+    fill("denied", denied, "denied", "No denied accounts.");
+  }
+
+  // D-254 look fix 5: "just now" stays true: the times are worked out again every minute and when a folded list
+  // opens. Only the text of each meta line changes, so focus stays where it is.
+  function retime() {
+    for (const s of stamps) s.node.textContent = meta(s.a, s.section);
+  }
+
+  function load(note) {
+    setBusy(true);
+    call({ action: "list" })
+      .then((r) => {
+        if (!session) return;
+        const first = $("view-list").hidden;
+        render(r || {});
+        setBusy(false);
+        say(note);
+        show("list", first);
+      })
+      .catch(failed);
+  }
+
+  function decide(uid, state) {
+    if (busy || !session) return;
+    setBusy(true);
+    say("");
+    call({ action: "decide", uid, state })
+      .then(() => load(""))
+      .catch(failed);
+  }
+
+  function migrate() {
+    if (busy || !session) return;
+    setBusy(true);
+    say("");
+    call({ action: "migrate" })
+      .then((r) => {
+        const n = (r && Number(r.approved)) || 0;
+        load(n === 1 ? "1 account approved." : n + " accounts approved.");
+      })
+      .catch(failed);
+  }
+
+  // ---- Wiring ----
+
+  $("google").addEventListener("click", startGoogle);
+  $("emulator").addEventListener("click", startEmulator);
+  $("test-uid").addEventListener("keydown", (e) => { if (e.key === "Enter") startEmulator(); });
+  $("sign-out").addEventListener("click", () => signOut(""));
+  $("refresh").addEventListener("click", () => { if (!busy && session) load(""); });
+  $("migrate-go").addEventListener("click", migrate);
+  for (const fold of ["approved-fold", "denied-fold"]) {
+    $(fold).addEventListener("toggle", function () { if (this.open) retime(); });
+  }
+  setInterval(retime, 60000);
+  $("copy").addEventListener("click", function () {
+    const button = this;
+    navigator.clipboard.writeText($("caller-uid").textContent).then(
+      () => { button.textContent = "Copied"; },
+      () => { button.textContent = "Select the id and copy it"; });
+  });
+
+  if (LOCAL) {
+    $("local").hidden = false;
+    $("google-sign-in").hidden = true;
+    $("emulator-sign-in").hidden = false;
+  }
+
+  // The round trip's state and nonce are removed on every load; the fragment is cleared at once.
+  const saved = takeRoundTrip();
+  const fragment = location.hash.length > 1 ? new URLSearchParams(location.hash.slice(1)) : null;
+  if (fragment) history.replaceState(null, "", location.pathname);
+  if (!LOCAL && fragment && (fragment.has("id_token") || fragment.has("error"))) {
+    show("out", false);
+    finishGoogle(fragment, saved);
+  } else {
+    show("out", false);
+  }
+})();
+</script>
+</body>
+</html>

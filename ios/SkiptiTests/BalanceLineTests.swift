@@ -404,23 +404,26 @@ final class BalanceLineTests: XCTestCase {
     /// sync switch or a greyed-out Devices row IS an implication: it
     /// shows someone what they are missing. Absent, not disabled.
     func testTheAccountHubShowsNoAccountControlsWithoutAnAccount() {
-        let none = accountHubModel(signedIn: false, syncOn: true)
-        XCTAssertEqual(none.state, .noAccount)
-        XCTAssertFalse(none.showsAccountControls, "no account must mean NO controls, not disabled ones")
-        let noneOff = accountHubModel(signedIn: false, syncOn: false)
-        XCTAssertEqual(noneOff.state, .noAccount)
-        XCTAssertFalse(noneOff.showsAccountControls)
+        // D-254: whatever the approval says, no account is no account.
+        for approval in ApprovalState.allCases {
+            let none = accountHubModel(signedIn: false, syncOn: true, approval: approval)
+            XCTAssertEqual(none.state, .noAccount)
+            XCTAssertFalse(none.showsAccountControls, "no account must mean NO controls, not disabled ones")
+            let noneOff = accountHubModel(signedIn: false, syncOn: false, approval: approval)
+            XCTAssertEqual(noneOff.state, .noAccount)
+            XCTAssertFalse(noneOff.showsAccountControls)
+        }
 
-        // D-192: a signed-in phone has the account (no "waiting for
-        // approval": Firebase hands every phone of the account its data).
-        let active = accountHubModel(signedIn: true, syncOn: true)
+        // D-192: a signed-in phone has the account. D-254: an approved one (or one not heard yet) is active; the
+        // approval gate's two other states are ApprovalTests'.
+        let active = accountHubModel(signedIn: true, syncOn: true, approval: .approved)
         XCTAssertEqual(active.state, .active)
         XCTAssertTrue(active.showsAccountControls)
 
         // Sync state rides through untouched: the hub renders it, the
         // switch owns it (D-125).
-        XCTAssertTrue(accountHubModel(signedIn: true, syncOn: true).syncOn)
-        XCTAssertFalse(accountHubModel(signedIn: true, syncOn: false).syncOn)
+        XCTAssertTrue(accountHubModel(signedIn: true, syncOn: true, approval: .approved).syncOn)
+        XCTAssertFalse(accountHubModel(signedIn: true, syncOn: false, approval: .approved).syncOn)
     }
 
     // MARK: - D-128: the iOS product shell

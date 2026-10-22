@@ -167,6 +167,8 @@ data class YouRowFacts(
     val lockTimeout: LockTimeout,
     val lockAvailable: Boolean,
     val version: String,
+    /** D-254: the account's approval; waiting or not approved stands in for the method and phones. */
+    val approval: ApprovalState = ApprovalState.UNKNOWN,
 )
 
 /** D-222 (L58): each of You's rows' summary as parts, joined on screen by [Separator.annotated] (Norse's gold rune) and
@@ -179,6 +181,8 @@ object YouRows {
     fun parts(section: SettingsSection, facts: YouRowFacts): List<String> = when (section) {
         SettingsSection.PROFILE_ACCOUNT ->
             if (!facts.signedIn) listOf(YouCopy.NO_ACCOUNT)
+            // D-254: "Waiting for approval" or "Not approved" in place of "Google · 1 phone".
+            else if (ApprovalCopy.accountSummary(facts.approval) != null) listOfNotNull(ApprovalCopy.accountSummary(facts.approval))
             // A failed or unread count (null) and a count of 0 are left out: never "0 phones".
             else listOf(facts.methodLabel ?: YouCopy.SIGNED_IN) + listOfNotNull(facts.phoneCount?.takeIf { it >= 1 }?.let(PhonesCopy::count))
         SettingsSection.APPEARANCE -> listOf(facts.theme.label, ModeChoice.shown(facts.theme, facts.mode).chosen.label)
@@ -283,7 +287,9 @@ object SettingsMap {
 
     fun items(section: SettingsSection, signedIn: Boolean): List<SettingItem> = when (section) {
         SettingsSection.PROFILE_ACCOUNT ->
-            if (signedIn) listOf(SettingItem.SIGNED_IN_AS, SettingItem.SIGN_OUT, SettingItem.SYNC, SettingItem.NOTIFICATIONS, SettingItem.FIND_ME)
+            // D-254 look fix 6 (decision 252): the sign-in row and Sign out first (one card, [cards]), Find me right
+            // below, then Sync and Notifications (Find me was last).
+            if (signedIn) listOf(SettingItem.SIGNED_IN_AS, SettingItem.SIGN_OUT, SettingItem.FIND_ME, SettingItem.SYNC, SettingItem.NOTIFICATIONS)
             else listOf(SettingItem.SIGN_IN)
         SettingsSection.APPEARANCE -> listOf(SettingItem.THEME, SettingItem.APPEARANCE_MODE, SettingItem.TEXT_SIZE)
         SettingsSection.SECURITY ->
@@ -291,6 +297,33 @@ object SettingsMap {
                 listOf(SettingItem.ERASE) + (if (signedIn) listOf(SettingItem.DELETE_ACCOUNT) else emptyList())
         SettingsSection.DATA -> listOf(SettingItem.CURRENCY, SettingItem.EXPORT, SettingItem.IMPORT_DATA)
         SettingsSection.ABOUT -> listOf(SettingItem.ABOUT_PAGE)
+    }
+
+    /** D-254 fix wave M3 (iOS's `waitsForApproval`): account controls that do nothing until the account is approved (no
+     *  push can come, and nobody can find it). */
+    val WAITS_FOR_APPROVAL = setOf(SettingItem.NOTIFICATIONS, SettingItem.FIND_ME)
+
+    /** D-254 fix wave M3 (iOS's `shown(_:model:)`): a section's items as the page shows them: while the account waits
+     *  for approval or was not approved, without [WAITS_FOR_APPROVAL] (Sign out, the Sync card, Phones and Delete
+     *  account stay); not heard yet and approved, as before. */
+    fun shown(section: SettingsSection, model: AccountHubModel): List<SettingItem> {
+        val items = items(section, model.showsAccountControls)
+        val waits = model.state == AccountState.WAITING || model.state == AccountState.NOT_APPROVED
+        return if (waits) items - WAITS_FOR_APPROVAL else items
+    }
+
+    /** D-254 look fix 6 (decision 252; iOS's `cards(_:)`): the page's items as its cards: the signed-in row and Sign out
+     *  share ONE card when both are there; every other item is its own card. */
+    fun cards(items: List<SettingItem>): List<List<SettingItem>> {
+        val out = mutableListOf<List<SettingItem>>()
+        for (item in items) {
+            if (item == SettingItem.SIGN_OUT && out.lastOrNull() == listOf(SettingItem.SIGNED_IN_AS)) {
+                out[out.size - 1] = listOf(SettingItem.SIGNED_IN_AS, SettingItem.SIGN_OUT)
+            } else {
+                out += listOf(item)
+            }
+        }
+        return out
     }
 
     /** Above the sections: the deletion notice, when there is an account. */
@@ -309,7 +342,10 @@ object Greeting {
     }
 }
 
-enum class AccountState { NO_ACCOUNT, ACTIVE }
+/** Which account state the screen is in. D-192 had no "waiting for approval" (a signed-in phone simply had the
+ *  account); D-254 brought it back with the approval gate: a signed-in account waits until the founder approves it
+ *  ([WAITING]), or was not approved ([NOT_APPROVED]). [ACTIVE] is approved, or not heard yet (the screens as before). */
+enum class AccountState { NO_ACCOUNT, ACTIVE, WAITING, NOT_APPROVED }
 
 /** Everything the hub renders, resolved. */
 data class AccountHubModel(
@@ -319,10 +355,17 @@ data class AccountHubModel(
     val showsAccountControls: Boolean,
 )
 
-/** The pure part, unit-testable without Compose. */
-fun accountHubModel(signedIn: Boolean, syncOn: Boolean): AccountHubModel =
-    if (signedIn) AccountHubModel(AccountState.ACTIVE, syncOn, showsAccountControls = true)
-    else AccountHubModel(AccountState.NO_ACCOUNT, syncOn, showsAccountControls = false)
+/** The pure part, unit-testable without Compose. D-254: a signed-in account's state follows its approval; Sign out and
+ *  Delete account are there in every signed-in state (leaving never waits). */
+fun accountHubModel(signedIn: Boolean, syncOn: Boolean, approval: ApprovalState): AccountHubModel {
+    if (!signedIn) return AccountHubModel(AccountState.NO_ACCOUNT, syncOn, showsAccountControls = false)
+    val state = when (approval) {
+        ApprovalState.PENDING -> AccountState.WAITING
+        ApprovalState.DENIED -> AccountState.NOT_APPROVED
+        ApprovalState.UNKNOWN, ApprovalState.APPROVED -> AccountState.ACTIVE
+    }
+    return AccountHubModel(state, syncOn, showsAccountControls = true)
+}
 
 /** D-217 (the Look Book's `.who`): You's name is the display face at 700 and its handle the body face at 500. */
 object YouStyle {
@@ -395,7 +438,7 @@ fun AccountHubScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var model by remember {
-        mutableStateOf(accountHubModel(signedIn = false, syncOn = true))
+        mutableStateOf(accountHubModel(signedIn = false, syncOn = true, approval = ApprovalState.UNKNOWN))
     }
     var busy by remember { mutableStateOf(false) }
     // D-172: how this phone signed in; null for a sign-in from before D-172.
@@ -416,7 +459,7 @@ fun AccountHubScreen(
         withContext(Dispatchers.IO) {
             val store = LedgerStore(vaultPath)
             method = Account.method(store)
-            model = accountHubModel(signedIn = Account.isSignedIn(), syncOn = CloudSync.syncEnabled(store))
+            model = accountHubModel(signedIn = Account.isSignedIn(), syncOn = CloudSync.syncEnabled(store), approval = Approval.state)
             name = runCatching { store.loadSelf()?.name }.getOrNull()
             avatar = runCatching { store.loadAvatar() }.getOrDefault(Avatar.None)
             avatarRead = true
@@ -434,9 +477,12 @@ fun AccountHubScreen(
 
     // D-198: and again after a sign-out while this page is open, which takes
     // the account controls away; D-145: and after a profile change.
-    LaunchedEffect(RemoteSignOut.signOuts, ProfileState.revision, section) { reload() }
+    // D-254: and when approval arrives (or is taken away) while this page is open, so the Sync card and the Account row
+    // change at once.
+    LaunchedEffect(RemoteSignOut.signOuts, ProfileState.revision, section, Approval.state) { reload() }
 
-    val signedIn = model.state == AccountState.ACTIVE
+    // D-254: every signed-in state is the account's (waiting and not approved keep Sign out and Delete account).
+    val signedIn = model.showsAccountControls
     // D-221 (Design 3): the setup steps' facts, null until first read. Read again on a profile, sync, currency, app
     // lock or username change, on coming back to You, and on every resume (notifications are allowed in the phone's
     // settings, outside SKIPTI).
@@ -452,7 +498,7 @@ fun AccountHubScreen(
     val hasUsername = username != null || usernameState is UsernameState.CanChange || usernameState is UsernameState.Final
     LaunchedEffect(
         RemoteSignOut.signOuts, ProfileState.revision, SyncStatus.revision, section, resumes,
-        DefaultCurrency.stored, AppLock.timeout, hasUsername, signedIn,
+        DefaultCurrency.stored, AppLock.timeout, hasUsername, signedIn, Approval.state,
     ) {
         if (section == null) facts = withContext(Dispatchers.IO) { SetupFacts.read(context, LedgerStore(vaultPath), hasUsername) }
     }
@@ -494,7 +540,7 @@ fun AccountHubScreen(
             // D-206 (the founder's items 4 and 5): you first, then five groups
             // instead of one long page.
             // D-221: the ring counts the setup steps; zero of them until the facts are read.
-            val (done, total) = facts?.let { SetupSteps.progress(it) } ?: (0 to SetupSteps.steps(signedIn, lockAvailable).size)
+            val (done, total) = facts?.let { SetupSteps.progress(it) } ?: (0 to SetupSteps.steps(signedIn, lockAvailable, Approval.allowsCloud(Approval.state)).size)
             Column(
                 Modifier
                     .fillMaxWidth()
@@ -550,14 +596,15 @@ fun AccountHubScreen(
                 }
             }
             if (viewing && viewable) PictureViewer(avatar) { viewing = false }
-            // C2: an account signed in before usernames were asked.
+            // C2: an account signed in before usernames were asked. D-254 look fix 1: only once it is approved.
             // D-221 fix wave (S11): iOS's 16 between the hero and each card under it.
-            if (usernameState == UsernameState.None) {
+            val usernameCard = UsernameState.cardShows(usernameState, Approval.state)
+            if (usernameCard) {
                 Spacer(Modifier.height(16.dp))
                 UsernameCard(dark, onPickUsername)
             }
             // D-221 (Design 9, L41): the first undone step; the username step waits while its own card asks.
-            facts?.let { SetupSteps.next(it, skipping = if (usernameState == UsernameState.None) setOf(SetupStep.USERNAME) else emptySet()) }?.let { step ->
+            facts?.let { SetupSteps.next(it, skipping = if (usernameCard) setOf(SetupStep.USERNAME) else emptySet()) }?.let { step ->
                 Spacer(Modifier.height(16.dp))
                 NextStepCard(step, dark) { openStep(step) }
             }
@@ -570,6 +617,7 @@ fun AccountHubScreen(
             val rowFacts = YouRowFacts(
                 signedIn = signedIn, methodLabel = method?.rowLabel, phoneCount = phoneCount, theme = Appearance.theme,
                 mode = Appearance.mode, lockTimeout = AppLock.timeout, lockAvailable = lockAvailable, version = version.first,
+                approval = Approval.state,
             )
             // D-222 (L57): the card pads 0 and the list lays itself out at the Look Book's list padding. D-225 (Design 1):
             // the shared ListCard and ListRow draw it (nothing on screen changed).
@@ -606,9 +654,35 @@ fun AccountHubScreen(
         }
         // D-217 look fix 1: iOS's VStack spaces the items 16 apart, and nothing above the first (the page's top is the
         // bar's, [BarDecisions.scrollTop]); the spacer used to come BEFORE every item, the first included.
-        SettingsMap.items(section, signedIn).forEachIndexed { index, item ->
+        // D-254 look fix 6 (decision 252): the shown items as cards, the signed-in row and Sign out in one.
+        val signOutBlock: @Composable () -> Unit = {
+            // D-155: a plain sign-out.
+            Text(AccountSignOut.NOTE, style = Type.bodyDim(dark).copy(fontSize = TypeScale.detail.sp))
+            Spacer(Modifier.height(10.dp))
+            SecondaryAction("Sign out", dark) {
+                if (busy) return@SecondaryAction
+                // D-235: busy from the tap itself, not from when the coroutine first runs.
+                busy = true
+                scope.launch {
+                    // D-235 (Android audit M2): every cloud call inside is bounded, and leaving the page no
+                    // longer cancels it half way: this phone is always signed out.
+                    withContext(NonCancellable + Dispatchers.IO) {
+                        // D-196: the push address leaves the cloud while
+                        // the account may still write it.
+                        Push.stop(LedgerStore(vaultPath), inCloud = true)
+                        Account.signOut()
+                    }
+                    onSignedOut()
+                    // D-224 (Design 7): signed out, said once.
+                    DoneCenter.post(DoneMoments.line(DoneCopy.SIGNED_OUT))
+                    reload()
+                    busy = false
+                }
+            }
+        }
+        SettingsMap.cards(SettingsMap.shown(section, model)).forEachIndexed { index, card ->
             if (index > 0) Spacer(Modifier.height(16.dp))
-            when (item) {
+            when (val item = card.first()) {
                 SettingItem.SIGN_IN -> Card(dark) {
                     Text("No account", style = Type.body(dark))
                     Spacer(Modifier.height(8.dp))
@@ -622,35 +696,22 @@ fun AccountHubScreen(
                     // Secondary, never primary (D-128, GUARANTEES #5).
                     SecondaryAction("Sign in", dark, onOpenSignIn)
                 }
+                // Look fix 6: one card, the method row, 10 below it the sign-out line, 10 below that Sign out (iOS's card
+                // VStack spaces its rows 10).
                 SettingItem.SIGNED_IN_AS -> Card(dark) {
                     method?.let { SignInMethodRow(it, dark) } ?: Text("Signed in", style = Type.body(dark))
-                }
-                SettingItem.SIGN_OUT -> Card(dark) {
-                    // D-155: a plain sign-out.
-                    Text(AccountSignOut.NOTE, style = Type.bodyDim(dark).copy(fontSize = TypeScale.detail.sp))
-                    Spacer(Modifier.height(10.dp))
-                    SecondaryAction("Sign out", dark) {
-                        if (busy) return@SecondaryAction
-                        // D-235: busy from the tap itself, not from when the coroutine first runs.
-                        busy = true
-                        scope.launch {
-                            // D-235 (Android audit M2): every cloud call inside is bounded, and leaving the page no
-                            // longer cancels it half way: this phone is always signed out.
-                            withContext(NonCancellable + Dispatchers.IO) {
-                                // D-196: the push address leaves the cloud while
-                                // the account may still write it.
-                                Push.stop(LedgerStore(vaultPath), inCloud = true)
-                                Account.signOut()
-                            }
-                            onSignedOut()
-                            // D-224 (Design 7): signed out, said once.
-                            DoneCenter.post(DoneMoments.line(DoneCopy.SIGNED_OUT))
-                            reload()
-                            busy = false
-                        }
+                    if (SettingItem.SIGN_OUT in card) {
+                        Spacer(Modifier.height(10.dp))
+                        signOutBlock()
                     }
                 }
-                SettingItem.SYNC -> SyncCard(
+                SettingItem.SIGN_OUT -> Card(dark) { signOutBlock() }
+                // D-254: while the account waits for approval, or was not approved, the card says so and has no switch.
+                SettingItem.SYNC -> if (model.state == AccountState.WAITING) {
+                    ApprovalSyncCard(dark, ApprovalCopy.SYNC_WAITING_VALUE, ApprovalCopy.SYNC_WAITING_BODY, Tok.accent(dark))
+                } else if (model.state == AccountState.NOT_APPROVED) {
+                    ApprovalSyncCard(dark, ApprovalCopy.SYNC_DENIED_VALUE, ApprovalCopy.SYNC_DENIED_BODY, Tok.textDim(dark))
+                } else SyncCard(
                     dark = dark,
                     syncOn = model.syncOn,
                     busy = busy,
@@ -891,6 +952,24 @@ private fun YourDataPage(dark: Boolean, signedIn: Boolean, onOpenExport: () -> U
             },
             onClose = { choosingCurrency = false },
         )
+    }
+}
+
+/** D-254: the Sync card while the account is not approved: the value and the words, no switch. iOS's twin is
+ *  `approvalSyncCard` in AccountHubScreen.swift. */
+@Composable
+private fun ApprovalSyncCard(dark: Boolean, value: String, body: String, valueColor: androidx.compose.ui.graphics.Color) {
+    Card(dark) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SectionLabel("Sync", dark)
+            Text(Type.kicker(value), style = Type.microLabel(dark).copy(color = valueColor))
+        }
+        Spacer(Modifier.height(10.dp))
+        Text(body, style = Type.body(dark).copy(fontSize = TypeScale.detail.sp))
     }
 }
 

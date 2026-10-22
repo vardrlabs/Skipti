@@ -95,6 +95,19 @@ object PhonesSummary {
 }
 
 object Phones {
+    /** When a pending deletion happens (ms), or null. D-254: where the marker is: the profile's `deleteAt` when there is
+     *  a profile ([profile] non-null), else the approval document's (`requestDeletion` puts it there for an account with
+     *  no profile: waiting, or not approved), so Keep my account is offered on the next sign-in within the 7 days
+     *  instead of the purge deleting the account unwarned. The approval document is read only with no profile. Fix wave
+     *  M8: iOS's `Phones.deletionDate(profile:approval:)`, the same rule and the same test inputs. */
+    suspend fun deletionDate(
+        profile: suspend () -> Map<String, Any?>?,
+        approval: suspend () -> Map<String, Any?>?,
+    ): Long? {
+        profile()?.let { own -> return (own["deleteAt"] as? com.google.firebase.Timestamp)?.let(CloudRecords::millis) }
+        return (approval()?.get("deleteAt") as? com.google.firebase.Timestamp)?.let(CloudRecords::millis)
+    }
+
     data class Row(
         val id: String, val name: String, val platform: String, val lastSeenMs: Long?, val signedOut: Boolean, val isThis: Boolean,
     )
@@ -418,8 +431,11 @@ fun DeletionPendingCard(dark: Boolean, modifier: Modifier = Modifier) {
     LaunchedEffect(Unit) {
         val uid = Account.uid() ?: return@LaunchedEffect
         dateMs = runCatching {
-            Cloud.db().collection("users").document(uid).get(Source.SERVER).awaitTask().getTimestamp("deleteAt")
-        }.getOrNull()?.let(CloudRecords::millis)
+            Phones.deletionDate(
+                profile = { Cloud.db().collection("users").document(uid).get(Source.SERVER).awaitTask().let { if (it.exists()) it.data.orEmpty() else null } },
+                approval = { Cloud.db().collection("approvals").document(uid).get(Source.SERVER).awaitTask().data },
+            )
+        }.getOrNull()
     }
     val at = dateMs ?: return
     Column(modifier.glassCard(dark)) {

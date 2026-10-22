@@ -55,6 +55,9 @@ data class SetupFacts(
     val hasUsername: Boolean = false,
     val notificationsEnabled: Boolean = false,
     val canPost: Boolean = false,
+    /** D-254 fix wave I1: the account is approved (the vault's copy). The account's steps come with approval: until
+     *  then the username cannot be set and no notification can come. */
+    val approved: Boolean = true,
 ) {
     companion object {
         /** D-221: the facts as this phone holds them. Reads the vault: call it off the main thread. [hasUsername] is
@@ -74,6 +77,7 @@ data class SetupFacts(
                 hasUsername = signedIn && hasUsername,
                 notificationsEnabled = signedIn && NotificationManagerCompat.from(context).areNotificationsEnabled(),
                 canPost = signedIn && Push.canPost(context),
+                approved = Approval.allowsCloud(Approval.state),
             )
         }
     }
@@ -82,15 +86,17 @@ data class SetupFacts(
 object SetupSteps {
     /** Without an account five steps, in this order; signed in adds the username and notifications. D-247 (decision 169,
      *  D-221 h): a phone that cannot lock ([lockAvailable] false: no screen lock, `AppLock.available`, read again on every
-     *  resume) has no app lock step, so its ring can complete ("4 of 4"); it comes back once the phone has a lock. */
-    fun steps(signedIn: Boolean, lockAvailable: Boolean): List<SetupStep> {
+     *  resume) has no app lock step, so its ring can complete ("4 of 4"); it comes back once the phone has a lock.
+     *  D-254 fix wave I1: the two account steps come with approval ([approved]); an account waiting, not approved or
+     *  not heard yet has the five local ones (its username cannot be set, and no notification can come). */
+    fun steps(signedIn: Boolean, lockAvailable: Boolean, approved: Boolean): List<SetupStep> {
         val base = listOf(SetupStep.NAME, SetupStep.PICTURE, SetupStep.CURRENCY, SetupStep.APP_LOCK, SetupStep.FIRST_GROUP)
             .filter { it != SetupStep.APP_LOCK || lockAvailable }
-        return if (signedIn) base + listOf(SetupStep.USERNAME, SetupStep.NOTIFICATIONS) else base
+        return if (signedIn && approved) base + listOf(SetupStep.USERNAME, SetupStep.NOTIFICATIONS) else base
     }
 
     /** The facts' own steps. */
-    fun steps(facts: SetupFacts): List<SetupStep> = steps(facts.signedIn, facts.lockAvailable)
+    fun steps(facts: SetupFacts): List<SetupStep> = steps(facts.signedIn, facts.lockAvailable, facts.approved)
 
     /** Whether one step is done by these facts. */
     fun isDone(step: SetupStep, facts: SetupFacts): Boolean = when (step) {

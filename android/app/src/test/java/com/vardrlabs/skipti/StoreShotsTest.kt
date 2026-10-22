@@ -17,8 +17,8 @@ import uniffi.skipti_core.SpendingView
 
 /** D-251 (U32): the store-shots seed on Android, the twin of iOS's StoreShotsTests. Debuggable builds only (with a
  *  negative), no account and no cloud, the lock never written, the times inside this month, Home's numbers from core,
- *  and the seed table equal to iOS's (read out of StoreShots.swift). Goldens: `.drafts/d251/expected.py` and
- *  `times.py`, re-derived apart from both shells. */
+ *  and the seed table equal to iOS's (read out of StoreShots.swift). Goldens: `.drafts/d255/derive.py` (D-255's New
+ *  York seed) and `.drafts/d251/times.py`, re-derived apart from both shells. */
 class StoreShotsTest {
     private val keystore = object : SkiptiKeystore {
         var key: ByteArray? = null
@@ -105,11 +105,11 @@ class StoreShotsTest {
     @Test
     fun a_different_ios_row_is_seen() {
         val file = swift("StoreShots.swift")
-        val changed = Regex("""minor: [0-9_]+, note: "Rent"""").replace(file, "minor: 4_200_001, note: \"Rent\"")
+        val changed = Regex("""minor: [0-9_]+, note: "Rent"""").replace(file, "minor: 380_001, note: \"Rent\"")
         val parsed = swiftExpenses(changed)
-        assertEquals(4_200_001L, parsed.first { it.note == "Rent" }.minor)
+        assertEquals(380_001L, parsed.first { it.note == "Rent" }.minor)
         assertFalse(parsed == StoreShots.EXPENSES)
-        val dropped = file.lines().filterNot { "note: \"Fuel\"" in it }.joinToString("\n")
+        val dropped = file.lines().filterNot { "note: \"Gas\"" in it }.joinToString("\n")
         assertFalse(swiftExpenses(dropped) == StoreShots.EXPENSES)
     }
 
@@ -334,8 +334,8 @@ class StoreShotsTest {
     @Test
     fun the_split_is_equal_with_the_remainder_first() {
         assertEquals(listOf(4L, 3L, 3L), StoreShots.split(10, listOf("a", "b", "c")).map { it.second })
-        assertEquals(listOf(120_000L, 120_000L, 120_000L), StoreShots.split(360_000, listOf("Sam", "Kiran", "Rahul")).map { it.second })
-        assertEquals(listOf("Sam", "Meera"), StoreShots.split(99_800, listOf("Sam", "Meera")).map { it.first })
+        assertEquals(listOf(6_000L, 6_000L, 6_000L), StoreShots.split(18_000, listOf("Sam", "Jake", "Olivia")).map { it.second })
+        assertEquals(listOf("Sam", "Emma"), StoreShots.split(7_000, listOf("Sam", "Emma")).map { it.first })
     }
 
     // ---- Set aside, never deleted (review fix wave: only a vault carrying the seed's flag is ever deleted) ----
@@ -447,10 +447,10 @@ class StoreShotsTest {
         }
     }
 
-    // ---- Home from the seed (core's numbers, pinned once against .drafts/d251/expected.py; iOS pins the same) ----
+    // ---- Home from the seed (core's numbers, pinned once against .drafts/d255/derive.py; iOS pins the same) ----
 
     /** D-253: the seeded groups keep the seed's fixed ids (iOS's own, compared above), so their tiles take the same
-     *  tones on both phones on every capture: Goa trip teal, Flat 4B pink, Paris blue. The negative: a group built by
+     *  tones on both phones on every capture: Hamptons weekend teal, Apartment 4B pink, Brooklyn dinners blue. The negative: a group built by
      *  core alone gets a random id, never the seed's. */
     @Test
     fun the_seeded_groups_keep_their_fixed_ids_and_tones() {
@@ -463,7 +463,7 @@ class StoreShotsTest {
         assertEquals("three different ids", 3, named.map { it.group.id }.toSet().size)
         for (g in named) assertTrue(g.group.id, Regex("[0-9a-f]{32}").matches(g.group.id))
         val me = store.ensureSelf()
-        val random = uniffi.skipti_core.ffiCreateNamedGroup("Goa trip", "INR", uniffi.skipti_core.MemberWire(me.id, "Sam"), listOf("Meera"))
+        val random = uniffi.skipti_core.ffiCreateNamedGroup("Hamptons weekend", "USD", uniffi.skipti_core.MemberWire(me.id, "Sam"), listOf("Emma"))
         assertFalse("core's id is random", random.group.id in StoreShots.GROUPS.map { it.id })
     }
 
@@ -474,25 +474,25 @@ class StoreShotsTest {
         assertEquals(25, store.loadExpenses().size)
         assertEquals(1, store.loadSettlements().size)
         val home = HomeOverview.load(store)
-        assertEquals(listOf("Goa trip", "Flat 4B", "Paris"), home.named.map { it.group.name })
-        assertEquals(setOf("Sam", "Meera", "Kiran", "Rahul", "Ana"), home.named.flatMap { g -> g.members.map { it.name } }.toSet())
-        assertEquals(listOf("EUR -3300", "INR 3671100"), home.overview.totals.map { "${it.currencyCode} ${it.amountMinor}" }.sorted())
+        assertEquals(listOf("Hamptons weekend", "Apartment 4B", "Brooklyn dinners"), home.named.map { it.group.name })
+        assertEquals(setOf("Sam", "Emma", "Jake", "Olivia", "Ben"), home.named.flatMap { g -> g.members.map { it.name } }.toSet())
+        assertEquals(listOf("USD 251675"), home.overview.totals.map { "${it.currencyCode} ${it.amountMinor}" }.sorted())
         fun net(group: String): List<String> {
             val id = home.named.first { it.group.name == group }.group.id
             return home.overview.groups.first { it.groupId == id }.nets.map { "${it.currencyCode} ${it.amountMinor}" }
         }
-        assertEquals(listOf("INR 1411000"), net("Goa trip"))
-        assertEquals(listOf("INR 2260100"), net("Flat 4B"))
-        assertEquals(listOf("EUR -3300"), net("Paris"))
+        assertEquals(listOf("USD 55275"), net("Hamptons weekend"))
+        assertEquals(listOf("USD 202900"), net("Apartment 4B"))
+        assertEquals(listOf("USD -6500"), net("Brooklyn dinners"))
 
         // Your spending on Home (Just me, this month): five categories.
         val month = SpendingMonth.containing(late, ZoneOffset.UTC)
         val spent = SpendingLoad.load(store, month, SpendingView.JUST_ME, ZoneOffset.UTC).out
-        assertEquals(listOf("INR 1268900"), spent.currencies.map { "${it.currencyCode} ${it.totalMinor}" })
+        assertEquals(listOf("USD 52550"), spent.currencies.map { "${it.currencyCode} ${it.totalMinor}" })
         assertEquals(5, spent.currencies.first().categories.size)
         assertEquals(6, spent.rows.size)
 
-        // Goa trip's milestone is due (a year since its first expense); the others have none.
+        // Hamptons weekend's milestone is due (a year since its first expense); the others have none.
         val live = store.projectedExpenses().expenses
         fun milestone(group: String): Milestone? {
             val id = home.named.first { it.group.name == group }.group.id
@@ -502,12 +502,12 @@ class StoreShotsTest {
                 late,
             )?.milestone
         }
-        assertEquals(Milestone.YEAR, milestone("Goa trip"))
-        assertNull(milestone("Flat 4B"))
+        assertEquals(Milestone.YEAR, milestone("Hamptons weekend"))
+        assertNull(milestone("Apartment 4B"))
 
         // Lately: the newest of others' additions, each at its row's time (not "now").
         val lately = Lately.pick(ActivityFeed.load(store, null).entries).mapNotNull { it.item }
-        assertEquals(listOf("Cab to the airport", "Metro tickets", "Seafood dinner"), lately.map { it.title })
+        assertEquals(listOf("Ride to the station", "Tacos", "Seafood dinner"), lately.map { it.title })
         assertEquals(listOf(6L, 28L, 30L), lately.map { (late - it.atMs) / 3_600_000 })
     }
 }

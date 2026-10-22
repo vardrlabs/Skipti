@@ -35,6 +35,8 @@ enum UsernameCopy {
 /// The live status under the field.
 enum UsernameStatus: Equatable {
     case hint, checking, available(String), taken(String), notAvailable, offline, limit
+    /// D-254 fix wave (review I1): the check was refused because the account is not approved: its words, and no Save.
+    case approval(String)
 
     /// What the phone can say at once, before any cloud check. `list`: the
     /// blocklist (the bundled one unless a test passes the parsed file).
@@ -69,10 +71,11 @@ enum UsernameStatus: Equatable {
         }
     }
 
-    /// A live check that failed: the day's limit says so; anything else is
-    /// the offline line.
+    /// A live check that failed: the day's limit says so; D-254 fix wave (review I1): a refusal for approval says
+    /// that (never "Could not reach SKIPTI's cloud"); anything else is the offline line.
     static func failedCheck(_ error: Error) -> UsernameStatus {
-        error as? CloudFunctions.Failure == .refused("RESOURCE_EXHAUSTED") ? .limit : .offline
+        if let words = ApprovalCopy.failure(error) { return .approval(words) }
+        return error as? CloudFunctions.Failure == .refused("RESOURCE_EXHAUSTED") ? .limit : .offline
     }
 }
 
@@ -92,6 +95,9 @@ enum UsernameSaveFailure: Equatable {
         case .refused("INVALID_ARGUMENT")?: return .notAvailable
         case .refused("FAILED_PRECONDITION")?: return .used
         case .refused("RESOURCE_EXHAUSTED")?: return .message(PeopleCopy.limit)
+        // D-254: the account is not approved yet (or was not): its words, never the offline line.
+        case .awaitingApproval?: return .message(ApprovalCopy.callWaiting)
+        case .notApproved?: return .message(ApprovalCopy.callDenied)
         default: return .message(UsernameCopy.offline)
         }
     }
@@ -211,6 +217,7 @@ struct UsernameField: View {
         case .notAvailable: Text(verbatim: UsernameCopy.notAvailable).font(TypeRole.body(13)).foregroundStyle(Tokens.owed)
         case .offline: Text(verbatim: UsernameCopy.offline).font(TypeRole.body(13)).foregroundStyle(Tokens.owed)
         case .limit: Text(verbatim: PeopleCopy.limit).font(TypeRole.body(13)).foregroundStyle(Tokens.owed)
+        case .approval(let words): Text(verbatim: words).font(TypeRole.body(13)).foregroundStyle(Tokens.owed)
         }
     }
 }
@@ -303,6 +310,7 @@ struct UsernameStep: View {
             if needsName {
                 _ = try store.setYourName(name)
                 CloudSync.shared.ledgerChanged()
+                Approval.shared.nameSaved() // D-254 look fix (item 3)
             }
             // A `.none` read earlier may be stale (a username picked on
             // another phone since): setUsername would then spend the one
@@ -440,6 +448,13 @@ struct UsernameChangeSheet: View {
 /// itself comes and goes with a sync (D-208: a sheet on it was torn down).
 struct UsernameCard: View {
     var onPick: () -> Void
+
+    /// D-254 look fix (item 1): the card asks only an APPROVED account with no username. Until then the server refuses a
+    /// username (no one can find the account), so the card would only lead to a refusal; pending, denied and not heard
+    /// yet leave it out. Balance and You both decide here. Android's twin is `UsernameCard.shows`.
+    static func shows(_ state: UsernameState?, approval: ApprovalState) -> Bool {
+        state == UsernameState.none && Approval.allowsCloud(approval)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {

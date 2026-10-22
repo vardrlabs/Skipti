@@ -18,7 +18,8 @@ open a GitHub security advisory on this repository.
 
 In scope: `core/`, the iOS and Android shells, SKIPTI's Firebase project
 (`skipti-26`: its security rules and Cloud Functions), the pages served at
-`skipti.vardrlabs.com`, and every claim made in GUARANTEES.md and
+`skipti.vardrlabs.com`, the operator's approvals page (`firebase/admin/`, its
+own Hosting site), and every claim made in GUARANTEES.md and
 THREAT_MODEL.md. A demonstration that a claim in either document is false is
 in scope even if no code is exploitable. (`web/` carries no code yet; it
 enters scope when it does.)

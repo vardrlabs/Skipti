@@ -72,6 +72,8 @@ class ScreenBarsTest {
         // the invitation sentence and the joined line in the join page's body (iOS: display 28, Invites.swift:413, :424)
         "Invites.kt" to "InviteCopy.joined(",
         "Invites.kt" to "InviteCopy.invited(",
+        // D-254: the invite page's waiting (or not approved) heading in its body (iOS: display 28, ApprovalJoinBlock)
+        "Invites.kt" to "fun ApprovalJoinBlock(",
     )
 
     private val titleCopy = Regex("""Type\.display\(dark\)\.copy\(\s*fontSize = (28|24|22)\.sp""")
