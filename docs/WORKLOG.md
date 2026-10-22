@@ -24,7 +24,14 @@ Newest session log entries go at the bottom.
   (public repo: dash sweep 2,705 hits mostly BUILD-LOG/WORKLOG; 7 files with /Users/prithvi paths; retired Oracle
   files: his call), `.drafts/stop/fable-opener-4.md` (the Fable pass: run AFTER session 12's D-254), `.drafts/fable/
   notes-for-the-pass.md`, `.drafts/u32/out/` (store shots; a re-capture of 4, 6, 7, 9 and Aurora shots plus U33 clips
-  `.drafts/u33/clips/` was in flight at close: check its outputs), `.drafts/u32/plan.md` (U33 film plan).
+  `.drafts/u33/clips/`: DONE at close), `.drafts/u32/plan.md` (U33 film plan).
+- Re-capture DONE: `.drafts/u32/out/` final set (App Store 10 at 1320x2868, Play 8 at 1080x1920, feature graphic,
+  contact sheet; all hasAlpha no; v1 backed up in `raw-v1/`, `out-v1/`); shot 4 Aurora Exact with names, 6 the You
+  ring, 7 "Lunch with Luna", 9 clean Aurora Home; 01/09 read "Good evening, Sam" (captured ~20:00: consider a
+  re-shoot in daytime light of the greeting if he prefers "afternoon"); shot 6's pill reads "2 of 4 done" on Android
+  (the AVD has no lock: D-247's ring) vs "3 of 5" on iPhone: harmless, or re-shoot with matching counts. U33 clips
+  `.drafts/u33/clips/a..i` (portrait 1320x2868, 6.7-10 s each, stills beside; untrimmed c and h in `clips/full/`); the
+  iPhone was driven by a throwaway UI-test target kept only in `.drafts/u32/uitest/` (never committed).
 - Session 12 order (the founder, 2026-10-21): (1) D-254 the approval gate (decisions 228, 229): plan and build, Fable
   reviews it; (2) U33 the film (Motion artifact, decision 172) from the clips; (3) README photos: HE picks from the
   store shots (decision 231): show him the set in a private Artifact and ask; (4) merge release-051-prep with a full
