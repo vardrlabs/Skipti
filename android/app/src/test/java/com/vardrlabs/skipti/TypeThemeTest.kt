@@ -85,7 +85,7 @@ class TypeThemeTest {
      *  nearest `Text(` before it must contain `Type.kicker(` in between. */
     @Test
     fun every_section_label_goes_through_kicker() {
-        val sources = java.io.File("src/main/java/com/vardrlabs/skipti").listFiles { f -> f.name.endsWith(".kt") }!!
+        val sources = AppSources.listFiles { f -> f.name.endsWith(".kt") }!!
         for (f in sources) {
             if (f.name == "Tokens.kt") continue
             val src = f.readText()
@@ -363,7 +363,7 @@ class TypeThemeTest {
         )
         val used = mutableMapOf<String, Int>()
         val dir = java.io.File("src/main/java/com/vardrlabs/skipti")
-        val sources = dir.walkTopDown().filter { it.isFile && it.name.endsWith(".kt") }.toList()
+        val sources = AppSources.walk().filter { it.isFile && it.name.endsWith(".kt") }.toList()
         assertTrue("sources found", sources.size > 40)
         val found = sources.flatMap { leaks(it.name, it.readText(), allowed, used) }
         assertEquals(emptyList<String>(), found)
@@ -705,7 +705,7 @@ class TypeThemeTest {
         val type = tokens.substring(tokens.indexOf("object Type {"))
         assertEquals("a `lineHeight =` inside object Type", 0, Regex("""lineHeight\s*=""").findAll(type).count())
         // D-217 final fix: nor on any copy of a style anywhere (iOS draws every face at its natural height).
-        val files = java.io.File("src/main/java").walkTopDown().filter { it.isFile && it.extension == "kt" }.toList()
+        val files = AppSources.walk().filter { it.isFile && it.extension == "kt" }.toList()
         assertTrue("scanned ${files.size} files", files.size > 40)
         val fixed = files.filter { Regex("""lineHeight\s*=""").containsMatchIn(it.readText()) }.map { it.name }
         assertEquals("a fixed lineHeight in", emptyList<String>(), fixed)
@@ -737,7 +737,7 @@ class TypeThemeTest {
             ),
             "a row title",
         )
-        val bad = java.io.File("src/main/java/com/vardrlabs/skipti").walkTopDown().filter { it.isFile && it.name.endsWith(".kt") }.flatMap { f ->
+        val bad = AppSources.walk().filter { it.isFile && it.name.endsWith(".kt") }.flatMap { f ->
             val text = f.readText()
             Regex("""Text\(""").findAll(text).mapNotNull { m ->
                 var depth = 0

@@ -83,7 +83,8 @@ class AuditFixesTest {
         val write = body("ExpenseDetailScreen.kt", "    fun write(revision", "    ")
         assertTrue(write.indexOf("if (!writing.begin()) return") in 0 until write.indexOf("scope.launch"))
         assertTrue("released when the write ends", "writing.release()" in write)
-        val settle = main("SettleScreen.kt").substringAfter("onRecord = {").substringBefore("recordSettlement(")
+        // D-260 (G-13): the settle proof screen moved to src/debug.
+        val settle = AppSources.read("SettleScreenProof.kt").substringAfter("onRecord = {").substringBefore("recordSettlement(")
         assertTrue(settle.indexOf("if (settlingKey != null) return@DebtRow") in 0 until settle.indexOf("settlingKey = \""))
     }
 
@@ -127,7 +128,7 @@ class AuditFixesTest {
      *  helper (your own picture, read bounds first and sampled, inside runCatching) is the one other decoder. */
     @Test
     fun every_decode_of_a_picture_goes_through_safe_image() {
-        val sources = java.io.File("src/main/java/com/vardrlabs/skipti").listFiles { f -> f.name.endsWith(".kt") }!!
+        val sources = AppSources.listFiles { f -> f.name.endsWith(".kt") }!!
         for (file in sources) {
             if (file.name == "SafeImage.kt") continue
             var text = file.readText()

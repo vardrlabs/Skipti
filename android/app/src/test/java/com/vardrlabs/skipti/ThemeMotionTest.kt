@@ -105,7 +105,7 @@ class ThemeMotionTest {
     @Test
     fun only_the_art_reads_power_saving() {
         val dir = java.io.File("src/main/java/com/vardrlabs/skipti")
-        val readers = dir.listFiles()!!.filter { it.name.endsWith(".kt") }
+        val readers = AppSources.listFiles()!!.filter { it.name.endsWith(".kt") }
             .associate { f -> f.name to Regex("""\blowPower\b""").findAll(f.readText()).count() }
             .filter { it.value > 0 }
         assertEquals(setOf("ThemeMotion.kt"), readers.keys)
@@ -114,7 +114,7 @@ class ThemeMotionTest {
         // D-243 (amended on purpose, 16 -> 17): the Norse hero's art layer reads the art's rule of stillness
         // (`RuneLayer.isStill(motion.reduce, motion.lowPower)`, as the page's runes do).
         assertEquals("ThemeMotion.kt's lowPower", 17, readers["ThemeMotion.kt"])
-        val direct = dir.listFiles()!!.filter { it.name.endsWith(".kt") }
+        val direct = AppSources.listFiles()!!.filter { it.name.endsWith(".kt") }
             .associate { f -> f.name to Regex("""\bisPowerSaveMode\b|ACTION_POWER_SAVE_MODE_CHANGED""").findAll(f.readText()).count() }
             .filter { it.value > 0 }
         assertEquals(mapOf("ThemeMotion.kt" to 2), direct)
@@ -743,7 +743,7 @@ class ThemeMotionTest {
         assertFalse("the Norse hero's runes and ᚠ", drawsADisc(norse))
         val ring = src("YouProgress.kt").substringAfter("fun RuneRing(done: Int, total: Int, dark: Boolean, modifier: Modifier = Modifier, sweep: Double = RuneRing.share(done, total)) {").substringBefore("\n}\n")
         assertFalse("the ring's lit runes glow from their glyphs", drawsADisc(ring))
-        val main = java.io.File("src/main/java/com/vardrlabs/skipti").listFiles()!!.filter { it.name.endsWith(".kt") }.joinToString("\n") { it.readText() }
+        val main = AppSources.listFiles()!!.filter { it.name.endsWith(".kt") }.joinToString("\n") { it.readText() }
         for (gone in listOf("RuneGlow.HALO", "HALO_RADIUS", "LIT_HALO", "haloAlpha", "fehuHalo")) assertFalse("the disc's $gone is gone", gone in main)
         // Built once: GlyphGlow.mask is asked only inside a remember (the layer caches, the hero's cache, the ring), the
         // draws take the masks they hold.
@@ -1389,7 +1389,7 @@ class ThemeMotionTest {
      *  Android draws its own Back and Cancel buttons, iOS's bar items take the token through `barTint()`). */
     @Test
     fun ground_text_takes_the_ground_tokens() {
-        val files = java.io.File("src/main/java/com/vardrlabs/skipti").listFiles { f -> f.extension == "kt" }!!
+        val files = AppSources.listFiles { f -> f.extension == "kt" }!!
         fun count(needle: String) = files.sumOf { it.readText().split(needle).size - 1 }
         // D-217: 11, the Licences row's chevron (iOS's LicenceRow had one, Android's did not).
         // D-217 T6 fix: 14 (iOS's own count), the expense detail's three ground kickers (category, "Paid by", the
@@ -1670,7 +1670,7 @@ class ThemeMotionTest {
      *  builds one or reads the animator scale. */
     @Test
     fun reduce_motion_has_one_door() {
-        val files = java.io.File("src/main/java/com/vardrlabs/skipti").walkTopDown().filter { it.isFile && it.extension == "kt" }.toList()
+        val files = AppSources.walk().filter { it.isFile && it.extension == "kt" }.toList()
         assertTrue("the walk found the app", files.size > 40)
         val ctor = Regex("""(?<![A-Za-z.])MotionState\(""")
         for (f in files.filter { it.name != "ThemeMotion.kt" }) {
@@ -1699,7 +1699,7 @@ class ThemeMotionTest {
      *  that names none of these APIs (a hand-rolled frame loop outside ThemeMotion.kt's engine). */
     @Test
     fun every_compose_animation_passes_the_door() {
-        val files = java.io.File("src/main/java/com/vardrlabs/skipti").walkTopDown().filter { it.isFile && it.extension == "kt" }.toList()
+        val files = AppSources.walk().filter { it.isFile && it.extension == "kt" }.toList()
         assertTrue("the walk found the app", files.size > 40)
         val valueAnim = Regex("""animate\w*AsState\(""")
         val gate = Regex("""if \((reduce|still)\) snap\(\) else """)

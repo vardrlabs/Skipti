@@ -266,7 +266,7 @@ class LedgerStoreTest {
         assertTrue("the platform's skeleton", "android.text.format.DateFormat.getBestDateTimePattern(locale, skeleton)" in src)
         // D-225 T7 (A4): the stamp is no longer a skeleton but iOS's resolved patterns, written out (the test below).
         assertTrue("iOS's day template", "\"dMMMy\"" in src)
-        val sources = java.io.File("src/main/java/com/vardrlabs/skipti").listFiles { f -> f.name.endsWith(".kt") }!!
+        val sources = AppSources.listFiles { f -> f.name.endsWith(".kt") }!!
         for (f in sources) assertFalse("${f.name}: a fixed date pattern", Regex("ofPattern\\(\"d MMM").containsMatchIn(f.readText()) || "FormatStyle.MEDIUM" in f.readText())
     }
 

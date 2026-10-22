@@ -245,7 +245,7 @@ class BalanceScreenTest {
     @Test
     fun money_fallbacks_use_the_placeholder() {
         val dir = java.io.File("src/main/java/com/vardrlabs/skipti")
-        val files = dir.listFiles { f -> f.extension == "kt" }!!.sortedBy { it.name }
+        val files = AppSources.listFiles { f -> f.extension == "kt" }!!.sortedBy { it.name }
         val literalFallback = Regex("(catch\\s*\\(_: Exception\\)\\s*\\{\\s*|getOrDefault\\(\\s*)\"[^\"]\"")
         var uses = 0
         for (f in files) {

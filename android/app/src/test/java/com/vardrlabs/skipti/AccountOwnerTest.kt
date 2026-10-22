@@ -238,7 +238,7 @@ class AccountOwnerTest {
         assertTrue("the deliberate erase is the same operation", "signOutAndErase(vaultPath, AndroidKeystore(context.applicationContext))" in deliberate)
         val both = owner.substringAfter("fun signOutAndErase(").substringBefore("\n    }\n")
         assertTrue("sign out, then erase", Regex("""signOut\(\)\s*\n\s*erase\(vaultPath, keystore, remove\)""").containsMatchIn(both))
-        val app = File("src/main/java/com/vardrlabs/skipti").walkTopDown().filter { it.isFile && it.extension == "kt" }
+        val app = AppSources.walk().filter { it.isFile && it.extension == "kt" }
             .sumOf { it.readText().split("LedgerErase.erase(").size - 1 }
         assertEquals("no erase outside the signed-out one", 0, app)
     }

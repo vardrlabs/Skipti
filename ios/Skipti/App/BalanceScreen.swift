@@ -1,5 +1,7 @@
 import SwiftUI
 
+#if DEBUG
+// D-260 (G-13, decision 269): a proof surface (`--balance`, `--balance-vault`) and its fixture, Debug builds only.
 /// The fixture ledger shared by the balance and settle screens: the §11.4
 /// example PLUS two extra expenses that create a mixed-direction ledger:
 /// ada owes Priya ₹520 net (the settle-up direction) while Rahul (₹2,100)
@@ -443,3 +445,4 @@ struct BalanceScreen: View {
         }
     }
 }
+#endif

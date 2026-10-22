@@ -156,6 +156,11 @@ enum Cloud {
         return db
     }()
 
+    #if DEBUG
     /// Set by the emulator proof before the first use of `db`.
     @MainActor static var emulator = false
+    #else
+    /// D-260 (G-13, decision 269): no emulator outside Debug builds. A constant, so every branch on it folds away.
+    static let emulator = false
+    #endif
 }

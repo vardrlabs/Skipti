@@ -97,7 +97,8 @@ class SettleAllTest {
      *  longer builds a second spelling of it from a tail constant. */
     @Test
     fun the_settle_screen_says_the_one_recorded_sentence() {
-        val src = java.io.File("src/main/java/com/vardrlabs/skipti/SettleScreen.kt").readText()
+        // D-260 (G-13): the settle proof screen moved to src/debug.
+        val src = AppSources.read("SettleScreenProof.kt")
         assertFalse("CONFIRMATION_TAIL is gone", "CONFIRMATION_TAIL" in src)
         assertTrue("the screen calls SettleAllCopy.recorded", "SettleAllCopy.recorded(" in src)
         assertFalse("no hand-built sentence", "\"Settled with \"" in src)

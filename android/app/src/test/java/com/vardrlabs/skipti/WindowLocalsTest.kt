@@ -12,8 +12,7 @@ import org.junit.Test
  * one SkiptiAlertDialog wrapper (Appearance.kt) that does so for each slot.
  */
 class WindowLocalsTest {
-    private val sources = java.io.File("src/main/java/com/vardrlabs/skipti")
-        .listFiles { f -> f.name.endsWith(".kt") }!!.sortedBy { it.name }
+    private val sources = AppSources.listFiles { f -> f.name.endsWith(".kt") }!!.sortedBy { it.name }
 
     /** The index of the bracket closing the one at [open]. Braces inside
      *  string templates are balanced, so a plain count is enough here. */

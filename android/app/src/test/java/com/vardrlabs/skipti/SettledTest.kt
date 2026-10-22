@@ -571,7 +571,7 @@ class SettledTest {
         assertTrue("Material's Button", "    Button(\n" in action)
         assertTrue("Material's OutlinedButton", "OutlinedButton(\n" in action)
         assertFalse("no clickable of its own", ".clickable" in action)
-        val sources = java.io.File("src/main/java/com/vardrlabs/skipti").listFiles { f -> f.name.endsWith(".kt") }!!
+        val sources = AppSources.listFiles { f -> f.name.endsWith(".kt") }!!
         assertTrue(sources.size > 50)
         for (f in sources) assertFalse("${f.name} turns the 48 dp minimum off", "LocalMinimumInteractiveComponentSize" in f.readText())
         for (card in listOf(body("Settled.kt", "fun GroupNextCard("), main("AccountHubScreen.kt").substringAfter("private fun NextStepCard(").substringBefore("\n}\n"))) {

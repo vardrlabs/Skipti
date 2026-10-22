@@ -31,7 +31,7 @@ class D248FixesTest {
 
     private val sources = java.io.File("src/main/java/com/vardrlabs/skipti")
     private fun src(file: String) = java.io.File(sources, file).readText()
-    private fun allSources() = sources.listFiles { f -> f.extension == "kt" }!!.sortedBy { it.name }.map { it.name to it.readText() }
+    private fun allSources() = AppSources.listFiles { f -> f.extension == "kt" }!!.sortedBy { it.name }.map { it.name to it.readText() }
 
     private class MemoryKeystore : SkiptiKeystore {
         var key: ByteArray? = null
@@ -420,8 +420,9 @@ class D248FixesTest {
             AddSheetCopy.PAID_BY, AddSheetCopy.LEDGER, SpendingCopy.TITLE,
         )
         val literal = Regex("""\b(?:PushedPage|PushedBar|SheetPage|ChoicePage)\(\s*"([^"$]+)"""")
-        // SkiptiBar.kt's own proof titles are deliberately too long (they prove the ellipsis): not app titles.
-        val found = allSources().filter { it.first != "SkiptiBar.kt" }
+        // The bar proof's own titles are deliberately too long (they prove the ellipsis): not app titles. D-260: they moved
+        // from SkiptiBar.kt to src/debug's BarProof.kt.
+        val found = allSources().filter { it.first != "BarProof.kt" }
             .flatMap { (_, text) -> literal.findAll(text).map { it.groupValues[1] }.toList() }
         return (fixed + found).toSet()
     }

@@ -693,7 +693,7 @@ class SettingsSyncTest {
     // ---- Source guards ----
 
     private fun mainFiles(): Map<String, String> {
-        val files = java.io.File("src/main/java/com/vardrlabs/skipti").walkTopDown()
+        val files = AppSources.walk()
             .filter { it.isFile && it.extension == "kt" }.associate { it.name to it.readText() }
         assertTrue("the walk found the app's files", files.size > 40)
         return files

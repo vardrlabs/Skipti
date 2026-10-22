@@ -188,7 +188,7 @@ class StoreShotsTest {
 
     /** Every reference to the seed outside StoreShots.kt: the onCreate call (behind [StoreShots.launch]) and the proof
      *  branch (reached only through ProofArgs.proof) are the only ones allowed. */
-    private fun stray(sources: Map<String, String>): List<String> {
+    private fun stray(sources: Map<String, String>, proofs: String = debug("Proofs.kt")): List<String> {
         val allowed = listOf(
             "launchArgs = StoreShots.prepare(applicationContext, intent, savedInstanceState != null, debuggable())",
             "StoreShotsProof(vaultPath) { HomeShell(vaultPath = vaultPath, startOn = HomeTab.BALANCE) }",
@@ -204,9 +204,10 @@ class StoreShotsTest {
         }
         val root = sources["AppRoot.kt"].orEmpty()
         if (root.isNotEmpty()) {
-            val branch = root.substringBefore("StoreShotsProof(vaultPath)").substringAfterLast("when (headless) {")
-            if ("\"store-shots\" ->" !in branch) out += "AppRoot.kt: the proof outside the headless branch"
-            if (allowed.count { it in root } != 2) out += "AppRoot.kt: a call missing"
+            // D-260 (G-13): the headless dispatch, the seed's branch with it, moved to src/debug's Proofs.kt.
+            val branch = proofs.substringBefore("StoreShotsProof(vaultPath)").substringAfterLast("when (headless) {")
+            if ("\"store-shots\" ->" !in branch) out += "Proofs.kt: the proof outside the headless branch"
+            if (allowed[0] !in root || allowed[1] !in proofs) out += "AppRoot.kt or Proofs.kt: a call missing"
         }
         return out
     }
@@ -215,9 +216,10 @@ class StoreShotsTest {
     fun the_guard_finds_a_stray_reference() {
         val leaked = mapOf("Other.kt" to "fun x() {\n    StoreShots.seedOnce(path)\n}\n", "StoreShots.kt" to "StoreShots.x()")
         assertEquals(listOf("Other.kt: StoreShots.seedOnce(path)"), stray(leaked))
-        val root = main("AppRoot.kt")
-        val moved = root.replace("\"store-shots\" ->", "\"store-shots-x\" ->")
-        assertTrue(stray(mapOf("AppRoot.kt" to moved)).any { "headless branch" in it })
+        // D-260 (G-13): the branch is in src/debug's Proofs.kt.
+        val moved = debug("Proofs.kt").replace("\"store-shots\" ->", "\"store-shots-x\" ->")
+        assertTrue(stray(mapOf("AppRoot.kt" to main("AppRoot.kt")), proofs = moved).any { "headless branch" in it })
+        assertEquals(listOf<String>(), stray(mapOf("AppRoot.kt" to main("AppRoot.kt"))))
     }
 
     // ---- No account, no cloud, no lock written ----

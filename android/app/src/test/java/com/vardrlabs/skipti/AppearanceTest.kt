@@ -1099,7 +1099,7 @@ class AppearanceTest {
         assertEquals("super.onCreate(savedInstanceState)", lines[0])
         assertEquals("Appearance.settleDefault(applicationContext)", lines[1])
         assertTrue("the mode is read after", create.indexOf("Appearance.load(applicationContext)") > create.indexOf("Appearance.settleDefault("))
-        val calls = java.io.File("src/main/java/com/vardrlabs/skipti").listFiles()!!.filter { it.name.endsWith(".kt") }
+        val calls = AppSources.listFiles()!!.filter { it.name.endsWith(".kt") }
             .sumOf { it.readText().split("Appearance.settleDefault(").size - 1 }
         assertEquals("settled once, from MainActivity.onCreate", 1, calls)
         val appearance = kt("Appearance.kt")
@@ -1181,7 +1181,7 @@ class AppearanceTest {
     @Test
     fun the_night_mode_is_told_on_android_12_and_later_and_only_when_it_differs() {
         val dir = java.io.File("src/main/java/com/vardrlabs/skipti")
-        val calls = dir.listFiles()!!.filter { it.name.endsWith(".kt") }.sumOf { it.readText().split("setApplicationNightMode(").size - 1 }
+        val calls = AppSources.listFiles()!!.filter { it.name.endsWith(".kt") }.sumOf { it.readText().split("setApplicationNightMode(").size - 1 }
         assertEquals("one call", 1, calls)
         val appearance = java.io.File(dir, "Appearance.kt").readText()
         val body = appearance.substringAfter("fun tellNightMode(context: Context) {").substringBefore("\n    }\n")
@@ -1244,7 +1244,7 @@ class AppearanceTest {
     /** D-165: one place builds chip colours; the selected pair clears 4.5:1 in every set. */
     @Test
     fun every_chip_takes_its_colours_from_one_place() {
-        val sources = java.io.File("src/main/java/com/vardrlabs/skipti").listFiles { f -> f.name.endsWith(".kt") }!!
+        val sources = AppSources.listFiles { f -> f.name.endsWith(".kt") }!!
         val builders = sources.filter { it.readText().contains("filterChipColors(") }.map { it.name }
         assertEquals(listOf("Tokens.kt"), builders)
         val tokens = java.io.File("src/main/java/com/vardrlabs/skipti/Tokens.kt").readText()
@@ -1257,7 +1257,7 @@ class AppearanceTest {
      *  text on the raised surface and the checked thumb is the page colour on the accent, 3:1 or better. */
     @Test
     fun every_switch_takes_its_colours_from_one_place() {
-        val sources = java.io.File("src/main/java/com/vardrlabs/skipti").listFiles { f -> f.name.endsWith(".kt") }!!
+        val sources = AppSources.listFiles { f -> f.name.endsWith(".kt") }!!
         val call = Regex("""(?<![A-Za-z0-9_])Switch\(""")
         var seen = 0
         for (f in sources) {
@@ -1485,8 +1485,7 @@ class AppearanceTest {
      *  positional colour included. Parentheses and commas inside string literals are skipped. */
     @Test
     fun no_section_label_anywhere_takes_a_faint_colour() {
-        val root = java.io.File("src/main/java/com/vardrlabs/skipti")
-        val files = root.walkTopDown().filter { it.isFile && it.extension == "kt" }.toList()
+        val files = AppSources.walk().filter { it.isFile && it.extension == "kt" }.toList()
         assertTrue("the app's files were found (${files.size})", files.size >= 50)
         var seen = 0
         val wrong = mutableListOf<String>()
@@ -1817,7 +1816,7 @@ class AppearanceTest {
 
     /** Every Kotlin file of the app, by name. */
     private fun mainFiles(): Map<String, String> =
-        java.io.File("src/main/java").walkTopDown().filter { it.isFile && it.extension == "kt" }.associate { it.name to it.readText() }
+        AppSources.walk().filter { it.isFile && it.extension == "kt" }.associate { it.name to it.readText() }
 
     /** The switcher's body in Appearance.kt. */
     private fun switcher(): String {
@@ -2019,10 +2018,12 @@ class AppearanceTest {
         assertEquals(null, ProofArgs.proof("--notification-proof", debuggable = false))
         assertEquals("--notification-proof", ProofArgs.proof("--notification-proof", debuggable = true))
         val hits = mainFiles().flatMap { (name, text) -> Regex("""notification-proof""").findAll(text).map { name }.toList() }
-        assertEquals("read in one place", listOf("AppRoot.kt"), hits)
+        // D-260 (G-13): the proofs' dispatch moved to src/debug's Proofs.kt (a release build compiles a stub).
+        assertEquals("read in one place", listOf("Proofs.kt"), hits)
         val root = mainFiles().getValue("AppRoot.kt")
-        val arms = root.substringAfter("    when (headless) {\n").substringBefore("\n    }\n")
-        assertTrue("an arm of the proofs' when", "\"notification-proof\" -> {\n            NotificationProof()\n            return\n        }" in arms)
+        assertTrue("AppRoot hands the headless word to the proofs", "    if (ProofSurface(headless, args, vaultPath)) return\n" in root)
+        val arms = mainFiles().getValue("Proofs.kt").substringAfter("    when (headless) {\n").substringBefore("\n    }\n")
+        assertTrue("an arm of the proofs' when", "\"notification-proof\" -> {\n            NotificationProof()\n            return true\n        }" in arms)
         assertTrue("the proofs come from ProofArgs.proof", "verificationArg = proofArg()," in root)
         assertTrue(
             "ProofArgs.proof in a debuggable build only",
