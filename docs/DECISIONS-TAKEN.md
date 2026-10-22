@@ -1837,6 +1837,15 @@ R7. Source: each unit's report, `.drafts/fable/pass-051/dNNN/report.md`.
   elsewhere; risk if wrong: a proof dispatched by another shape slips past (the 23 names still catch the screens);
   overturn: list the short words with an allow list.
 
+### The hand-back pop-up, 317 to 320: your answers (2026-10-22, the end of session 13)
+
+- **317:** the pass's residues are accepted for 0.5.1 (record writes per group unlimited, a member can spend its own
+  group's daily invites, G-26 narrowed); the per-group record cap goes with App Check in 0.5.2.
+- **318:** SKIPTI-2026-003 gets a CVE request too (against the Functions code at the named commits), with 001 and 002.
+- **319:** D-257's emulator seam in `onGroupRecord` (under FUNCTIONS_EMULATOR) stays.
+- **320:** the same-day window for 0.5.0 phones (their pushes read "{name} changed an expense", their own deletes
+  "{name} deleted this group" until they update) is accepted; D-254's order stands (Functions before the apps).
+
 ### Siri and Gemini, 210 to 213: your answers (pop-up, 2026-10-21)
 
 - **210 (U15, U16):** Siri and Gemini come in **0.5.2**, not 0.5.1.
