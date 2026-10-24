@@ -885,10 +885,10 @@ In the founder's words:
 
 ## 13. The Developer Tools exemption — INTERNAL TESTING ONLY (strict)
 
-**State:** since 2026-09-18 the founder has enabled System Settings → Privacy &
-Security → **Developer Tools** for **Claude, Terminal and Xcode** on this Mac,
-because macOS malware scanning made every gate 30–40 minutes (D-137's
-measurements). It is allowed **only while SKIPTI is in internal testing.**
+**State: OFF since 2026-10-24** (the founder switched Claude, Terminal and Xcode off and reopened them on the 0.5.1
+deploy day, before the 0.5.1 signed builds). It had been ON since 2026-09-18 for internal testing, because macOS
+malware scanning made every gate 30–40 minutes (D-137's measurements); expect those times again. If he turns it back on
+(only for internal testing, never for a signed or store build), every rule below applies again from that moment.
 
 **What it switches off.** macOS no longer runs Gatekeeper/XProtect
 assessment on programs that these three apps (and every process they start:
