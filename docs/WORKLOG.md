@@ -104,7 +104,9 @@ Newest session log entries go at the bottom.
   stuck); 22 bindings unchanged; first entry 18:08:01Z. G-06 struck; G-04/17/18/26 marked deployed; section 8 learns the
   admin site + audit config (private b1ff02e). THREAT_MODEL gains the audit-log paragraph (branch deploy-day-records).
 - D-263 MERGED 764cb44b; privacy page Version 4 LIVE (hosting:main, his yes; audit 51/51; private 7072738).
-- NEXT (his): step 10, Developer Tools exemption OFF, then the builds from main 764cb44b or later (iOS needs D-262's
+- STEP 10: the Developer Tools exemption is OFF (the founder, 2026-10-24, Claude, Terminal and Xcode, apps reopened;
+  CLAUDE.md 13 updated); he is building from main. Gates are 30 to 40 minutes again.
+- NEXT (his): the builds from main 764cb44b or later (iOS needs D-262's
   12.19.3); Phase F notes `.drafts/release-051/notes.md`. Section 11's two checks are his (first push names the author;
   a tester's Home unchanged). Then going public (U35).
 
