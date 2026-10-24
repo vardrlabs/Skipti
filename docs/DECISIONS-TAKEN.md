@@ -1872,6 +1872,12 @@ R7. Source: each unit's report, `.drafts/fable/pass-051/dNNN/report.md`.
   your uid, and adminApprovals is redeployed with it; why: SKIPTI's sign-in asks Google for no email, so the console's
   Users rows cannot tell you which account is yours (the checklist's own fallback); risk if wrong: one extra Functions
   deploy of one Function; overturn: none needed.
+- **327 (D-262):** that iPhones on 12.19.3 still reach Firestore is shown by key, not by a phone talking to production:
+  the GTS Root R4 Firestore serves today has the same public key as 12.19.3's GTS Root R4, and the build's bytes show
+  the new root store in both the debug and the Release binary; why: looks run only against the local emulators, which
+  use no TLS, and a debug build is never pointed at production (incident 26); risk if wrong: Google changes Firestore's
+  chain to a root 12.19.3 lacks and iPhones fail to sync (their TestFlight check is the backstop); overturn: a signed
+  TestFlight build's first sync is the check (Phase F).
 
 ### Siri and Gemini, 210 to 213: your answers (pop-up, 2026-10-21)
 

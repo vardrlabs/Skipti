@@ -3188,7 +3188,7 @@
   {
    "group": "iPhone",
    "name": "Firebase iOS SDK",
-   "version": "12.19.2",
+   "version": "12.19.3",
    "licence": "Apache-2.0",
    "shells": [
     "ios"
