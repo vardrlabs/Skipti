@@ -116,7 +116,12 @@ Removing them stops future access and nothing else.
 - **What the provider learns.** That your Google or Apple account signed in to
   SKIPTI, and when. On Android, Google Play services carries out the sign-in.
 - **What Firebase keeps.** Your account's Firebase user id and the provider's
-  id for you. SKIPTI asks for no name and no email from Apple or Google.
+  id for you. On iPhone, SKIPTI asks Apple and Google for no name and no email,
+  and Firebase keeps none. On Android, Google's sign-in includes the email
+  address of the Google account you choose: SKIPTI does not ask for it, but
+  Firebase keeps it with the account (and, if you can be found, a fingerprint
+  of it lets people who know that address find you; an iPhone account can be
+  found by username only).
 - **If your Google or Apple account is compromised,** the attacker can sign in
   to SKIPTI as you and read your cloud data. Your other phones are told when a
   new phone signs in, and "Sign out everywhere" ends every session (the

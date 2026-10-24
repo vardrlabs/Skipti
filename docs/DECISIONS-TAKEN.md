@@ -1878,6 +1878,13 @@ R7. Source: each unit's report, `.drafts/fable/pass-051/dNNN/report.md`.
   use no TLS, and a debug build is never pointed at production (incident 26); risk if wrong: Google changes Firestore's
   chain to a root 12.19.3 lacks and iPhones fail to sync (their TestFlight check is the backstop); overturn: a signed
   TestFlight build's first sync is the check (Phase F).
+- **328 (yours, pop-up; D-263):** the sign-in email is described as each phone really sends it, today: the privacy page
+  becomes Version 4 ("they tell us an account id. On an Android phone, Google also tells us the email address of the
+  Google account you choose; on an iPhone we ask for no email and get none") and THREAT_MODEL.md's "What Firebase
+  keeps" says the same; found on deploy day (iPhone asks `openid` only per ADR-0035, Android's Credential Manager token
+  carries the email; Version 3 claimed every sign-in gives one, the threat model claimed none does). The twin gap, that
+  an iPhone account can be found by username only while About on both phones says "username or email", goes to 0.5.2,
+  where you choose the direction (iPhone asks for the email, or Android's is dropped).
 
 ### Siri and Gemini, 210 to 213: your answers (pop-up, 2026-10-21)
 
