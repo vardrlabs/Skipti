@@ -10,7 +10,56 @@ Newest session log entries go at the bottom.
 
 ---
 
-## NOW: 2026-10-22 (session 13 CLOSING, Fable: the 0.5.1 pre-release security pass is DONE; next = the deploy day, opener `.drafts/stop/deploy-opener-1.md`)
+## NOW: 2026-10-24 (session 14, Opus: the 0.5.1 DEPLOY DAY with the founder present; checklist `.drafts/release-051/deploy-day-security.md`)
+
+**RESUME (session 14; READ THIS FIRST):**
+- Evidence folder: `.drafts/release-051/day/` (`config-reads.sh` = Fable's reads with OUT moved, the quota-project
+  header `x-goog-user-project: skipti-26` the REST reads need after a fresh login, the channel list run from
+  `firebase/`, the signIn hash config no longer printed; logs in `day/prod/`).
+- Step 0 DONE (read only): main clean at 4070df3d; the last full gate (24/24) ran on 70cc5f73 and `git diff
+  70cc5f73 HEAD -- firebase core ios android` is empty (only docs and `scripts/cloud-audit.sh` since), so the deployed
+  inputs are the gated ones; no Actions runs. Both CLI logins had expired; the founder re-authenticated. Production
+  equals Fable's 10-22 reads: 28 Functions hash 77b7859915eb, all `skipti-functions` 512/6/10; ruleset 9f8b7b32 byte for
+  byte the 10-22 capture; IAM (skipti-functions the five roles, one human owner, no allUsers at project level), org
+  policy the domains override only, 50 APIs (same list), Cloud Run invokers (25 allUsers, 2 triggers none, purge the
+  SA), scheduler ENABLED, indexes 2 READY, Auth Google + Apple enabled, MFA off, no blocking functions, 3 authorized
+  domains, 4 users; Hosting one site, live only. `cloud-audit.sh` 41 pass, 10 fail = exactly the undeployed pieces
+  (requestApproval, adminApprovals missing + 404, privacy page, six admin-site checks).
+- CVE sweep (the founder's ask: flaws of the last 3 to 4 days vs the release) running in a background agent; report
+  `.drafts/release-051/cve-sweep-2026-10-24.md`.
+- CVE SWEEP DONE (`.drafts/release-051/cve-sweep-2026-10-24.md`; no PHP anywhere). Verified by me at source:
+  (1) body-parser GHSA-27r3-jxmh-p828 / CVE-2026-111181 (High, published 2026-10-23T20:53Z; < 1.20.9 and 2.0 to < 2.4.0;
+  one unauthenticated gzip request with trailing bytes kills the process, parsing runs before routing). The gate's npm
+  audit leg is RED on main now (our lock: body-parser 2.3.0 via express 5.2.1, not loaded in the onCall path). The
+  RUNTIME copy: Cloud Build 47388bcb (10-20) log shows the buildpack INJECTED functions-framework 3.5.1 from its own
+  lock ("injected":true; body-parser 1.20.5 per the buildpack's lock), so the live callables are exposed (availability
+  only) and a redeploy as-is ships the same. Fix within existing ranges, no overrides: declare
+  `@google-cloud/functions-framework` 3.5.1 exact (the version already running) and relock: FF's `^1.18.3` and express
+  4.22.2's `~1.20.5` take 1.20.9; express 5.2.1's `^2.2.1` takes 2.4.0. A dependency change: HIS YES needed (13 rule 2).
+  (2) Firebase Apple SDK 12.19.2 -> 12.19.3 (2026-10-22: Firestore's embedded gRPC trust store drops the compromised
+  eMudhra roots; Apple's own block does not cover it). Before the iOS build; HIS YES needed.
+  Unclear/low: Google's Node 22 cold-start incident BRLLNKV (10-22/23, resolved; the audit's 401 checks prove a cold
+  start after deploy); the Mac's Node 26.4.0 predates the 10-21 Node release (upgrade = his call, later).
+- HIS YES (pop-up): fix body-parser BEFORE any Functions deploy (decision 321); iOS SDK 12.19.3 before the iOS build
+  (decision 322). Steps A to C (his console steps) DONE; step 2 index DEPLOYED (`day/step2-indexes.log`; rules only
+  compiled, not released), READY poll running.
+- uid: the console's Users rows have no email (sign-in asks none), so he cannot tell his row. Plan (told him): after
+  D-261 merges, deploy adminApprovals with SKIPTI_ADMIN_UID EMPTY (refuses all), hosting:admin, he signs in, the page
+  shows "This is not the admin account." + his uid, I redeploy adminApprovals with it (the checklist's own fallback).
+- D-261 on branch `d261-body-parser` (uncommitted, tree = the gated tree): package.json declares
+  `@google-cloud/functions-framework` 3.5.1; lock +91 packages (the buildpack's same tree; no new install scripts),
+  FF's body-parser 1.20.9, top-level body-parser 2.3.0 -> 2.4.0 (+ qs 6.16.0 -> 6.16.1); `npm audit --audit-level=high`
+  exit 0 (4 moderate: uuid GHSA-w5hq-g745-h8pq via gaxios and now cloudevents 8.0.3 (uuid 8.3.2, v4 only): D-195's
+  known, not reachable). New test 6 in `firebase/tests/deploy.test.mjs`; sabotage S1 to S3 EXACT
+  (`.drafts/d261/sabotage.log`). Repro NOT reproduced on the Mac's Node 26.4.0 (five payloads incl. both paths the
+  1.20.9 diff closes: the post-decode detach and the 415 charset path with FF's `verify`; `.drafts/d261/repro*.log`);
+  production is Node 22; the fix rests on the advisory and the diff. FULL GATE 24/24 0 skipped (6m04s, stamp
+  16:42:11Z, `.drafts/d261/gate.log`; iOS 1058, cargo 425, JVM 1259 carried forward); RECORDED (BUILD-LOG D-261,
+  decisions 321-326; the first recorder run refused on a 2-column row: BUILD-LOG restored from HEAD, row split, re-run
+  exit 0). Index READY (~260 s). CLOUD-SECURITY rows: step 1 (console) and step 2 (index). Logs since 10-20: no crash
+  signature, no ERROR after 10-20. NEXT: merge, push; step 3 (adminApprovals with the param EMPTY, decision 326).
+
+## (previous) NOW: 2026-10-22 (session 13 CLOSING, Fable: the 0.5.1 pre-release security pass is DONE; next = the deploy day, opener `.drafts/stop/deploy-opener-1.md`)
 
 **RESUME (session 13 close; READ THIS FIRST):**
 - main holds D-256 (tombstone, decision 276), D-257 (per-group quotas, push cap, push line: G-04, G-17, G-18), D-258

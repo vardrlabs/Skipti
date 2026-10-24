@@ -77,3 +77,20 @@ test('D-235 round 2 m3: the record version the rules and the Functions accept is
   assert.deepEqual([...rules.matchAll(/p\.version is int && p\.version == (\d+)/g)].map((x) => x[1]), [m[1]], 'the rules');
   assert.deepEqual([...groupsSrc.matchAll(/r\.payload\.version === (\d+)/g)].map((x) => x[1]), [m[1]], 'recordShape');
 });
+
+test('D-261: the Functions Framework is ours, locked, and on a body-parser past GHSA-27r3-jxmh-p828', () => {
+  // Without it in package.json, Google's Node buildpack injects its own framework from its own lock at build time
+  // (the 2026-10-20 build: "injected":true, body-parser 1.20.5), outside this lock and outside the npm audit leg.
+  const pkg = JSON.parse(readFileSync(new URL('../functions/package.json', import.meta.url), 'utf8'));
+  assert.equal(pkg.dependencies['@google-cloud/functions-framework'], '3.5.1', 'declared, pinned exactly');
+  const { packages } = JSON.parse(readFileSync(new URL('../functions/package-lock.json', import.meta.url), 'utf8'));
+  assert.equal(packages['node_modules/@google-cloud/functions-framework']?.version, '3.5.1', 'locked');
+  const fixed = { 1: [1, 20, 9], 2: [2, 4, 0] };
+  const parsers = Object.entries(packages).filter(([k, v]) => k.endsWith('node_modules/body-parser') && !v.dev);
+  assert.ok(parsers.some(([k]) => k.includes('functions-framework')), 'the framework\'s own body-parser is in the lock');
+  for (const [where, { version }] of parsers) {
+    const v = version.split('.').map(Number);
+    const floor = fixed[v[0]];
+    assert.ok(floor && (v[1] > floor[1] || (v[1] === floor[1] && v[2] >= floor[2])), `${where} ${version} is past the fix`);
+  }
+});
