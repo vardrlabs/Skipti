@@ -1885,6 +1885,16 @@ R7. Source: each unit's report, `.drafts/fable/pass-051/dNNN/report.md`.
   carries the email; Version 3 claimed every sign-in gives one, the threat model claimed none does). The twin gap, that
   an iPhone account can be found by username only while About on both phones says "username or email", goes to 0.5.2,
   where you choose the direction (iPhone asks for the email, or Android's is dropped).
+- **329 (yours, pop-up, 2026-10-24):** the repository goes public today after all (Anthropic's CVP asks for "CVE
+  credit, bug bounty records, or published disclosures"), with private vulnerability reporting on; the three
+  advisories are published and their CVEs requested, each on your yes.
+- **330 (yours, pop-up):** each advisory credits your GitHub account icrkdev as finder, with decision 268's line in the
+  text ("Found in Vardr Labs' pre-release security audit, carried out with Claude (Anthropic)"); CWE ids 639, 340 and
+  694 for 001 to 003; ecosystem "other".
+- **331 (yours, pop-up):** a Fable session triages, for disclosure, every fixed issue from before the track began
+  (D-235's Critical, High and Medium findings, D-259's overflow, the G-items closed in 0.5.1, older security fixes to
+  builds testers ran) and drafts SKIPTI-2026-004 onward for the genuine ones (opener `.drafts/stop/fable-opener-5.md`).
+  Until then the record says "three advisories published", never "every flaw disclosed".
 
 ### Siri and Gemini, 210 to 213: your answers (pop-up, 2026-10-21)
 
