@@ -10,9 +10,33 @@ Newest session log entries go at the bottom.
 
 ---
 
-## NOW: 2026-10-24 (session 14, Opus: the 0.5.1 DEPLOY DAY with the founder present; checklist `.drafts/release-051/deploy-day-security.md`)
+## NOW: 2026-10-24 (session 14 CLOSED, Opus: the 0.5.1 deploy day DONE; next = going public, opener `.drafts/stop/public-opener-1.md`)
 
-**RESUME (session 14; READ THIS FIRST):**
+**RESUME (session 14 close; READ THIS FIRST):**
+- 0.5.1 is DEPLOYED (cloud, steps 2 to 9) and RELEASED TO INTERNAL TESTING (iOS 0.5.1 Build 8 TestFlight, Android
+  0.5.1 / 5001 Play internal; the founder, from main b988a557 or later; `docs/RELEASE-0.5.1.md`). cloud-audit 51/51;
+  Data Access audit logs on (G-06); G-04, G-13, G-17, G-18, G-26 closed or narrowed and marked deployed. The Developer
+  Tools exemption is OFF (CLAUDE.md 13; gates may take 30 to 40 minutes, today's ran 5 to 6).
+- Units today, all merged with full gates 24/24: D-261 (Functions body-parser CVE-2026-111181: Functions Framework
+  3.5.1 declared and locked; every Function rebuilt `"injected":false`), D-262 (iOS Firebase 12.19.3: Firestore's
+  embedded roots without eMudhra), D-263 (privacy page Version 4 + THREAT_MODEL: the sign-in email as each phone sends
+  it). Decisions 321 to 328. The day's CVE sweep: `.drafts/release-051/cve-sweep-2026-10-24.md`.
+- Approvals: 3 approved (migration), 1 denied (his unused test account); the admin is his COMPANY Google account
+  (`adminApprovals` env); admin page https://skipti-26-admin.web.app.
+- GOING PUBLIC IS DEFERRED (the founder, 2026-10-24: "another day"). Ready: the prep (decision 278) merged at
+  92c16012 with a full gate 24/24 (relative paths, `deploy/` and DEPLOY-ORACLE.md out, sweep clean); publish-ready
+  advisory texts `.drafts/u35/advisories/` (SKIPTI-2026-001 to 003, public references only, CVSS vectors in
+  `plan.json`). His steps, each its own yes: repo public; private vulnerability reporting on; Claude creates the three
+  advisories as drafts (`gh api repos/vardrlabs/Skipti/security-advisories`), publishes each on his yes, requests the
+  three CVEs (decisions 267, 318). Before that day: re-run the never-public sweep on main (commits since 92c16012).
+- His open checks once testers update: the first push names its author; Home unchanged on an approved phone.
+- OPEN for 0.5.2 (pre-approved or his direction): App Check (270), API key restrictions with an admin browser key
+  (274), keyed email fingerprints (271), the per-group record cap (317), G-31 (6), G-07; the iPhone find-by-email twin
+  gap and About's "username or email" line (328: his call on direction); Functions Framework major upgrade and the
+  firebase-tools bump (D-261 residue b); the Mac's Node 26.4.0 predates the 2026-10-21 Node release (his call).
+- Close his Oracle Cloud account if it still exists (his console; nothing in SKIPTI uses it).
+
+**Session 14's working log (kept for detail):**
 - Evidence folder: `.drafts/release-051/day/` (`config-reads.sh` = Fable's reads with OUT moved, the quota-project
   header `x-goog-user-project: skipti-26` the REST reads need after a fresh login, the channel list run from
   `firebase/`, the signIn hash config no longer printed; logs in `day/prod/`).
