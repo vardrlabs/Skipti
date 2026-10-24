@@ -39,7 +39,8 @@ Hosting; NOT end-to-end encrypted, access rules instead). One **Rust core**
 and is exposed through **UniFFI** bindings to two native shells — **iOS
 (SwiftUI)** in `ios/` and **Android (Jetpack Compose)** in `android/`. The old
 relay (`server/`, Oracle) was deleted in D-192; the founder moved `skipti.vardrlabs.com` to Firebase
-Hosting and terminated Oracle on 2026-10-13 (DEPLOY-ORACLE §11). Release runbook: `docs/RELEASE-0.4.0.md`;
+Hosting and terminated Oracle on 2026-10-13 (DEPLOY-ORACLE §11; that runbook and `deploy/` left the tree for going
+public, decision 278: read them in history, `git show 80c7a2d4:docs/DEPLOY-ORACLE.md`). Release runbook: `docs/RELEASE-0.4.0.md`;
 live checks: `scripts/cloud-audit.sh`; the console reads with `gcloud` (installed 2026-10-12, read-only unless
 the founder says yes). The
 Firebase backend's design and plan: `docs/superpowers/specs/2026-10-01-firebase-backend-design.md`
@@ -82,8 +83,7 @@ behaviour where ADR-0040 does not supersede it.
   symlinks into it, so edit them in place and commit with `git -C private add ... && git -C private commit ...`, then
   `git -C private push`. A fresh clone of vardrlabs/Skipti has neither: clone skipti-private into `./private/` first.
 - **Claude may push to GitHub.** Claude does **not**: run CI casually (§6),
-  SSH into or deploy the Oracle box (hand the founder commands — see
-  `docs/DEPLOY-ORACLE.md`), handle the Android signing keystore or its
+  SSH into anything (the Oracle box is gone since 2026-10-13), handle the Android signing keystore or its
   passwords, or act in the Apple Developer / Google Play consoles.
 
 **Parts of AGENTS.md that are out of date:**
@@ -124,7 +124,6 @@ docs/SPEC.md       authority; 2,257+ lines — NEVER read whole (§5)
 docs/adr/          0001–0042, binding decisions (0040: Firebase replaces the relay; 0041: selectable themes; 0042: dark by default)
 docs/BUILD-LOG.md  permanent record: §1 status, §2 decisions D-01…, §3 evidence, §4 gaps, §5 incidents, changelog
 docs/WORKLOG.md    in-flight working state (§8)
-docs/DEPLOY-ORACLE.md   relay deploy runbook (founder runs it)
 scripts/gate.sh    THE definition of green
 scripts/buildlog_edit.py        the only sanctioned way to edit BUILD-LOG
 scripts/check-buildlog.py       gate leg: D-number contiguity, row shape, fences

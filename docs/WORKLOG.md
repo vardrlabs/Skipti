@@ -210,7 +210,7 @@ Newest session log entries go at the bottom.
 - NOT deployed (the founder's yes on 0.5.1's deploy day, after Fable): the privacy page (decision 158) and D-252's
   `deleteGroup` Function change (decision 219), and D-254's rules/Functions/admin page.
 - Drafts ready: `.drafts/release-051/notes.md` (What to Test + Play, 376 chars), `.drafts/release-051/u35-checklist.md`
-  (public repo: dash sweep 2,705 hits mostly BUILD-LOG/WORKLOG; 7 files with /Users/prithvi paths; retired Oracle
+  (public repo: dash sweep 2,705 hits mostly BUILD-LOG/WORKLOG; 7 files with absolute home-folder paths; retired Oracle
   files: his call), `.drafts/stop/fable-opener-4.md` (the Fable pass: run AFTER session 12's D-254), `.drafts/fable/
   notes-for-the-pass.md`, `.drafts/u32/out/` (store shots; a re-capture of 4, 6, 7, 9 and Aurora shots plus U33 clips
   `.drafts/u33/clips/`: DONE at close), `.drafts/u32/plan.md` (U33 film plan).

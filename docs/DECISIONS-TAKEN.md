@@ -1690,7 +1690,7 @@ Mock-up https://claude.ai/artifact/4ULGr42bEn7YUhSu7pQaTx (v1); README pick http
   a group document with a deleted group's id; the phones read the tombstone for a vanished group. Deploys with 0.5.1.
 - **277 (production reads):** the read-only production checks read as D-237 did: configuration, structure, counts and
   consistency; ids and field names, never record payloads, names or emails.
-- **278 (going public, U35):** the seven tracked files with `/Users/prithvi/...` paths take relative paths; `deploy/`
+- **278 (going public, U35):** the seven tracked files with absolute home-folder paths take relative paths; `deploy/`
   and `docs/DEPLOY-ORACLE.md` are removed from the public tree (vardrlabs/Skipti is the repo that goes public, never
   icrkdev/Skipti); the history files (BUILD-LOG, WORKLOG, ADRs, plans) KEEP their em and en dashes for now: the dash
   rule is for public-facing text, and you set it aside for these files ("maybe for later"). CLAUDE.md section 4's

@@ -9,7 +9,7 @@ nothing is deployed before then.
    system faces differ (CLAUDE.md, Twins). This supersedes the E2 spec's "runes from system fonts" (2026-10-15 E2 spec,
    "Glyphs") and ADR-0041's "no font is bundled".
 2. **Our own runes**: Vardr Runes, drawn in-house, the whole Unicode Runic block (U+16A0 to U+16F8, 89 code points), in
-   a private repo `vardrlabs/fonts` (local `/Users/prithvi/Documents/Vardr Labs/fonts`), licensed **OFL 1.1 with the
+   a private repo `vardrlabs/fonts` (cloned locally), licensed **OFL 1.1 with the
    Reserved Font Name "Vardr"**. Styles **Carved** (SKIPTI), **Machined** and **Circuit** (other Vardr Labs projects only,
    never SKIPTI), each in Light, Regular, Medium and Bold; Regular is the default beside text.
 3. SKIPTI's runes use **Carved, "with character"** (specimen v5, approved "looks good"): stems at full weight, branches

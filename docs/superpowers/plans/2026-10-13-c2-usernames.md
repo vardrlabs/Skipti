@@ -335,7 +335,7 @@ and after its `'not at create either'` line add:
 
 - [ ] **Step 2: Run to see them fail**
 
-Run: `zsh -lic 'cd /Users/prithvi/Documents/Skipti/firebase && node_modules/.bin/firebase emulators:exec --only firestore,storage,functions,auth --project demo-skipti "node --test --test-concurrency=1 tests/functions.test.mjs tests/rules.test.mjs"'`
+Run: `zsh -lic 'cd firebase && node_modules/.bin/firebase emulators:exec --only firestore,storage,functions,auth --project demo-skipti "node --test --test-concurrency=1 tests/functions.test.mjs tests/rules.test.mjs"'`
 Expected: the new and replaced username tests FAIL (no `canChange`, no `checkUsername`), the rules test PASSES already (the rules already allow only `name` and `updatedAt`; it is a guard, proved by sabotage later).
 
 - [ ] **Step 3: Implement in `index.js`**
@@ -527,7 +527,7 @@ class UsernameRulesTest {
 - [ ] **Step 2: Run to see them fail**
 
 iOS (compile failure is expected first: the types do not exist; that is this step's red, the sabotage later proves the assertions bite): `xcodebuild -project ios/Skipti.xcodeproj -scheme Skipti -derivedDataPath ios/build -destination "platform=iOS Simulator,id=AFAF4221-F35B-4CD6-8ED9-A4AFD84C6D51" -collect-test-diagnostics never test -only-testing:SkiptiTests/UsernameRulesTests`
-JVM: `zsh -lic 'cd /Users/prithvi/Documents/Skipti/android && ./gradlew :app:testPlayDebugUnitTest --tests com.vardrlabs.skipti.UsernameRulesTest'`
+JVM: `zsh -lic 'cd android && ./gradlew :app:testPlayDebugUnitTest --tests com.vardrlabs.skipti.UsernameRulesTest'`
 
 - [ ] **Step 3: Implement `ios/Skipti/App/UsernameRules.swift`**
 
