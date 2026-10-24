@@ -84,7 +84,7 @@ The D-231 full gate running now leaves the last pre-D-232 builds in the shared b
 - [ ] **Step 1: Copy both builds and prove they are pre-D-232**
 
 ```bash
-cd /Users/prithvi/Documents/Skipti
+cd "$(git rev-parse --show-toplevel)"
 mkdir -p .drafts/d232/pre
 git rev-parse HEAD > .drafts/d232/pre/HEAD.txt
 cp -cR ios/build/Build/Products/Debug-iphonesimulator/Skipti.app .drafts/d232/pre/Skipti.app
@@ -159,7 +159,7 @@ Then add, directly after that test function's closing brace:
 - [ ] **Step 2: Run it to see it fail**
 
 ```bash
-cd /Users/prithvi/Documents/Skipti
+cd "$(git rev-parse --show-toplevel)"
 mkdir -p .drafts/d232/t1
 xcrun simctl boot AFAF4221-F35B-4CD6-8ED9-A4AFD84C6D51 || true
 xcodebuild -project ios/Skipti.xcodeproj -scheme Skipti -derivedDataPath ios/build \
@@ -327,7 +327,7 @@ Then add directly after that test function's closing brace:
 - [ ] **Step 10: Run them to see them fail**
 
 ```bash
-cd /Users/prithvi/Documents/Skipti/android && zsh -lic './gradlew :app:testPlayDebugUnitTest --tests "com.vardrlabs.skipti.AppearanceTest" --no-watch-fs' > ../.drafts/d232/t1/jvm-red.log 2>&1; tail -30 ../.drafts/d232/t1/jvm-red.log
+cd android && zsh -lic './gradlew :app:testPlayDebugUnitTest --tests "com.vardrlabs.skipti.AppearanceTest" --no-watch-fs' > ../.drafts/d232/t1/jvm-red.log 2>&1; tail -30 ../.drafts/d232/t1/jvm-red.log
 ```
 
 Expected: compilation fails with `Unresolved reference 'migrate'` / `'SETTLED_KEY'` (the API does not exist yet).
@@ -370,7 +370,7 @@ with:
 Run the Step 10 command, writing to `.drafts/d232/t1/jvm-green.log`, then:
 
 ```bash
-cd /Users/prithvi/Documents/Skipti/android
+cd android
 grep -E 'tests=|failures=' app/build/test-results/testPlayDebugUnitTest/TEST-com.vardrlabs.skipti.AppearanceTest.xml | head -2
 stat -f '%Sm' app/build/test-results/testPlayDebugUnitTest/TEST-com.vardrlabs.skipti.AppearanceTest.xml
 ```
@@ -380,7 +380,7 @@ Expected: `failures="0" errors="0"`, mtime from this run.
 - [ ] **Step 13: Set up the sabotage runner and T1's rows**
 
 ```bash
-cd /Users/prithvi/Documents/Skipti
+cd "$(git rev-parse --show-toplevel)"
 sed 's/d231/d232/g' .drafts/d231/sab.py > .drafts/d232/sab.py
 grep -c d231 .drafts/d232/sab.py   # expect 0
 grep -c d232 .drafts/d232/sab.py   # expect 5
@@ -425,7 +425,7 @@ ROWS = {
 - [ ] **Step 14: Run both lanes in parallel**
 
 ```bash
-cd /Users/prithvi/Documents/Skipti
+cd "$(git rev-parse --show-toplevel)"
 python3 .drafts/d232/sab.py t1 setup ios && python3 .drafts/d232/sab.py t1 ios I0 I1 I2 I3 I4 I5 > .drafts/d232/t1/lane-ios.out 2>&1; python3 .drafts/d232/sab.py t1 teardown ios
 python3 .drafts/d232/sab.py t1 setup android && python3 .drafts/d232/sab.py t1 android A0 A1 A2 A3 A4 A5 A6 > .drafts/d232/t1/lane-android.out 2>&1; python3 .drafts/d232/sab.py t1 teardown android
 ```
@@ -435,7 +435,7 @@ Run each line with `run_in_background`; while the iOS lane works, `xcrun simctl 
 - [ ] **Step 15: Commit**
 
 ```bash
-cd /Users/prithvi/Documents/Skipti
+cd "$(git rev-parse --show-toplevel)"
 git status --porcelain
 git add ios/Skipti/App/Appearance.swift ios/SkiptiTests/AppearanceTests.swift \
   android/app/src/main/java/com/vardrlabs/skipti/Appearance.kt android/app/src/test/java/com/vardrlabs/skipti/AppearanceTest.kt
@@ -543,7 +543,7 @@ In `ios/SkiptiTests/AppearanceTests.swift`, after `testTheLaunchMigrationKeepsAn
 - [ ] **Step 2: Run them to see them fail**
 
 ```bash
-cd /Users/prithvi/Documents/Skipti
+cd "$(git rev-parse --show-toplevel)"
 mkdir -p .drafts/d232/t2
 xcrun simctl boot AFAF4221-F35B-4CD6-8ED9-A4AFD84C6D51 || true
 xcodebuild -project ios/Skipti.xcodeproj -scheme Skipti -derivedDataPath ios/build \
@@ -615,7 +615,7 @@ with:
 ```
 
 ```bash
-cd /Users/prithvi/Documents/Skipti
+cd "$(git rev-parse --show-toplevel)"
 grep -c '@AppStorage(AppearanceMode.storageKey) private var appearanceRaw = AppearanceMode.system.rawValue' ios/Skipti/App/AccountHubScreen.swift  # 0
 grep -c '@AppStorage(AppearanceMode.storageKey) private var appearanceRaw: String?' ios/Skipti/App/AccountHubScreen.swift  # 2
 ```
@@ -645,7 +645,7 @@ with:
 - [ ] **Step 6: Run the tests to see them pass, with the neighbours that read these files**
 
 ```bash
-cd /Users/prithvi/Documents/Skipti
+cd "$(git rev-parse --show-toplevel)"
 xcodebuild -project ios/Skipti.xcodeproj -scheme Skipti -derivedDataPath ios/build \
   -destination "platform=iOS Simulator,id=AFAF4221-F35B-4CD6-8ED9-A4AFD84C6D51" \
   -collect-test-diagnostics never -parallel-testing-enabled NO test \
@@ -683,7 +683,7 @@ ROWS = {
 ```
 
 ```bash
-cd /Users/prithvi/Documents/Skipti
+cd "$(git rev-parse --show-toplevel)"
 python3 .drafts/d232/sab.py t2 setup ios && python3 .drafts/d232/sab.py t2 ios J0 J1 J2 J3 J4 J5 J6 > .drafts/d232/t2/lane-ios.out 2>&1; python3 .drafts/d232/sab.py t2 teardown ios
 ```
 
@@ -692,7 +692,7 @@ Run in the background. Expected in `.drafts/d232/t2/sab.out`: J0 green; J1 to J6
 - [ ] **Step 8: Commit**
 
 ```bash
-cd /Users/prithvi/Documents/Skipti
+cd "$(git rev-parse --show-toplevel)"
 git diff --cached --name-only   # must be empty before you stage; otherwise refuse and report
 git add ios/Skipti/App/Appearance.swift ios/Skipti/App/SkiptiApp.swift ios/Skipti/App/AccountHubScreen.swift ios/SkiptiTests/AppearanceTests.swift
 git diff --cached --stat   # exactly these 4 files
@@ -834,8 +834,8 @@ private class FakePrefs : android.content.SharedPreferences {
 - [ ] **Step 2: Run them to see them fail**
 
 ```bash
-mkdir -p /Users/prithvi/Documents/Skipti/.drafts/d232/t3
-cd /Users/prithvi/Documents/Skipti/android && zsh -lic './gradlew :app:testPlayDebugUnitTest --tests "com.vardrlabs.skipti.AppearanceTest" --no-watch-fs' > ../.drafts/d232/t3/jvm-red.log 2>&1; grep -E "^e: |FAILED|tests completed" ../.drafts/d232/t3/jvm-red.log | head
+mkdir -p .drafts/d232/t3
+cd android && zsh -lic './gradlew :app:testPlayDebugUnitTest --tests "com.vardrlabs.skipti.AppearanceTest" --no-watch-fs' > ../.drafts/d232/t3/jvm-red.log 2>&1; grep -E "^e: |FAILED|tests completed" ../.drafts/d232/t3/jvm-red.log | head
 ```
 
 Expected: compile error `Unresolved reference 'settleDefault'` (only that; any FakePrefs error: fix per the note in Step 1 and run again).
@@ -919,7 +919,7 @@ with:
 - [ ] **Step 5: Run the class, then the whole JVM suite**
 
 ```bash
-cd /Users/prithvi/Documents/Skipti/android
+cd android
 zsh -lic './gradlew :app:testPlayDebugUnitTest --tests "com.vardrlabs.skipti.AppearanceTest" --no-watch-fs' > ../.drafts/d232/t3/jvm-green.log 2>&1; tail -5 ../.drafts/d232/t3/jvm-green.log
 zsh -lic './gradlew :app:testPlayDebugUnitTest --no-watch-fs' > ../.drafts/d232/t3/suite.log 2>&1; tail -5 ../.drafts/d232/t3/suite.log
 python3 - <<'EOF'
@@ -963,7 +963,7 @@ ROWS = {
 ```
 
 ```bash
-cd /Users/prithvi/Documents/Skipti
+cd "$(git rev-parse --show-toplevel)"
 python3 .drafts/d232/sab.py t3 setup android && python3 .drafts/d232/sab.py t3 android B0 B1 B2 B3 B4 B5 B6 > .drafts/d232/t3/lane-android.out 2>&1; python3 .drafts/d232/sab.py t3 teardown android
 ```
 
@@ -972,7 +972,7 @@ Run in the background. Expected in `.drafts/d232/t3/sab.out`: B0 green; B1 to B6
 - [ ] **Step 7: Commit**
 
 ```bash
-cd /Users/prithvi/Documents/Skipti
+cd "$(git rev-parse --show-toplevel)"
 git diff --cached --name-only   # must be empty before you stage; otherwise refuse and report
 git add android/app/src/main/java/com/vardrlabs/skipti/Appearance.kt android/app/src/main/java/com/vardrlabs/skipti/AppRoot.kt \
   android/app/src/test/java/com/vardrlabs/skipti/AppearanceTest.kt
@@ -1053,7 +1053,7 @@ Create `.drafts/d232/t4/apply.py`:
 """D-232 T4: asserted, exactly-once edits to SPEC 11.1, ADR-0036 and CLAUDE.md. Refuses on any anchor miss."""
 import sys
 
-ROOT = '/Users/prithvi/Documents/Skipti/'
+ROOT = ''
 EN = '\u2013'
 
 
@@ -1101,7 +1101,7 @@ Before running, confirm the ADR-0036 anchor: `sed -n 5,8p docs/adr/0036-appearan
 - [ ] **Step 3: Apply and check**
 
 ```bash
-cd /Users/prithvi/Documents/Skipti
+cd "$(git rev-parse --show-toplevel)"
 python3 .drafts/d232/t4/apply.py
 grep -n 'As changed (D-232' docs/SPEC.md
 grep -n 'Amended 2026-10-19 (D-232' docs/adr/0036-appearance-system-light-dark-night.md
@@ -1118,7 +1118,7 @@ Expected: four `edited` lines (six edits, four files names repeated), each grep 
 - [ ] **Step 4: Commit the spec as built**
 
 ```bash
-cd /Users/prithvi/Documents/Skipti
+cd "$(git rev-parse --show-toplevel)"
 cp .drafts/d232/spec.md docs/superpowers/specs/2026-10-19-d232-dark-default-design.md
 cat >> docs/superpowers/specs/2026-10-19-d232-dark-default-design.md <<'EOF'
 
@@ -1155,7 +1155,7 @@ Devices: iOS **d214-look** only (`UDID=$(xcrun simctl list devices | grep BDC0AE
 - [ ] **Step 1: Check the machine and build D-232**
 
 ```bash
-cd /Users/prithvi/Documents/Skipti
+cd "$(git rev-parse --show-toplevel)"
 df -h /System/Volumes/Data; pgrep -f qemu-system; ps -Ao pcpu,comm -r | head -5
 git log --oneline -1   # the D-232 tip
 UDID=$(xcrun simctl list devices | grep BDC0AE93 | grep -oE '[0-9A-F-]{36}'); echo $UDID

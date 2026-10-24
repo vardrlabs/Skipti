@@ -50,7 +50,7 @@ The precise limits of that last claim are published in
 | Path | What |
 |---|---|
 | `core/` | `skipti-core` (Rust): `lykill` randomness · `skrin` encrypted store · `norn` ledger · `hlutr` splits · `straumr` records · `merki` categorisation · `flutningr` import and export |
-| `firebase/` | The Firebase project: the Firestore and Storage security rules and their refusal tests, the Cloud Functions and theirs (all run in the emulators by the full gate), the Hosting files (the `/join` invite page and the app-link files), pinned CLI |
+| `firebase/` | The Firebase project: the Firestore and Storage security rules and their refusal tests, the Cloud Functions and theirs (all run in the emulators by the full gate), the Hosting files (the `/join` invite page, the privacy policy and the app-link files) and the operator's approvals page (`firebase/admin/`, its own site), pinned CLI |
 | `web/` | *(not started: brand fonts only; the PWA shell is planned, not built)* |
 | `ios/` | SwiftUI shell |
 | `android/` | Kotlin/Compose shell (one build, the `play` flavour) |
