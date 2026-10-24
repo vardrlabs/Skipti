@@ -94,6 +94,12 @@ Newest session log entries go at the bottom.
   openid), Android's Credential Manager token does; the live privacy page v3 says we always get one, THREAT_MODEL says
   never; find-by-email works for Android accounts only (people.js:118 reads the token's verified email); About on both
   phones says "username or email can find you". Proposed: privacy page v4 + THREAT_MODEL fix today, the twin gap 0.5.2.
+  HIS ANSWER (decision 328): fix the texts today. D-262 MERGED 7c20f7c0 (pushed, no Actions run). D-263 on branch
+  `emailtruth-docs`: privacy page Version 4 (24 October 2026), hosting test pins the new line and refuses the old,
+  THREAT_MODEL "What Firebase keeps" corrected; hosting test 15/15; sabotage S1 exact (`.drafts/d263/`). Next: full
+  gate, record, merge, then hosting:main on his yes.
+- STEP 9 NOT SAVED: he said saved, but the project and org IAM policies hold no auditConfigs; sent him the clicks again
+  (the panel's own SAVE). Read back again when he says.
 
 ## (previous) NOW: 2026-10-22 (session 13 CLOSING, Fable: the 0.5.1 pre-release security pass is DONE; next = the deploy day, opener `.drafts/stop/deploy-opener-1.md`)
 
