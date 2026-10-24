@@ -75,8 +75,9 @@ behaviour where ADR-0040 does not supersede it.
   and the open G-nn) and adds its findings to that file. The D-237 audit's three fixed flaws (A1 High, A2 Medium, A3
   High; decisions 131 to 133) are the first drafts. SECURITY.md and THREAT_MODEL.md stay current with every unit that
   changes a claim.
-- **Repositories (since 2026-10-20, the founder's pop-up):** `origin` is **vardrlabs/Skipti** (private until the 0.5.1
-  release makes it public; it began from ONE clean starting commit, so no old history can leak). The full history up to
+- **Repositories (since 2026-10-20, the founder's pop-up):** `origin` is **vardrlabs/Skipti** (PUBLIC since 2026-10-24, private
+  vulnerability reporting on; SKIPTI-2026-001 to 003 published that day as GitHub advisories, CVEs requested; everything
+  committed to it is public at once, so sweep for secrets, real emails, addresses and home paths before every push; it began from ONE clean starting commit, so no old history can leak). The full history up to
   5fde3ac is the private archive **icrkdev/Skipti** (remote `archive`, branch `archive/main`; never pushed to again,
   never merged into main: the histories are unrelated). The never-public records live in **vardrlabs/skipti-private**,
   cloned at `./private/` (git-ignored); `docs/CLOUD-SECURITY.md` and `docs/SECURITY-ADVISORIES.md` are git-ignored
@@ -169,7 +170,7 @@ Storage emulators run `firebase/tests/*.test.mjs`, every refusal asserted; it
 runs after the SBOM leg, before `make ios-app`; D-195 added the invite
 Functions' tests) · npm audit of `firebase/functions` (D-195; high or worse fails).
 
-**Before the repo is made public** (the founder, 2026-10-20: WITH THE 0.5.1 RELEASE, moved to the vardrlabs GitHub
+**Before the repo was made public** (DONE 2026-10-24, decisions 278 and 329; kept as the record) (the founder, 2026-10-20: WITH THE 0.5.1 RELEASE, moved to the vardrlabs GitHub
 organisation; the 0.5.1 plan's U35 is the checklist; decision 42): Fable completes every draft in `docs/SECURITY-ADVISORIES.md`; the founder switches on
 private vulnerability reporting and, with his yes per advisory, the drafts are published as GitHub security advisories
 (CVEs requested where a released build was affected; section 2's disclosure track). Then: run `python3 scripts/check-em-dashes.py --scope whole-repo` and sweep until it
