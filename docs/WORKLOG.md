@@ -10,7 +10,7 @@ Newest session log entries go at the bottom.
 
 ---
 
-## NOW: 2026-10-24 (session 14 CLOSED, Opus: the 0.5.1 deploy day DONE; next = going public, opener `.drafts/stop/public-opener-1.md`)
+## NOW: 2026-10-24 (session 14 CLOSED, Opus: 0.5.1 deployed, with testers, and the repo PUBLIC; next = the Fable disclosure triage, opener `.drafts/stop/fable-opener-5.md`)
 
 **RESUME (session 14 close; READ THIS FIRST):**
 - 0.5.1 is DEPLOYED (cloud, steps 2 to 9) and RELEASED TO INTERNAL TESTING (iOS 0.5.1 Build 8 TestFlight, Android
@@ -23,7 +23,17 @@ Newest session log entries go at the bottom.
   it). Decisions 321 to 328. The day's CVE sweep: `.drafts/release-051/cve-sweep-2026-10-24.md`.
 - Approvals: 3 approved (migration), 1 denied (his unused test account); the admin is his COMPANY Google account
   (`adminApprovals` env); admin page https://skipti-26-admin.web.app.
-- GOING PUBLIC IS DEFERRED (the founder, 2026-10-24: "another day"). Ready: the prep (decision 278) merged at
+- PUBLIC SINCE 2026-10-24 (the founder reversed the deferral the same evening: Anthropic's CVP asks for "CVE credit,
+  bug bounty records, or published disclosures"; decision 329). Private vulnerability reporting ON. Published 19:23Z:
+  SKIPTI-2026-001 GHSA-mc8r-72v2-cm3x, 002 GHSA-4c8q-577q-8fq7, 003 GHSA-jwgx-f2f9-vj97, credit icrkdev finder
+  (decision 330); CVEs REQUESTED (202 Accepted), ids pending GitHub's review: check
+  `gh api repos/vardrlabs/Skipti/security-advisories/<ghsa> --jq .cve_id` and record them in private
+  SECURITY-ADVISORIES.md and CVP-SECURITY-WORK-RECORD.md. skipti-private, icrkdev/Skipti and vardrlabs/fonts stay
+  PRIVATE (checked). The CVP record: `private/CVP-SECURITY-WORK-RECORD.md` (facts with sources; PENDING marks).
+  NEXT: the Fable disclosure triage (decision 331, opener `.drafts/stop/fable-opener-5.md`); CodeQL default setup for
+  JavaScript/TypeScript and Actions is the founder's click (Settings, Code security); apply to the CVP after the CVE
+  ids arrive and the triage is done.
+- (superseded) GOING PUBLIC IS DEFERRED (the founder, 2026-10-24: "another day"). Ready: the prep (decision 278) merged at
   92c16012 with a full gate 24/24 (relative paths, `deploy/` and DEPLOY-ORACLE.md out, sweep clean); publish-ready
   advisory texts `.drafts/u35/advisories/` (SKIPTI-2026-001 to 003, public references only, CVSS vectors in
   `plan.json`). His steps, each its own yes: repo public; private vulnerability reporting on; Claude creates the three
