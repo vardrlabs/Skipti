@@ -88,6 +88,12 @@ a notification or to check a membership); there are no analytics; and
 without an account nothing leaves your phone. If the operator or the host is
 in your threat model, use SKIPTI without an account.
 
+Since 0.5.1, every read and write of a cloud document, the operator's own
+included, is recorded in Google Cloud's audit log: who, when and which
+document, never its contents. That makes a reading by the operator visible,
+not impossible: whoever holds the project's owner rights could switch the log
+off, and Google's own access as the host is not in it.
+
 ## Honest limit: a group member sees the group
 
 Anyone in a group can read every expense in it, screenshot it, and export it.
