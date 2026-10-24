@@ -1846,6 +1846,33 @@ R7. Source: each unit's report, `.drafts/fable/pass-051/dNNN/report.md`.
 - **320:** the same-day window for 0.5.0 phones (their pushes read "{name} changed an expense", their own deletes
   "{name} deleted this group" until they update) is accepted; D-254's order stands (Functions before the apps).
 
+### The 0.5.1 deploy day, 321 to 326 (2026-10-24, session 14: your pop-ups 321 and 322; mine from 323)
+
+- **321 (yours, pop-up):** the body-parser flaw (CVE-2026-111181, found by the deploy day's CVE sweep) is fixed BEFORE
+  any Functions deploy today: D-261, then steps 3 and 6 deploy the fixed build.
+- **322 (yours, pop-up):** the Firebase Apple SDK goes from 12.19.2 to 12.19.3 (Firestore's embedded trust store drops
+  the compromised eMudhra roots) before the iOS 0.5.1 build: D-262. Build 8 stays Build 8 (nothing was uploaded).
+- **323 (D-261):** the fix declares `@google-cloud/functions-framework` 3.5.1 exactly (the version Google's buildpack
+  was already injecting) and relocks within the existing ranges, with no `overrides` and no framework upgrade; why: the
+  runtime keeps the framework it has run since 0.4.0, the copy that serves the callables comes under our lock and the
+  audit leg, and the ranges already take the fixed releases; risk if wrong: the buildpack treats a declared framework
+  differently from an injected one (the deploy's build log and the audit's 401 checks read it back); overturn: an
+  `overrides` entry without declaring the framework.
+- **324 (D-261, D-262):** no SKIPTI advisory and no CVE request for either; why: each flaw is the upstream package's own
+  (body-parser's CVE-2026-111181; the eMudhra compromise fixed in Firebase Apple 12.19.3), SKIPTI's code holds no flaw,
+  and a second identifier for the same flaw would inflate the record (the disclosure rule); the exposure is recorded in
+  CLOUD-SECURITY section 2 and BUILD-LOG; risk if wrong: a reader of the public advisories does not learn that 0.5.0's
+  cloud ran an affected body-parser for two days; overturn: draft SKIPTI-2026-004 (advisory only, no CVE).
+- **325 (D-261):** the crash is taken as real on the advisory and the 1.20.8 to 1.20.9 diff, although five payloads did
+  not reproduce it on this Mac's Node 26.4.0; Node 22 is not installed to try (CLAUDE.md 13: no new tools); why: the
+  fix is a patch release inside the declared ranges, cheap and safe either way; risk if wrong: none to the product;
+  overturn: install Node 22 (your yes) and reproduce.
+- **326 (deploy day):** your admin uid is read from the admin page itself: adminApprovals is deployed first with
+  `SKIPTI_ADMIN_UID` empty (it refuses everyone), you sign in on the page, it shows "This is not the admin account." with
+  your uid, and adminApprovals is redeployed with it; why: SKIPTI's sign-in asks Google for no email, so the console's
+  Users rows cannot tell you which account is yours (the checklist's own fallback); risk if wrong: one extra Functions
+  deploy of one Function; overturn: none needed.
+
 ### Siri and Gemini, 210 to 213: your answers (pop-up, 2026-10-21)
 
 - **210 (U15, U16):** Siri and Gemini come in **0.5.2**, not 0.5.1.
