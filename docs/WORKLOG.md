@@ -98,8 +98,15 @@ Newest session log entries go at the bottom.
   `emailtruth-docs`: privacy page Version 4 (24 October 2026), hosting test pins the new line and refuses the old,
   THREAT_MODEL "What Firebase keeps" corrected; hosting test 15/15; sabotage S1 exact (`.drafts/d263/`). Next: full
   gate, record, merge, then hosting:main on his yes.
-- STEP 9 NOT SAVED: he said saved, but the project and org IAM policies hold no auditConfigs; sent him the clicks again
-  (the panel's own SAVE). Read back again when he says.
+- STEP 9 DONE (his yes for gcloud after two console saves did not land): auditConfigs `datastore.googleapis.com`
+  DATA_READ + DATA_WRITE (a first write naming firestore.googleapis.com was REFUSED by Google, nothing changed;
+  Firestore's audit logging lives under the Datastore name, which is why the console's "Cloud Firestore API" row never
+  stuck); 22 bindings unchanged; first entry 18:08:01Z. G-06 struck; G-04/17/18/26 marked deployed; section 8 learns the
+  admin site + audit config (private b1ff02e). THREAT_MODEL gains the audit-log paragraph (branch deploy-day-records).
+- D-263 MERGED 764cb44b; privacy page Version 4 LIVE (hosting:main, his yes; audit 51/51; private 7072738).
+- NEXT (his): step 10, Developer Tools exemption OFF, then the builds from main 764cb44b or later (iOS needs D-262's
+  12.19.3); Phase F notes `.drafts/release-051/notes.md`. Section 11's two checks are his (first push names the author;
+  a tester's Home unchanged). Then going public (U35).
 
 ## (previous) NOW: 2026-10-22 (session 13 CLOSING, Fable: the 0.5.1 pre-release security pass is DONE; next = the deploy day, opener `.drafts/stop/deploy-opener-1.md`)
 
