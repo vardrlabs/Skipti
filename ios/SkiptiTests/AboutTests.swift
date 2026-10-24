@@ -24,7 +24,7 @@ final class AboutTests: XCTestCase {
         XCTAssertTrue(names.contains("Sign in with Google button and G"), "iOS carries Google's button art")
         let firebase = try XCTUnwrap(shown.first { $0.name == "Firebase iOS SDK" })
         XCTAssertEqual(firebase.licence, "Apache-2.0")
-        XCTAssertEqual(firebase.version, "12.19.2")
+        XCTAssertEqual(firebase.version, "12.19.3")  // D-262: the eMudhra roots dropped
 
         let sqlcipher = try XCTUnwrap(shown.first { $0.name == "SQLCipher" })
         XCTAssertEqual(sqlcipher.licence, "BSD-3-Clause")

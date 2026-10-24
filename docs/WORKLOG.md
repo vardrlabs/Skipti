@@ -57,7 +57,43 @@ Newest session log entries go at the bottom.
   16:42:11Z, `.drafts/d261/gate.log`; iOS 1058, cargo 425, JVM 1259 carried forward); RECORDED (BUILD-LOG D-261,
   decisions 321-326; the first recorder run refused on a 2-column row: BUILD-LOG restored from HEAD, row split, re-run
   exit 0). Index READY (~260 s). CLOUD-SECURITY rows: step 1 (console) and step 2 (index). Logs since 10-20: no crash
-  signature, no ERROR after 10-20. NEXT: merge, push; step 3 (adminApprovals with the param EMPTY, decision 326).
+  signature, no ERROR after 10-20. MERGED 389b04a6 (pushed, no Actions run); private 474ce04 (rows 1, 2).
+- STEP 3 DONE (his yes): `functions:adminApprovals` created with `SKIPTI_ADMIN_UID=` empty (git-ignored
+  `firebase/functions/.env.skipti-26`); build caea1069: "with dependency on functions-framework", label
+  `"injected":false` 3.5.1, Node 22.23.4; skipti-functions 512Mi/6/10 ACTIVE; 401 without a token.
+  `hosting:admin` released: 200, CSP + no-store + no-referrer + noindex + nosniff, page byte for byte the repo's.
+  Step 4 DONE: he signed in with his COMPANY Google account (admin separate from his phones' account); nonce OK
+  first time (no fallback patch); adminApprovals redeployed with that uid (in `.env.skipti-26` only; read back).
+  Step 5 DONE: "Approve the 4" (N = 4 profiles), then he DENIED one (his own unused test account, no name, in no
+  group); read back approved 3 (migration), denied 1 (admin); Auth users 5.
+  Why two Auth rows have no email (he asked): iOS asks Google `scope=openid` only; Android's Credential Manager ID
+  token carries the email and Firebase stores it. THREAT_MODEL.md "What Firebase keeps ... asks for no email" is
+  WRONG for Android (the privacy page is right): correct it in today's records (no product change).
+- STEP 6 DONE (his yes): all Functions, 28 updated + requestApproval created, adminApprovals unchanged, nothing
+  deleted; 30 Functions hash 0a5f03cd1d39, all skipti-functions 512/6/10, every one on a build with
+  `"injected":false`; no FUNCTIONS_EMULATOR; cloud-audit 50 pass, 1 fail (privacy page, step 8). Rows in private
+  2c9fa25.
+- STEP 7 DONE (his yes): rules released, ruleset d17db66f 17:08:55Z, byte for byte the repo's; no Storage release.
+- STEP 8 DONE (his yes): hosting:main (privacy v3); no deploy-window sign-up (counts: approvals 4, profiles 4, Auth 5),
+  so no second press; CLOUD AUDIT PASSED 51/51 (`.drafts/release-051/day/cloud-audit-final.log`). Rows through step 8
+  in private dcc9722. THE 0.5.1 CLOUD DEPLOY IS COMPLETE. Step 9 (his console: Firestore Data Read + Data Write audit
+  logs) sent to him; read it back after.
+- D-262 on branch `d262-firebase-ios` (from main 389b04a6): pbxproj exactVersion 12.19.3, Package.resolved
+  firebase-ios-sdk 42cf1417 (= GitHub tag 12.19.3; only Firebase moved), licences.json 12.19.3. Read before build:
+  3 commits (versions, Package.swift binary zip + checksum, the roots file, CMake/build.sh). The root store 130 -> 99:
+  67 removed (emSign C1, ECC C3, ECC G3, AAA Certificate Services, Entrust, TrustCor, old GTS/GlobalSign...), 33
+  added (current GTS R1/R4 self-signed, Sectigo R46...); emSign Root CA - G1 stays. Firestore's live chain WE2 -> GTS
+  Root R4 (cross-signed by GlobalSign R1): the served GTS R4 key 9847e565... = 12.19.3's GTS R4 (to 2036), so iOS
+  keeps connecting (`.drafts/d262/gts-keys.txt`; LibreSSL's verify control was unreliable, dropped). Binary markers
+  (`markers.py`): the 12.19.2 build has the G3 slice 1, R46 0. NEXT: full gate, then the same markers on the new build
+  (expect G3 0, R46 1), records, merge.
+  First gate RED 23/1 (AboutTests pins the SDK version "12.19.2": the guard working; `.drafts/d262/gate1-note.md`);
+  pin moved; second gate 24/24 0 skipped (5m11s, stamp 17:26:57Z); new debug AND Release binaries G3 0, R46 2.
+  RECORDED (BUILD-LOG D-262, JVM by note: all 64 classes fresh in the first run at 17:21:11Z; decision 327). Merging.
+- OPEN, the founder's call (sign-in email truth, `.drafts/emailtruth/draft.md`): iPhone sends no email (ADR-0035
+  openid), Android's Credential Manager token does; the live privacy page v3 says we always get one, THREAT_MODEL says
+  never; find-by-email works for Android accounts only (people.js:118 reads the token's verified email); About on both
+  phones says "username or email can find you". Proposed: privacy page v4 + THREAT_MODEL fix today, the twin gap 0.5.2.
 
 ## (previous) NOW: 2026-10-22 (session 13 CLOSING, Fable: the 0.5.1 pre-release security pass is DONE; next = the deploy day, opener `.drafts/stop/deploy-opener-1.md`)
 
