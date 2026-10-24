@@ -106,7 +106,18 @@ Newest session log entries go at the bottom.
 - D-263 MERGED 764cb44b; privacy page Version 4 LIVE (hosting:main, his yes; audit 51/51; private 7072738).
 - STEP 10: the Developer Tools exemption is OFF (the founder, 2026-10-24, Claude, Terminal and Xcode, apps reopened;
   CLAUDE.md 13 updated); he is building from main. Gates are 30 to 40 minutes again.
-- NEXT (his): the builds from main 764cb44b or later (iOS needs D-262's
+- 0.5.1 RELEASED TO INTERNAL TESTING (the founder, 2026-10-24): iOS 0.5.1 Build 8 (TestFlight), Android 0.5.1 / 5001
+  (Play internal), from main b988a557 or later, runbook `docs/RELEASE-0.5.1.md`. G-13 struck; step 10 row (private
+  4eb9d51). His checks once testers update: the first push names its author; Home unchanged.
+- GOING-PUBLIC PREP (decision 278) on `u35-public-prep`: absolute home paths made relative (9 files), `deploy/` and
+  `docs/DEPLOY-ORACLE.md` removed (CLAUDE.md points at `git show 80c7a2d4:...`), README's Hosting line; sweep clean
+  (no secrets or real emails in the tree or main's history; all commits use the noreply address; no IPs; private
+  records untracked; LICENSE unmodified Apache 2.0; NOTICE = the 21 Lucide drawings in code). FULL GATE 24/24 (5m12s,
+  `.drafts/u35/gate.log`). Publish-ready advisory texts (public references only) in `.drafts/u35/advisories/`.
+  NEXT (his, each a yes): repo public; private vulnerability reporting on; then Claude creates the three advisories as
+  drafts (gh api), publishes each on his yes, requests the CVEs. GitHub secret scanning will flag the Firebase API keys
+  (public identifiers; restriction is 0.5.2's, decision 274).
+- (old) NEXT (his): the builds from main 764cb44b or later (iOS needs D-262's
   12.19.3); Phase F notes `.drafts/release-051/notes.md`. Section 11's two checks are his (first push names the author;
   a tester's Home unchanged). Then going public (U35).
 
