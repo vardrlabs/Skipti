@@ -1913,6 +1913,19 @@ R7. Source: each unit's report, `.drafts/fable/pass-051/dNNN/report.md`.
 - **336 (yours; 0.5.2):** the app asks for notification permission once, as its own step right after sign-in or
   sign-up, saying why (so you do not miss expenses and group changes); it replaces D-196's "after creating an invite or
   joining a group". The Settings card stays.
+- **337 (CodeQL triage, 2026-10-25; the founder: "fix them", and research the dismissals before acting):** of 16 open
+  alerts, #1 to #4 (js/bad-tag-filter, js/incomplete-hostname-regexp, js/incomplete-sanitization, all in
+  `firebase/tests/hosting.test.mjs`) are fixed: script tags matched in any case and form, every `<script` opening
+  counted, a full regex escape; the sabotage shows the old join-page test let an uppercase `<SCRIPT>` through. #5 to #15
+  (rust/hard-coded-cryptographic-value, "critical") are false positives, researched: the rule's nonce sink is a
+  parameter-NAME heuristic (CodeQL's HardcodedCryptographicValueExtensions.qll: "any argument going to a parameter whose
+  name matches a credential name"), and the only such parameters in core were two test fixtures; the value is a seed
+  for the header label `nonce_session`, which no cryptography reads since D-200. The audit of shipped code found no
+  hard-coded key, nonce or salt (the vault key from `random_bytes(32)` over OsRng; every fixed key array is in a test
+  module; `VaultKey::from_slice`'s zero buffer is overwritten at once) and random sign-in nonces on every client
+  (SecRandomCopyBytes, SecureRandom, crypto.getRandomValues). Step taken: the fixtures' parameter renamed `seed`, so
+  the alerts close as fixed rather than dismissed, and no future test can trip the heuristic the same way. #16
+  (java/android/insecure-local-authentication, the app lock not bound to a key) stays open for the Fable triage.
 
 ### Siri and Gemini, 210 to 213: your answers (pop-up, 2026-10-21)
 
