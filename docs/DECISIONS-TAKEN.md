@@ -1926,6 +1926,10 @@ R7. Source: each unit's report, `.drafts/fable/pass-051/dNNN/report.md`.
   (SecRandomCopyBytes, SecureRandom, crypto.getRandomValues). Step taken: the fixtures' parameter renamed `seed`, so
   the alerts close as fixed rather than dismissed, and no future test can trip the heuristic the same way. #16
   (java/android/insecure-local-authentication, the app lock not bound to a key) stays open for the Fable triage.
+  Read back: CodeQL on daa22b00 marked #1 to #15 FIXED; it opened #17 on the new pattern (an end tag like `</script
+  foo>`, which browsers accept, was not matched); the end tag now takes anything up to `>`, the sabotage with
+  `</script\t\n bar>` turns the join-page test red, the emulator leg passes 335/335 (a test-only pattern: no heavy input,
+  so no third full gate).
 
 ### Siri and Gemini, 210 to 213: your answers (pop-up, 2026-10-21)
 
