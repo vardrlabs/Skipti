@@ -45,6 +45,13 @@ Newest session log entries go at the bottom.
   gap and About's "username or email" line (328: his call on direction); Functions Framework major upgrade and the
   firebase-tools bump (D-261 residue b); the Mac's Node 26.4.0 predates the 2026-10-21 Node release (his call).
 - Close his Oracle Cloud account if it still exists (his console; nothing in SKIPTI uses it).
+- 2026-10-25 disk cleanup, section A of `.drafts/cleanup/2026-10-25-report.md` (his yes): 15.2 GB reclaimed (50.8 to 66.0
+  GB free): `target/` cleaned (the next full gate rebuilds Rust from scratch), Xcode's Skipti DerivedData, the gate and
+  look simulators' system logs and symbol cache, the app/APK/dex copies in `.drafts`. Sections B (keep) and C (his call:
+  skipti-smoke + the ATD image 8.8 GB, emulator snapshots 6.3 GB, old evidence, the Oracle SSH key) untouched.
+- OPEN, a small unit: the iOS test suite never deletes its temporary vaults (28,081 in SKIPTI's `tmp/` on the gate
+  simulator since 10-19, about 1,000 per full gate, 1.4 GB; cleared today): each test removes its vault in `tearDown`,
+  plus a guard that counts what a run leaves behind.
 
 **Session 14's working log (kept for detail):**
 - Evidence folder: `.drafts/release-051/day/` (`config-reads.sh` = Fable's reads with OUT moved, the quota-project
