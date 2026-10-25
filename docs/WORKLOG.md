@@ -55,6 +55,10 @@ Newest session log entries go at the bottom.
   created, amount outstanding and more; (4) a prettier admin page that tells him when someone waits for approval;
   (5) a one-tap "email us to approve" on the waiting screen (prefilled to skipti@vardrlabs.com with the account id
   ending, since iPhone accounts carry no email). Plan them with his pop-ups at 0.5.2's start.
+  HIS ANSWERS (decisions 333 to 336): drag order syncs across phones; sort by amount per currency; the 0.5.2 session
+  STARTS WITH THE ADMIN PAGE (redesign + sign-up notification, robots filtered); notification permission asked once,
+  right after sign-in or sign-up. The two pre-launch robot accounts: DENIED by him (read back). Opener for 0.5.2:
+  `.drafts/stop/opus-opener-9.md`.
 - Close his Oracle Cloud account if it still exists (his console; nothing in SKIPTI uses it).
 - 2026-10-25 disk cleanup, section A of `.drafts/cleanup/2026-10-25-report.md` (his yes): 15.2 GB reclaimed (50.8 to 66.0
   GB free): `target/` cleaned (the next full gate rebuilds Rust from scratch), Xcode's Skipti DerivedData, the gate and

@@ -1903,6 +1903,16 @@ R7. Source: each unit's report, `.drafts/fable/pass-051/dNNN/report.md`.
   construction (`CI` unset) and `./gradlew help` evaluates the settings both ways; the proof is CodeQL's next run on
   main; risk if wrong: GitHub runners build Kotlin without the cache (slower, free on a public repository); overturn:
   advanced setup with `--no-build-cache`. Note: default setup analyses every push to main, `[skip ci]` or not.
+- **333 (yours, 2026-10-25; 0.5.2):** the group order you drag on one phone follows your account to its other phones
+  (a synced setting, as D-244's settings are), not per phone.
+- **334 (yours; 0.5.2):** sorting groups by amount outstanding works per currency (groups ordered within their
+  currency), with date created and the others beside it.
+- **335 (yours; 0.5.2):** the 0.5.2 session starts with the admin page: a redesign, and the pipeline that tells you
+  when someone signs up and waits for approval (Google Play's pre-launch robots told apart, so an upload does not
+  ping you).
+- **336 (yours; 0.5.2):** the app asks for notification permission once, as its own step right after sign-in or
+  sign-up, saying why (so you do not miss expenses and group changes); it replaces D-196's "after creating an invite or
+  joining a group". The Settings card stays.
 
 ### Siri and Gemini, 210 to 213: your answers (pop-up, 2026-10-21)
 
