@@ -1930,6 +1930,16 @@ R7. Source: each unit's report, `.drafts/fable/pass-051/dNNN/report.md`.
   foo>`, which browsers accept, was not matched); the end tag now takes anything up to `>`, the sabotage with
   `</script\t\n bar>` turns the join-page test red, the emulator leg passes 335/335 (a test-only pattern: no heavy input,
   so no third full gate).
+- **338 (yours, 2026-10-25; 0.5.2):** the app lock becomes key-bound on both phones (CodeQL #16): Face ID, fingerprint or
+  the phone's passcode releases the vault key itself (iOS: the Keychain item under a `SecAccessControl` of
+  `.userPresence`; Android: a Keystore key that requires user authentication, decrypted through `BiometricPrompt` with a
+  `CryptoObject`), with the passcode fallback so a new fingerprint never locks you out of your data. Your concern,
+  checked in the code: notifications are unaffected (the server sends the whole line as a `notification` payload; iOS
+  shows it with no app code, Android's `onMessageReceived` uses only the payload; the vault is never opened to show
+  one), and neither phone syncs in the background (no BGTask, no WorkManager): sync runs while the app is open, so it
+  catches up right after the unlock. To design in the session: records that arrive while the app sits open past its
+  lock timeout wait in memory until the unlock; turning the lock on or off re-protects the key; existing installs
+  migrate once; tests on real devices; Fable reviews it.
 
 ### Siri and Gemini, 210 to 213: your answers (pop-up, 2026-10-21)
 
