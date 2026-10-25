@@ -83,6 +83,11 @@ behaviour where ADR-0040 does not supersede it.
   cloned at `./private/` (git-ignored); `docs/CLOUD-SECURITY.md` and `docs/SECURITY-ADVISORIES.md` are git-ignored
   symlinks into it, so edit them in place and commit with `git -C private add ... && git -C private commit ...`, then
   `git -C private push`. A fresh clone of vardrlabs/Skipti has neither: clone skipti-private into `./private/` first.
+- **Vardr Labs' private projects never appear in this repository** (the founder, 2026-10-25). This repo is PUBLIC:
+  no private project's name, domain, cloud project, plans, code, drafts or file names go into it, its records or its
+  commit messages; their work happens only in their own private repositories (the founder's global instructions name
+  them). Things may flow from SKIPTI to them (a pinned core tag, design tokens), never back. Before every push, check
+  the outgoing commits against those names (the global instructions give the command).
 - **Claude may push to GitHub.** Claude does **not**: run CI casually (§6),
   SSH into anything (the Oracle box is gone since 2026-10-13), handle the Android signing keystore or its
   passwords, or act in the Apple Developer / Google Play consoles.
