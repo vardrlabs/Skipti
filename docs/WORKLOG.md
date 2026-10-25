@@ -67,7 +67,7 @@ Newest session log entries go at the bottom.
 - CodeQL (default setup, his click 2026-10-24) runs on EVERY push to main, `[skip ci]` or not (free: public repo). Its
   java-kotlin job failed on 2026-10-25 (cached Kotlin compiles: decision 332, fixed in `android/settings.gradle.kts`);
   16 open alerts: #1-#15 handled on 2026-10-25 (decision 337: four test fixes, eleven false positives closed by renaming
-  the fixture parameter `seed`); #16 (the app lock) awaits the Fable triage (opener item 5). FIXED and confirmed: run 40218832883 on 47bd55be, all five
+  the fixture parameter `seed`); #16 (the app lock) PLANNED for 0.5.2 as a key-bound lock (decision 338); #17 fixed too. FIXED and confirmed: run 40218832883 on 47bd55be, all five
   languages green, `compilePlayDebugKotlin` compiled fresh.
 - 2026-10-25 the founder's Homebrew upgrade (CLAUDE.md 7 lists the versions): Node 26.4.0 -> 26.12.1 closes the CVE
   sweep's "UNCLEAR, low" Mac item (the 2026-10-21 Node release is in); gcloud 590.0.1 and the Firebase CLI logins still
