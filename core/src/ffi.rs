@@ -8904,7 +8904,9 @@ mod tests {
             }
         }
 
-        fn sample_record(nonce: u8) -> RecordWire {
+        // `seed` makes each sample record distinct (it fills the header's 4-byte label `nonce_session`, which no
+        // longer feeds any cryptography since D-200); it is not a nonce.
+        fn sample_record(seed: u8) -> RecordWire {
             RecordWire {
                 version: 1,
                 record_type: 1,
@@ -8914,7 +8916,7 @@ mod tests {
                 hlc_counter: 3,
                 hlc_device_id: pid(7),
                 author_device_id: pid(7),
-                nonce_session: vec![nonce, 0, 0, 1],
+                nonce_session: vec![seed, 0, 0, 1],
                 flags: 0,
                 blob: vec![0xDE, 0xAD, 0xBE, 0xEF],
             }
@@ -8962,8 +8964,8 @@ mod tests {
                 Box::new(MemKeystoreFfi::new()),
             )
             .unwrap();
-            let rec = |nonce: u8, millis: u64, group: Option<String>| {
-                let mut r = sample_record(nonce);
+            let rec = |seed: u8, millis: u64, group: Option<String>| {
+                let mut r = sample_record(seed);
                 r.hlc_millis = millis;
                 r.group_id = group;
                 r

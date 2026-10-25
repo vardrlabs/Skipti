@@ -27,10 +27,17 @@ const headersFor = (source) => {
 };
 const FINGERPRINT = /^([0-9A-F]{2}:){31}[0-9A-F]{2}$/;
 const DOMAIN = 'skipti.vardrlabs.com';
+// Code scanning (CodeQL js/bad-tag-filter, js/incomplete-sanitization, 2026-10-25): script tags are matched in any case
+// and with a space before the closing `>`, every `<script` opening is counted, and text put into a RegExp has every
+// special character escaped.
+const SCRIPT_TAG = /<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi;
+const scriptOpenings = (html) => (html.match(/<script\b/gi) || []).length;
+const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 test('the join page runs only its one pinned script and loads nothing from anywhere', () => {
-  const scripts = [...page.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)];
+  const scripts = [...page.matchAll(SCRIPT_TAG)];
   assert.equal(scripts.length, 1);
+  assert.equal(scriptOpenings(page), 1, 'no other script tag, in any case or form');
   assert.equal(scripts[0][1].trim(), '', 'inline, no src');
   const hash = createHash('sha256').update(scripts[0][2], 'utf8').digest('base64');
   // Re-derived in Python for D-159 and again for D-199: EFFNKyFe…NK0=.
@@ -92,7 +99,7 @@ test('the Android app-link file names exactly this app and its signing keys, for
   assert.equal(new Set(prints).size, 3);
   for (const p of prints) assert.match(p, FINGERPRINT);
   const manifest = read('../../android/app/src/main/AndroidManifest.xml');
-  assert.match(manifest, new RegExp(`android:autoVerify="true">[\\s\\S]*?android:host="${DOMAIN.replace(/\./g, '\\.')}" android:path="/join"`));
+  assert.match(manifest, new RegExp(`android:autoVerify="true">[\\s\\S]*?android:host="${escapeRegExp(DOMAIN)}" android:path="/join"`));
 });
 
 test("the README's fingerprints are the ones the domain serves", () => {
@@ -123,7 +130,7 @@ test('the privacy policy is one plain page: no script, nothing from elsewhere, v
 
 const adminPage = read('../admin/index.html');
 const adminMissing = read('../admin/404.html');
-const adminScripts = [...adminPage.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)];
+const adminScripts = [...adminPage.matchAll(SCRIPT_TAG)];
 const adminScript = adminScripts.length === 1 ? adminScripts[0][2] : '';
 const shellKotlin = read('../../android/app/src/main/java/com/vardrlabs/skipti/FirebaseConfig.kt');
 const shellSwift = read('../../ios/Skipti/App/FirebaseConfig.swift');
@@ -151,6 +158,7 @@ test('the admin site sends one strict policy on every path, its script pinned by
   assert.deepEqual(Object.keys(h).sort(), ['Cache-Control', 'Content-Security-Policy', 'Referrer-Policy',
     'X-Content-Type-Options', 'X-Robots-Tag']);
   assert.equal(adminScripts.length, 1, 'exactly one script');
+  assert.equal(scriptOpenings(adminPage), 1, 'no other script tag, in any case or form');
   assert.equal(adminScripts[0][1].trim(), '', 'inline, no src');
   const hash = createHash('sha256').update(adminScript, 'utf8').digest('base64');
   assert.equal(h['Content-Security-Policy'],
