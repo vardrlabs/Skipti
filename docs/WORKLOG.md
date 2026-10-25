@@ -44,6 +44,11 @@ Newest session log entries go at the bottom.
   (274), keyed email fingerprints (271), the per-group record cap (317), G-31 (6), G-07; the iPhone find-by-email twin
   gap and About's "username or email" line (328: his call on direction); Functions Framework major upgrade and the
   firebase-tools bump (D-261 residue b); the Mac's Node 26.4.0 predates the 2026-10-21 Node release (his call).
+- 0.5.2 REQUESTS from the founder (2026-10-25; notes and the open calls in `.drafts/052/founder-requests.md`): (1) drag
+  groups into any order, newest first by default; (2) pin several groups, in pin order; (3) sort groups by date
+  created, amount outstanding and more; (4) a prettier admin page that tells him when someone waits for approval;
+  (5) a one-tap "email us to approve" on the waiting screen (prefilled to skipti@vardrlabs.com with the account id
+  ending, since iPhone accounts carry no email). Plan them with his pop-ups at 0.5.2's start.
 - Close his Oracle Cloud account if it still exists (his console; nothing in SKIPTI uses it).
 - 2026-10-25 disk cleanup, section A of `.drafts/cleanup/2026-10-25-report.md` (his yes): 15.2 GB reclaimed (50.8 to 66.0
   GB free): `target/` cleaned (the next full gate rebuilds Rust from scratch), Xcode's Skipti DerivedData, the gate and
