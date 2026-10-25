@@ -329,6 +329,21 @@ the repo is public (0.5.1), standard runners are free for public repositories, b
   `make ios-app` runs the test host *on the chosen simulator*, so never run a
   build in the middle of a visual check. Launch with the iOS Simulator tool's
   `launch` action and the absolute app path.
+- **Tools as of 2026-10-25 (the founder's Homebrew upgrade):** macOS 27.0.1, Xcode 27.0 (27A266a), Rust 1.98.0 (stable),
+  Node 26.12.1 (Homebrew; includes the 2026-10-21 Node security release), Google Cloud SDK 590.0.1 (cask
+  `gcloud-cli`), gh 2.103.2, git 2.56, Homebrew Python 3.14.9; firebase-tools stays pinned at 15.31.0 in `firebase/`.
+  Checked after the upgrade: gcloud and Firebase CLI logins valid, the emulator suite 335/335, `cloud-audit.sh` passes.
+- **`python3` must be Homebrew's, not Apple's** (found 2026-10-25): the upgrade dropped the unversioned
+  `/opt/homebrew/bin/python3` link, so `python3` fell through to Apple's `/usr/bin/python3` 3.9.6. Every gate leg,
+  hook and recorder calls plain `python3`; they ran on 3.9 that day, but records were made on 3.14. Check with
+  `which python3` (expect `/opt/homebrew/bin/python3`); the fix is the founder's `brew link --overwrite python@3.14`.
+- **REST reads with a gcloud token need the quota-project header** (0.5.1 deploy day): `curl -H "x-goog-user-project:
+  skipti-26" -H "Authorization: Bearer $(gcloud auth print-access-token)" ...`; without it Identity Toolkit and the Rules
+  API answer 403. After a gcloud update or a long gap the login can expire: the founder runs `gcloud auth login` and
+  `firebase/node_modules/.bin/firebase login --reauth` himself (interactive).
+- **CodeQL (default setup, since 2026-10-24) analyses every push to main**, `[skip ci]` or not (free on a public
+  repository). A failed CodeQL job shows in `gh run list`; decision 332 fixed its Kotlin build-cache failure (run 40218832883 on
+  47bd55be: all five languages green, Kotlin compiled fresh).
 - **Boot the test simulator before a run of many `xcodebuild test` calls** (D-215, measured): xcodebuild boots a
   shut-down simulator and shuts it down again after the run, so every call paid a cold boot and its storm of iOS
   daemons (load average 115 to 160 on 10 cores, `diskimagesiod` at 200% CPU). D-215's sabotage rows took 68 s each;

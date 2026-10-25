@@ -51,7 +51,13 @@ Newest session log entries go at the bottom.
   skipti-smoke + the ATD image 8.8 GB, emulator snapshots 6.3 GB, old evidence, the Oracle SSH key) untouched.
 - CodeQL (default setup, his click 2026-10-24) runs on EVERY push to main, `[skip ci]` or not (free: public repo). Its
   java-kotlin job failed on 2026-10-25 (cached Kotlin compiles: decision 332, fixed in `android/settings.gradle.kts`);
-  16 open alerts await the Fable triage (opener item 5).
+  16 open alerts await the Fable triage (opener item 5). FIXED and confirmed: run 40218832883 on 47bd55be, all five
+  languages green, `compilePlayDebugKotlin` compiled fresh.
+- 2026-10-25 the founder's Homebrew upgrade (CLAUDE.md 7 lists the versions): Node 26.4.0 -> 26.12.1 closes the CVE
+  sweep's "UNCLEAR, low" Mac item (the 2026-10-21 Node release is in); gcloud 590.0.1 and the Firebase CLI logins still
+  valid; the emulator suite 335/335 and `cloud-audit.sh` pass on the new tools. OPEN (his): `python3` resolves to
+  Apple's 3.9.6 because the upgrade dropped Homebrew's unversioned link: `brew link --overwrite python@3.14`, then
+  `which python3` must print `/opt/homebrew/bin/python3`. Every gate script also ran clean on 3.9 that day.
 - OPEN, a small unit: the iOS test suite never deletes its temporary vaults (28,081 in SKIPTI's `tmp/` on the gate
   simulator since 10-19, about 1,000 per full gate, 1.4 GB; cleared today): each test removes its vault in `tearDown`,
   plus a guard that counts what a run leaves behind.
