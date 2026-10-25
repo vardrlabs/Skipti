@@ -28,9 +28,9 @@ const headersFor = (source) => {
 const FINGERPRINT = /^([0-9A-F]{2}:){31}[0-9A-F]{2}$/;
 const DOMAIN = 'skipti.vardrlabs.com';
 // Code scanning (CodeQL js/bad-tag-filter, js/incomplete-sanitization, 2026-10-25): script tags are matched in any case
-// and with a space before the closing `>`, every `<script` opening is counted, and text put into a RegExp has every
-// special character escaped.
-const SCRIPT_TAG = /<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi;
+// and with anything before the end tag's `>` (browsers end a script at `</script foo>`); every `<script` opening is
+// counted; text put into a RegExp has every special character escaped.
+const SCRIPT_TAG = /<script\b([^>]*)>([\s\S]*?)<\/script\b[^>]*>/gi;
 const scriptOpenings = (html) => (html.match(/<script\b/gi) || []).length;
 const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
