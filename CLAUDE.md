@@ -335,8 +335,12 @@ the repo is public (0.5.1), standard runners are free for public repositories, b
   Checked after the upgrade: gcloud and Firebase CLI logins valid, the emulator suite 335/335, `cloud-audit.sh` passes.
 - **`python3` must be Homebrew's, not Apple's** (found 2026-10-25): the upgrade dropped the unversioned
   `/opt/homebrew/bin/python3` link, so `python3` fell through to Apple's `/usr/bin/python3` 3.9.6. Every gate leg,
-  hook and recorder calls plain `python3`; they ran on 3.9 that day, but records were made on 3.14. Check with
-  `which python3` (expect `/opt/homebrew/bin/python3`); the fix is the founder's `brew link --overwrite python@3.14`.
+  hook and recorder calls plain `python3`; they ran on 3.9 that day, but records were made on 3.14. Homebrew now keeps
+  the unversioned `python3` of a versioned formula in its `libexec/bin` (plain `python3` belongs to the `python3`
+  formula, which is 3.15), so `brew link` cannot restore it. FIXED the same day: `~/.zprofile` ends with
+  `export PATH="/opt/homebrew/opt/python@3.14/libexec/bin:$PATH"` (after `brew shellenv`). Check with `which python3`:
+  expect `/opt/homebrew/opt/python@3.14/libexec/bin/python3`, Python 3.14.9. A session started before a PATH change
+  keeps its old PATH: call `/opt/homebrew/opt/python@3.14/libexec/bin/python3` there.
 - **REST reads with a gcloud token need the quota-project header** (0.5.1 deploy day): `curl -H "x-goog-user-project:
   skipti-26" -H "Authorization: Bearer $(gcloud auth print-access-token)" ...`; without it Identity Toolkit and the Rules
   API answer 403. After a gcloud update or a long gap the login can expire: the founder runs `gcloud auth login` and

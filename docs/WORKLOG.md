@@ -55,9 +55,10 @@ Newest session log entries go at the bottom.
   languages green, `compilePlayDebugKotlin` compiled fresh.
 - 2026-10-25 the founder's Homebrew upgrade (CLAUDE.md 7 lists the versions): Node 26.4.0 -> 26.12.1 closes the CVE
   sweep's "UNCLEAR, low" Mac item (the 2026-10-21 Node release is in); gcloud 590.0.1 and the Firebase CLI logins still
-  valid; the emulator suite 335/335 and `cloud-audit.sh` pass on the new tools. OPEN (his): `python3` resolves to
-  Apple's 3.9.6 because the upgrade dropped Homebrew's unversioned link: `brew link --overwrite python@3.14`, then
-  `which python3` must print `/opt/homebrew/bin/python3`. Every gate script also ran clean on 3.9 that day.
+  valid; the emulator suite 335/335 and `cloud-audit.sh` pass on the new tools. `python3` had fallen through to Apple's
+  3.9.6 (Homebrew's unversioned `python3` is now the 3.15 `python3` formula's; `brew link` cannot help): FIXED by the
+  founder, `~/.zprofile` puts `/opt/homebrew/opt/python@3.14/libexec/bin` first; a fresh login shell gives 3.14.9.
+  Every gate script also ran clean on 3.9 that day.
 - OPEN, a small unit: the iOS test suite never deletes its temporary vaults (28,081 in SKIPTI's `tmp/` on the gate
   simulator since 10-19, about 1,000 per full gate, 1.4 GB; cleared today): each test removes its vault in `tearDown`,
   plus a guard that counts what a run leaves behind.
