@@ -44,6 +44,12 @@ Newest session log entries go at the bottom.
   (274), keyed email fingerprints (271), the per-group record cap (317), G-31 (6), G-07; the iPhone find-by-email twin
   gap and About's "username or email" line (328: his call on direction); Functions Framework major upgrade and the
   firebase-tools bump (D-261 residue b); the Mac's Node 26.4.0 predates the 2026-10-21 Node release (his call).
+- 2026-10-25 INVESTIGATED (`.drafts/investigate-1025/report.md`): the two unknown approval requests of 2026-10-24
+  (firstname.lastname.NNNNN@gmail.com) are Google Play's pre-launch report robots (OnePlus 8 Pro, Android 11, from
+  Google's own network, 40 to 70 min after the Play upload); they read and wrote nothing. Expect more after every Play
+  upload: deny them, or turn the pre-launch report off for internal testing (his call); request 4's alert should tell
+  them apart. OPEN (his look): GitHub logged the repo "made public" at its creation (2026-10-21 00:07Z); his org audit log
+  shows how long it stayed public before 10-24 (content was the swept clean start only).
 - 0.5.2 REQUESTS from the founder (2026-10-25; notes and the open calls in `.drafts/052/founder-requests.md`): (1) drag
   groups into any order, newest first by default; (2) pin several groups, in pin order; (3) sort groups by date
   created, amount outstanding and more; (4) a prettier admin page that tells him when someone waits for approval;
