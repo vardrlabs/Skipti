@@ -1895,6 +1895,14 @@ R7. Source: each unit's report, `.drafts/fable/pass-051/dNNN/report.md`.
   (D-235's Critical, High and Medium findings, D-259's overflow, the G-items closed in 0.5.1, older security fixes to
   builds testers ran) and drafts SKIPTI-2026-004 onward for the genuine ones (opener `.drafts/stop/fable-opener-5.md`).
   Until then the record says "three advisories published", never "every flaw disclosed".
+- **332 (CodeQL, 2026-10-25):** the java-kotlin analysis of CodeQL's default setup failed on its second run ("could
+  not automatically build any of it": its dependency caching restores `~/.gradle`, build cache included, so
+  `compilePlayDebugKotlin` came FROM-CACHE and the extractor saw no compile); `android/settings.gradle.kts` now turns the
+  LOCAL build cache off when `CI` is set (GitHub's runners set it), and this Mac keeps it; why: the smallest change, no
+  repository setting to touch, no switch to advanced setup; no full gate, because a local build is unchanged by
+  construction (`CI` unset) and `./gradlew help` evaluates the settings both ways; the proof is CodeQL's next run on
+  main; risk if wrong: GitHub runners build Kotlin without the cache (slower, free on a public repository); overturn:
+  advanced setup with `--no-build-cache`. Note: default setup analyses every push to main, `[skip ci]` or not.
 
 ### Siri and Gemini, 210 to 213: your answers (pop-up, 2026-10-21)
 

@@ -49,6 +49,9 @@ Newest session log entries go at the bottom.
   GB free): `target/` cleaned (the next full gate rebuilds Rust from scratch), Xcode's Skipti DerivedData, the gate and
   look simulators' system logs and symbol cache, the app/APK/dex copies in `.drafts`. Sections B (keep) and C (his call:
   skipti-smoke + the ATD image 8.8 GB, emulator snapshots 6.3 GB, old evidence, the Oracle SSH key) untouched.
+- CodeQL (default setup, his click 2026-10-24) runs on EVERY push to main, `[skip ci]` or not (free: public repo). Its
+  java-kotlin job failed on 2026-10-25 (cached Kotlin compiles: decision 332, fixed in `android/settings.gradle.kts`);
+  16 open alerts await the Fable triage (opener item 5).
 - OPEN, a small unit: the iOS test suite never deletes its temporary vaults (28,081 in SKIPTI's `tmp/` on the gate
   simulator since 10-19, about 1,000 per full gate, 1.4 GB; cleared today): each test removes its vault in `tearDown`,
   plus a guard that counts what a run leaves behind.
