@@ -50,6 +50,11 @@ Newest session log entries go at the bottom.
   upload: deny them, or turn the pre-launch report off for internal testing (his call); request 4's alert should tell
   them apart. OPEN (his look): GitHub logged the repo "made public" at its creation (2026-10-21 00:07Z); his org audit log
   shows how long it stayed public before 10-24 (content was the swept clean start only).
+- 2026-11-03: Firebase's emailed notice (the eMudhra CA keys; affected: the Apple, Flutter, C++, Unity and React Native
+  Firestore SDKs; NOT the Android, Web or server SDKs; project skipti-26 listed) is the issue D-262 fixed. Checked: the
+  uploaded iOS 0.5.1 Build 8 archive (2026-10-24 14:36, after D-262's merge at 13:28) carries the new root store (byte
+  markers: emSign G3 0, Sectigo R46 2); 12.19.3 is still Firebase's newest iOS release. Open (his): any tester still
+  on iOS 0.5.0 or older keeps the old roots until they update; expiring Builds 7 and older in TestFlight ends that.
 - 0.5.2 REQUESTS from the founder (2026-10-25; notes and the open calls in `.drafts/052/founder-requests.md`): (1) drag
   groups into any order, newest first by default; (2) pin several groups, in pin order; (3) sort groups by date
   created, amount outstanding and more; (4) a prettier admin page that tells him when someone waits for approval;
